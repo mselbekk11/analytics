@@ -9,6 +9,14 @@ import { api } from "../../convex/_generated/api";
 const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const timeZones = () => Intl.supportedValuesOf("timeZone");
 
+// Snippets must point at the stable production address, never a deployment-specific
+// URL (those sit behind Vercel's login). Vercel sets this at build time and switches it
+// to the custom domain once one is attached; locally it is unset, so use this origin.
+function appOrigin(): string {
+  const host = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
+  return host ? `https://${host}` : window.location.origin;
+}
+
 export default function AddWebsiteForm() {
   return (
     <Authenticated>
@@ -43,7 +51,7 @@ function Form() {
   }
 
   const snippet = added
-    ? `<script async src="${window.location.origin}/script.js" data-site="${added}"></script>`
+    ? `<script async src="${appOrigin()}/script.js" data-site="${added}"></script>`
     : null;
 
   return (
