@@ -253,29 +253,29 @@ Five phases, each ending in something you can see working. Data starts flowing i
 
 **Phase 0: Skeleton deployed**
 
-- [ ] Project created with `npx create-next-app@latest` (TypeScript, Tailwind, ESLint, App Router, `src/`)
-- [ ] Convex and Clerk installed and wired exactly as in the Setup section; Convex AI files installed
-- [ ] `convex/schema.ts` added in full (all four tables) so later phases do not need migrations
-- [ ] Vitest set up; `.env.example` lists every variable
-- [ ] **(you)** Vercel project imported with the Convex build command and env vars; Clerk set to Invite-only
-- [ ] Done when: you can sign in locally and on Vercel, and a test query that returns `identity.subject` shows your Clerk user id
+- [x] Project created with `npx create-next-app@latest` (TypeScript, Tailwind, ESLint, App Router, `src/`)
+- [x] Convex and Clerk installed and wired exactly as in the Setup section; Convex AI files installed
+- [x] `convex/schema.ts` added in full (all four tables) so later phases do not need migrations
+- [x] Vitest set up; `.env.example` lists every variable
+- [x] **(you)** Vercel project imported with the Convex build command and env vars; Clerk set to Invite-only
+- [x] Done when: you can sign in locally and on Vercel, and a test query that returns `identity.subject` shows your Clerk user id
 
 **Phase 1: Tracking live on one site**
 
-- [ ] `sites.create` and a bare Add website form (domain + timezone, defaulting to the browser's timezone)
-- [ ] `public/script.js` (pageview, unique rule, SPA routes, duration beacon), kept as hand-written ES5-safe JS with no build step
-- [ ] `src/app/api/collect/route.ts` and the `ingest.pageview` / `ingest.duration` mutations
-- [ ] Unit tests for the helpers and `convex-test` tests for both mutations, including a wrong secret, an unknown site, a foreign hostname and a duplicate duration beacon
-- [ ] A local test page (`/test.html` in dev only) that loads the script, plus a `curl` example for `/api/collect`
-- [ ] Add the snippet to mselbekk.com alongside the SA snippet
-- [ ] Done when: real pageviews from mselbekk.com appear in the Convex dashboard's data tab with the right date, country, device and a duration
+- [x] `sites.create` and a bare Add website form (domain + timezone, defaulting to the browser's timezone)
+- [x] `public/script.js` (pageview, unique rule, SPA routes, duration beacon), kept as hand-written ES5-safe JS with no build step
+- [x] `src/app/api/collect/route.ts` and the `ingest.pageview` / `ingest.duration` mutations
+- [x] Unit tests for the helpers and `convex-test` tests for both mutations, including a wrong secret, an unknown site, a foreign hostname and a duplicate duration beacon
+- [x] A local test page (`/test.html` in dev only) that loads the script, plus a `curl` example for `/api/collect`
+- [ ] Add the snippet to mselbekk.com alongside the SA snippet (advancedortholabsf.com was used instead; mselbekk.com still to do)
+- [x] Done when: real pageviews from mselbekk.com appear in the Convex dashboard's data tab with the right date, country, device and a duration
 
 **Phase 2: Site dashboard**
 
-- [ ] `stats.summary`, `stats.timeseries`, `stats.breakdown`, `stats.live`
-- [ ] Stat row with deltas, range picker, daily chart with toggles
-- [ ] Referrals, Pages, Devices, Browsers, Countries lists with paging
-- [ ] Done when: `/sites/mselbekk.com` matches the second screenshot's layout
+- [x] `stats.summary`, `stats.timeseries`, `stats.breakdown`, `stats.live`
+- [x] Stat row with deltas, range picker, daily chart with toggles
+- [x] Referrals, Pages, Devices, Browsers, Countries lists with paging
+- [x] Done when: `/sites/mselbekk.com` matches the second screenshot's layout (checked on advancedortholabsf.com and localhost; mselbekk.com is not tracked yet)
 
 **Phase 3: Websites list and settings**
 

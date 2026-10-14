@@ -1,3 +1,10 @@
+# Analytics app
+
+Self-hosted, cookieless analytics (Next.js + Convex + Clerk on Vercel).
+
+- `docs/PLAN.md` is the build brief and lists the phases. Follow its "Instructions for Claude Code".
+- `docs/PROGRESS.md` records what has been built, decisions that differ from the plan, environments and gotchas. Read it before starting work, and update it at the end of each phase.
+
 <!-- convex-ai-start -->
 
 This project uses [Convex](https://convex.dev) as its backend.

@@ -12,9 +12,11 @@ import type * as ingest from "../ingest.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dates from "../lib/dates.js";
 import type * as lib_domain from "../lib/domain.js";
+import type * as lib_ranges from "../lib/ranges.js";
 import type * as lib_rollups from "../lib/rollups.js";
 import type * as me from "../me.js";
 import type * as sites from "../sites.js";
+import type * as stats from "../stats.js";
 
 import type {
   ApiFromModules,
@@ -27,9 +29,11 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/dates": typeof lib_dates;
   "lib/domain": typeof lib_domain;
+  "lib/ranges": typeof lib_ranges;
   "lib/rollups": typeof lib_rollups;
   me: typeof me;
   sites: typeof sites;
+  stats: typeof stats;
 }>;
 
 /**
