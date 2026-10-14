@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 export default defineSchema({
   sites: defineTable({
-    ownerId: v.string(), // Clerk user id (identity.subject)
+    ownerId: v.string(), // identity.tokenIdentifier (Clerk issuer + user id)
     domain: v.string(), // "picai.so", no protocol or www
     timezone: v.string(), // "America/Los_Angeles", sets day boundaries
     createdAt: v.number(),
