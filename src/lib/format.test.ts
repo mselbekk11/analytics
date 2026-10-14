@@ -8,6 +8,7 @@ import {
   formatNumber,
   formatShare,
   referrerLabel,
+  truncateMiddle,
 } from "./format";
 
 describe("format", () => {
@@ -54,5 +55,12 @@ describe("format", () => {
   test("referrers", () => {
     expect(referrerLabel("(direct)")).toBe("(direct)");
     expect(referrerLabel("google.com")).toBe("google.com");
+  });
+
+  test("long domains are shortened in the middle", () => {
+    expect(truncateMiddle("picai.so", 18)).toBe("picai.so");
+    expect(truncateMiddle("advancedortholabsf.com", 22)).toBe("advancedortholabsf.com");
+    expect(truncateMiddle("advancedortholabsf.com", 18)).toBe("advancedo…absf.com");
+    expect(truncateMiddle("roaminternational.com", 18)).toHaveLength(18);
   });
 });

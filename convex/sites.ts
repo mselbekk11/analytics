@@ -1,8 +1,13 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import { findOwnedSite, requireOwnerId } from "./lib/auth";
-import { isValidTimeZone } from "./lib/dates";
+import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, mutation, query } from "./_generated/server";
+import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
+import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
+import { eachDate, presetRange } from "./lib/ranges";
+
+const MAX_SITES = 500;
 
 export const create = mutation({
   args: { domain: v.string(), timezone: v.string() },
@@ -58,9 +63,126 @@ export const list = query({
     const sites = await ctx.db
       .query("sites")
       .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-      .take(500);
+      .take(MAX_SITES);
     return sites
       .map((s) => ({ domain: s.domain, timezone: s.timezone }))
       .sort((a, b) => a.domain.localeCompare(b.domain));
+  },
+});
+
+const LIST_DAYS = "30d";
+
+/**
+ * Every site of the signed-in user with its last 30 days of daily pageviews and
+ * visitors (today included, missing days as zero) and the 30-day totals. Feeds the
+ * /websites cards. `now` comes from the page, because queries must not read the
+ * clock; each site's "today" is taken in its own timezone.
+ */
+export const listWithStats = query({
+  args: { now: v.number() },
+  returns: v.array(
+    v.object({
+      domain: v.string(),
+      pageviews: v.number(),
+      visitors: v.number(),
+      days: v.array(
+        v.object({ date: v.string(), pageviews: v.number(), visitors: v.number() }),
+      ),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const ownerId = await requireOwnerId(ctx);
+    const sites = await ctx.db
+      .query("sites")
+      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .take(MAX_SITES);
+
+    const out = await Promise.all(
+      sites.map(async (site) => {
+        const range = presetRange(LIST_DAYS, localDate(args.now, site.timezone));
+        const rows = await ctx.db
+          .query("dailyStats")
+          .withIndex("by_site_date", (q) =>
+            q.eq("siteId", site._id).gte("date", range.from).lte("date", range.to),
+          )
+          .take(100);
+        const byDate = new Map<string, Doc<"dailyStats">>();
+        for (const r of rows) byDate.set(r.date, r);
+        const days = eachDate(range).map((date) => {
+          const r = byDate.get(date);
+          return { date, pageviews: r?.pageviews ?? 0, visitors: r?.visitors ?? 0 };
+        });
+        return {
+          domain: site.domain,
+          pageviews: days.reduce((n, d) => n + d.pageviews, 0),
+          visitors: days.reduce((n, d) => n + d.visitors, 0),
+          days,
+        };
+      }),
+    );
+    return out.sort((a, b) => a.domain.localeCompare(b.domain));
+  },
+});
+
+/** Changes a site's timezone. Only new hits use it; stored days keep their dates. */
+export const update = mutation({
+  args: { domain: v.string(), timezone: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    if (!isValidTimeZone(args.timezone)) {
+      throw new ConvexError("Unknown timezone");
+    }
+    await ctx.db.patch("sites", site._id, { timezone: args.timezone });
+    return null;
+  },
+});
+
+/**
+ * Deletes a site. The site row goes at once, so the dashboard and ingest stop seeing
+ * it; its hits and rollups are deleted in scheduled batches by deleteSiteData,
+ * because one mutation can only write so many documents.
+ */
+export const remove = mutation({
+  args: { domain: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    await ctx.db.delete("sites", site._id);
+    await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId: site._id });
+    return null;
+  },
+});
+
+// Three tables per run, well inside the per-mutation write limit
+const DELETE_BATCH = 1000;
+
+export const deleteSiteData = internalMutation({
+  args: { siteId: v.id("sites") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { siteId } = args;
+    const pageviews = await ctx.db
+      .query("pageviews")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of pageviews) await ctx.db.delete("pageviews", row._id);
+
+    const dims = await ctx.db
+      .query("dailyDims")
+      .withIndex("by_site_dim_date", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of dims) await ctx.db.delete("dailyDims", row._id);
+
+    const stats = await ctx.db
+      .query("dailyStats")
+      .withIndex("by_site_date", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of stats) await ctx.db.delete("dailyStats", row._id);
+
+    if ([pageviews, dims, stats].some((rows) => rows.length === DELETE_BATCH)) {
+      await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
+    }
+    return null;
   },
 });

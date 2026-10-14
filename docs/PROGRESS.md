@@ -9,7 +9,7 @@ Last updated: 2026-10-14. Read this together with [PLAN.md](PLAN.md), which is t
 | 0: Skeleton deployed | Done. Signed in on Vercel, and `me.whoami` returned the Clerk user id from Convex production. |
 | 1: Tracking live on one site | Done. Real pageviews from advancedortholabsf.com reached Convex production with the right date, country, device, unique flag and duration. |
 | 2: Site dashboard | Done. `/sites/[domain]` approved by the owner: SA's layout with the original dark look (see Decisions). |
-| 3: Websites list and settings | **Next.** Not started. |
+| 3: Websites list and settings | **Built, awaiting owner review.** `/websites`, settings and the `/` redirect work locally against Convex dev. Still to do by the owner: add the snippet to the other seven sites. |
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -50,7 +50,9 @@ convex/
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
   me.ts              whoami test query (Phase 0 check)
   sites.ts           sites.create (normalises the domain, rejects duplicates, validates the timezone),
-                     sites.get (null if missing or not yours), sites.list (feeds the site switcher)
+                     sites.get (null if missing or not yours), sites.list (feeds the site switcher),
+                     sites.listWithStats (30 zero-filled days per site), sites.update (timezone),
+                     sites.remove + internal deleteSiteData (batched, self-rescheduling)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.live (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.duration (public, guarded by INGEST_SECRET)
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
@@ -62,14 +64,20 @@ convex/
 src/
   proxy.ts           clerkMiddleware; everything protected except /sign-in, /sign-up, /api/collect, /script.js
   app/layout.tsx     ClerkProvider (outer) > ConvexClientProvider
-  app/page.tsx       placeholder home: site links, identity box, Add website form (becomes a redirect to /websites in Phase 3)
+  app/page.tsx       redirects to /websites (the proxy sends signed-out visitors to /sign-in first)
+  app/websites/page.tsx         card grid (client Websites)
   app/sites/[domain]/page.tsx   site dashboard (Suspense > client SiteDashboard)
+  app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
   app/sign-in, sign-up   Clerk components inside <Suspense>
   app/api/collect/route.ts   ingest endpoint
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
-  components/        ConvexClientProvider, WhoAmI, AddWebsiteForm, SiteLinks
-  components/dashboard/   SiteDashboard, SiteSwitcher, RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, useNow
-  lib/format.ts      number, duration, share, date, country name and flag formatting
+  components/        ConvexClientProvider, AddWebsiteForm (+ Snippet), CopyButton, TimezoneSelect
+  components/dashboard/   SiteHeader (favicon, switcher, Visitors/Settings tabs), SiteDashboard, SiteSwitcher,
+                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, useNow
+  components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
+  components/settings/    SiteSettings
+  lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
+  lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname
   lib/*.test.ts      unit tests, including script.test.ts, which runs public/script.js in a fake browser
 public/script.js     hand-written ES5 tracking script (1.47 KB gzipped)
@@ -77,6 +85,7 @@ public/script.js     hand-written ES5 tracking script (1.47 KB gzipped)
 
 Checks at the end of Phase 1: `npm run build`, `npx tsc --noEmit`, `npm run lint` clean, `npm test` 89 tests passing.
 Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
+Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing; add, settings and delete clicked through locally.
 
 ## Decisions and differences from PLAN.md
 
@@ -100,6 +109,13 @@ Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 - **Layout from Simple Analytics, look from the original dark theme** (owner's choice, 2026-10-14). The arrangement follows `public/SA-website.png` and `public/SA-websites.png` (local only, deliberately not committed: anything in `public/` is served by the live site, and they show the owner's browser): header band with favicon and a large domain switcher, a stat row of lowercase labels over large numbers with % badges, the dates over a large "‹ 30d ›" that opens a preset/custom menu, the chart with its toggles bottom right, then four list columns. Referrals and Pages show a blue count then the label; Devices, Browsers and Countries show an icon or flag and a bar holding the percentage (one decimal under 1%). The look is near-black zinc with Geist, bordered cards for the chart and lists, and smooth (monotone) blue and pink gradient areas with both series on. Colours are theme tokens in `globals.css` (`panel`, `line`, `muted`, `strong`, `accent`, `bar`, `up`, `down`); use the same for `/websites` in Phase 3.
 - **The header shows the site's own `/favicon.ico`**, loaded straight from the site, with the first letter as a fallback.
 - **Time-on-page % change** compares the two averages; it shows "–" when either period has no duration beacons.
+- **`sites.listWithStats` takes `now`** from the page (snapped to the minute) and works out each site's 30-day window in that site's own timezone, today included.
+- **`/websites` sorts by pageviews by default**; the "sort by" link toggles to name. Filter and sort are plain component state, not in the URL. The 30-day total is shown in the accent blue (SA uses red), matching the dashboard's counts.
+- **Cards:** the whole card opens the dashboard, the gear (top right) opens settings. Long domains are shortened in the middle, as SA does. Sparklines use the dashboard's blue/pink series.
+- **Settings is a tab in the site header** (Visitors | Settings | All sites), and the site switcher stays on the same tab. "All sites" now goes to `/websites`.
+- **Deleting a site** needs the domain typed to confirm (no browser `confirm()`). The `sites` row is deleted at once, so ingest and the dashboard stop seeing it; `deleteSiteData` then removes pageviews, dailyDims and dailyStats 1,000 rows per table per run and reschedules itself until done. Re-adding the same domain later starts fresh.
+- **Changing the timezone** affects only new hits; stored days keep their dates (as PLAN.md says).
+- **Removed the Phase 0/1 placeholders** (`WhoAmI`, `SiteLinks`, the old home page). `convex/me.ts` (`me.whoami`) is still deployed and tested but no longer used by the UI.
 
 ## Gotchas
 
@@ -110,6 +126,8 @@ Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 - **Run `npx convex dev` (or `npx convex codegen`) after adding Convex functions**, so `convex/_generated/api.d.ts` picks them up before `tsc`.
 - **Preview deployments on Vercel fail**, because there is no Preview `CONVEX_DEPLOY_KEY`. That is expected; add a Preview deploy key if previews are ever wanted.
 - **The dev `localhost` site had a mistyped `ownerId`** (one `r` short of the real Clerk id) and was invisible to the owner. Fixed on 2026-10-14 by copying the owner from the dev `advancedortholabsf.com` row. The dev copy of `advancedortholabsf.com` also holds ~70 seeded test hits from Phase 2 checks.
+- **Favicons that fail before hydration** never fire React's `onError`, so `Favicon` also checks `img.complete && naturalWidth === 0` in a ref callback (fixed in Phase 3; domains without a favicon showed a broken image).
+- **`npx convex codegen` does not push functions** to the dev deployment; run `npx convex dev --once` (or keep `npx convex dev` running) or the browser gets "Could not find public function".
 - **If the dev page reloads itself non-stop** (stuck on "Connecting…", the dev log full of `GET` lines), stop `next dev`, delete `.next` and start it again. A stale dev cache caused this once.
 - **curl hits need a browser User-Agent**, or `isbot` drops them silently (curl's default UA counts as a bot).
 - **Read `convex/_generated/ai/guidelines.md`** before writing Convex code, and the Next.js docs in `node_modules/next/dist/docs/` (AGENTS.md).
@@ -134,6 +152,6 @@ Read production data with `npx convex data <table> --prod`.
 - Before real use: create a Clerk production instance on a custom domain, swap in its keys and issuer, and update `sites.ownerId` (see the first decision above).
 - Add the snippet to mselbekk.com and the other six sites (planned for Phase 3).
 
-## Next: Phase 3
+## Next: finish Phase 3, then Phase 4
 
-Build `sites.listWithStats` and the `/websites` card grid (sparklines, filter, sort, Add website), turn `/` into the redirect, and add `/sites/[domain]/settings` (snippet with copy button, timezone, delete in scheduled batches). Reuse `TrafficChart`'s Recharts setup for the sparklines and `lib/ranges.ts` for the 30-day window. Then add the snippet to the remaining sites.
+Owner: review `/websites` and the settings page against `public/SA-websites.png`, then add each remaining site under Add website (production) and paste its snippet (Settings → Embed snippet) into mselbekk.com and the other six sites, next to the SA snippet. Phase 4 is then the two-week side-by-side run.

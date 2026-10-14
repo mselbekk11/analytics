@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -44,5 +45,156 @@ describe("sites.create", () => {
     await expect(
       t.mutation(api.sites.create, { domain: "picai.so", timezone: "UTC" }),
     ).rejects.toThrow(/Not signed in/);
+  });
+});
+
+const OWNER = { subject: "user_1", tokenIdentifier: "clerk|user_1" };
+const STRANGER = { subject: "user_2", tokenIdentifier: "clerk|user_2" };
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+async function addSite(t: ReturnType<typeof convexTest>, domain: string, timezone: string) {
+  const { siteId } = await t.withIdentity(OWNER).mutation(api.sites.create, { domain, timezone });
+  return siteId;
+}
+
+async function addDay(
+  t: ReturnType<typeof convexTest>,
+  siteId: Id<"sites">,
+  date: string,
+  pageviews: number,
+  visitors: number,
+) {
+  await t.run((ctx) =>
+    ctx.db.insert("dailyStats", {
+      siteId,
+      date,
+      pageviews,
+      visitors,
+      durationSumMs: 0,
+      durationCount: 0,
+    }),
+  );
+}
+
+describe("sites.listWithStats", () => {
+  test("gives each site 30 zero-filled days ending today in its own timezone", async () => {
+    const t = convexTest(schema, modules);
+    const la = await addSite(t, "picai.so", "America/Los_Angeles");
+    const oslo = await addSite(t, "sensai.co", "Europe/Oslo");
+    // 2026-10-14 03:00Z is Oct 13 in Los Angeles and Oct 14 in Oslo
+    const now = Date.parse("2026-10-14T03:00:00Z");
+    await addDay(t, la, "2026-10-13", 5, 3);
+    await addDay(t, la, "2026-09-14", 2, 1); // first day of LA's window
+    await addDay(t, la, "2026-09-13", 100, 100); // one day too old
+    await addDay(t, oslo, "2026-10-14", 7, 4);
+    await addDay(t, oslo, "2026-09-14", 9, 9); // just outside Oslo's window
+
+    const list = await t.withIdentity(OWNER).query(api.sites.listWithStats, { now });
+    expect(list.map((s) => s.domain)).toEqual(["picai.so", "sensai.co"]);
+
+    const [picai, sensai] = list;
+    expect(picai.days).toHaveLength(30);
+    expect(picai.days[0]).toEqual({ date: "2026-09-14", pageviews: 2, visitors: 1 });
+    expect(picai.days[29]).toEqual({ date: "2026-10-13", pageviews: 5, visitors: 3 });
+    expect(picai.days[10]).toEqual({ date: "2026-09-24", pageviews: 0, visitors: 0 });
+    expect(picai).toMatchObject({ pageviews: 7, visitors: 4 });
+
+    expect(sensai.days[0].date).toBe("2026-09-15");
+    expect(sensai.days[29]).toEqual({ date: "2026-10-14", pageviews: 7, visitors: 4 });
+    expect(sensai).toMatchObject({ pageviews: 7, visitors: 4 });
+  });
+
+  test("shows only the caller's sites and requires sign-in", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const now = Date.parse("2026-10-14T12:00:00Z");
+    expect(await t.withIdentity(STRANGER).query(api.sites.listWithStats, { now })).toEqual([]);
+    await expect(t.query(api.sites.listWithStats, { now })).rejects.toThrow(/Not signed in/);
+  });
+});
+
+describe("sites.update", () => {
+  test("changes the timezone of the caller's own site only", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    await t
+      .withIdentity(OWNER)
+      .mutation(api.sites.update, { domain: "picai.so", timezone: "Europe/Oslo" });
+    expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).toEqual({
+      domain: "picai.so",
+      timezone: "Europe/Oslo",
+    });
+
+    await expect(
+      t.withIdentity(OWNER).mutation(api.sites.update, { domain: "picai.so", timezone: "Nope" }),
+    ).rejects.toThrow(/timezone/);
+    await expect(
+      t
+        .withIdentity(STRANGER)
+        .mutation(api.sites.update, { domain: "picai.so", timezone: "UTC" }),
+    ).rejects.toThrow(/Site not found/);
+  });
+});
+
+describe("sites.remove", () => {
+  test("deletes the site at once and its data in scheduled batches", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const siteId = await addSite(t, "picai.so", "UTC");
+    const otherId = await addSite(t, "sensai.co", "UTC");
+    // More pageviews than one batch, so the cleanup has to reschedule itself
+    await t.run(async (ctx) => {
+      for (const id of [siteId, otherId]) {
+        const n = id === siteId ? 1_005 : 3;
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert("pageviews", {
+            siteId: id,
+            ts: i,
+            path: "/",
+            referrer: "(direct)",
+            unique: true,
+            device: "desktop",
+            browser: "Chrome",
+            country: "US",
+            pvId: `${id}-${i}`,
+          });
+        }
+        await ctx.db.insert("dailyDims", {
+          siteId: id,
+          date: "2026-10-14",
+          dim: "page",
+          key: "/",
+          pageviews: n,
+          visitors: n,
+        });
+      }
+    });
+    await addDay(t, siteId, "2026-10-14", 1_005, 1_005);
+    await addDay(t, otherId, "2026-10-14", 3, 3);
+
+    await t.withIdentity(OWNER).mutation(api.sites.remove, { domain: "picai.so" });
+    expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).toBeNull();
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const left = await t.run(async (ctx) => ({
+      pageviews: (await ctx.db.query("pageviews").take(5_000)).map((r) => r.siteId),
+      dims: (await ctx.db.query("dailyDims").take(100)).map((r) => r.siteId),
+      stats: (await ctx.db.query("dailyStats").take(100)).map((r) => r.siteId),
+    }));
+    expect(left.pageviews).toEqual([otherId, otherId, otherId]);
+    expect(left.dims).toEqual([otherId]);
+    expect(left.stats).toEqual([otherId]);
+  });
+
+  test("refuses someone else's site", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    await expect(
+      t.withIdentity(STRANGER).mutation(api.sites.remove, { domain: "picai.so" }),
+    ).rejects.toThrow(/Site not found/);
+    expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).not.toBeNull();
   });
 });

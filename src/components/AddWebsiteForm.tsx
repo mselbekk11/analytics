@@ -1,35 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { Authenticated, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
+import { embedSnippet } from "@/lib/snippet";
+import CopyButton from "./CopyButton";
+import TimezoneSelect from "./TimezoneSelect";
 
-// Only rendered inside <Authenticated>, i.e. on the client, so Intl reflects the browser.
+// Rendered only inside <Authenticated>, i.e. on the client, so Intl reflects the browser.
 const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-const timeZones = () => Intl.supportedValuesOf("timeZone");
-
-// Snippets must point at the stable production address, never a deployment-specific
-// URL (those sit behind Vercel's login). Vercel sets this at build time and switches it
-// to the custom domain once one is attached; locally it is unset, so use this origin.
-function appOrigin(): string {
-  const host = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
-  return host ? `https://${host}` : window.location.origin;
-}
 
 export default function AddWebsiteForm() {
-  return (
-    <Authenticated>
-      <Form />
-    </Authenticated>
-  );
-}
-
-function Form() {
   const create = useMutation(api.sites.create);
   const [domain, setDomain] = useState("");
   const [timezone, setTimezone] = useState(browserTimeZone);
-  const [zones] = useState(timeZones);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -50,52 +36,54 @@ function Form() {
     }
   }
 
-  const snippet = added
-    ? `<script async src="${appOrigin()}/script.js" data-site="${added}"></script>`
-    : null;
-
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Domain</span>
+          <span className="text-muted">Domain</span>
           <input
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             placeholder="example.com"
             required
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2"
+            className="rounded-md border border-line bg-panel px-3 py-2"
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-zinc-400">Timezone</span>
-          <select
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2"
-          >
-            {zones.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz}
-              </option>
-            ))}
-          </select>
+          <span className="text-muted">Timezone</span>
+          <TimezoneSelect value={timezone} onChange={setTimezone} />
         </label>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
+          className="rounded-md bg-strong px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
         >
           {pending ? "Adding…" : "Add website"}
         </button>
       </form>
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {snippet && (
+      {error && <p className="text-sm text-down">{error}</p>}
+      {added && (
         <div className="flex flex-col gap-2 text-sm">
-          <p className="text-green-400">Added {added}. Paste this into the site&apos;s HTML:</p>
-          <code className="block break-all rounded-md bg-zinc-900 p-3 font-mono text-xs">{snippet}</code>
+          <p className="text-up">
+            Added {added}. Paste this into the site&apos;s HTML, or find it later under{" "}
+            <Link href={`/sites/${encodeURIComponent(added)}/settings`} className="underline">
+              Settings
+            </Link>
+            :
+          </p>
+          <Snippet domain={added} />
         </div>
       )}
+    </div>
+  );
+}
+
+export function Snippet({ domain }: { domain: string }) {
+  const snippet = embedSnippet(domain);
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-line bg-panel p-3">
+      <code className="flex-1 break-all font-mono text-xs leading-5">{snippet}</code>
+      <CopyButton text={snippet} />
     </div>
   );
 }

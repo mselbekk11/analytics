@@ -2,9 +2,6 @@
 
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
-import { UserButton } from "@clerk/nextjs";
-import { FiActivity } from "react-icons/fi";
 import { Authenticated, AuthLoading, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { localDate } from "../../../convex/lib/dates";
@@ -20,7 +17,7 @@ import {
 import { formatDuration, formatNumber } from "@/lib/format";
 import Breakdowns from "./Breakdowns";
 import RangePicker from "./RangePicker";
-import SiteSwitcher from "./SiteSwitcher";
+import SiteHeader from "./SiteHeader";
 import StatTile from "./StatTile";
 import TrafficChart from "./TrafficChart";
 import { useNow } from "./useNow";
@@ -33,27 +30,7 @@ export default function SiteDashboard() {
   const domain = decodeURIComponent(params.domain);
   return (
     <div className="flex flex-1 flex-col">
-      <header className="border-b border-line bg-panel/40">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 pt-8 sm:px-6">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <Favicon domain={domain} />
-              <Authenticated>
-                <SiteSwitcher current={domain} />
-              </Authenticated>
-            </div>
-            <UserButton />
-          </div>
-          <nav className="flex gap-8 text-sm">
-            <span className="flex items-center gap-2 border-b-2 border-strong pb-3 text-strong">
-              <FiActivity aria-hidden /> Visitors
-            </span>
-            <Link href="/" className="pb-3 text-muted hover:text-strong">
-              All sites
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader domain={domain} section="visitors" />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
           <p className="text-sm text-muted">Connecting…</p>
@@ -66,26 +43,6 @@ export default function SiteDashboard() {
   );
 }
 
-/** The site's own favicon in a white tile, as SA shows it; a letter if there is none. */
-function Favicon({ domain }: { domain: string }) {
-  const [failed, setFailed] = useState(domain === "localhost");
-  return (
-    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white text-lg font-medium text-zinc-700">
-      {failed ? (
-        domain[0]?.toUpperCase()
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element -- external favicon, any size
-        <img
-          src={`https://${domain}/favicon.ico`}
-          alt=""
-          className="size-6"
-          onError={() => setFailed(true)}
-        />
-      )}
-    </span>
-  );
-}
-
 function Site({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
   if (site === undefined) return <p className="text-sm text-muted">Loading…</p>;
@@ -93,7 +50,7 @@ function Site({ domain }: { domain: string }) {
     return (
       <p className="text-sm text-muted">
         No site called <span className="font-mono">{domain}</span> in your account.{" "}
-        <Link href="/" className="underline">
+        <Link href="/websites" className="underline">
           Back to your sites
         </Link>
       </p>

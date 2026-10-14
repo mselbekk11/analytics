@@ -71,3 +71,14 @@ const DEVICE_LABELS: Record<string, string> = {
 export function deviceLabel(key: string): string {
   return DEVICE_LABELS[key] ?? key;
 }
+
+/**
+ * Shortens a long domain in the middle, keeping its end (and so the TLD) readable,
+ * as SA's site cards do: "advancedortholabsf.com" -> "advancedo…absf.com".
+ */
+export function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const keep = max - 1;
+  const tail = Math.floor(keep / 2);
+  return `${s.slice(0, keep - tail)}…${s.slice(s.length - tail)}`;
+}

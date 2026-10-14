@@ -279,8 +279,8 @@ Five phases, each ending in something you can see working. Data starts flowing i
 
 **Phase 3: Websites list and settings**
 
-- [ ] `sites.listWithStats` and the card grid with sparklines, filter and sort
-- [ ] Settings page with copyable snippet, timezone, delete
+- [x] `sites.listWithStats` and the card grid with sparklines, filter and sort
+- [x] Settings page with copyable snippet, timezone, delete
 - [ ] Add the remaining seven sites and their snippets
 - [ ] Done when: `/websites` matches the first screenshot
 
