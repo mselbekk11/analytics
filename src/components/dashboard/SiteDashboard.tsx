@@ -14,7 +14,7 @@ import {
   type DateRange,
   type Preset,
 } from "../../../convex/lib/ranges";
-import { formatDuration, formatNumber, formatShare } from "@/lib/format";
+import { formatDuration, formatMoney, formatNumber, formatShare } from "@/lib/format";
 import Breakdowns from "./Breakdowns";
 import RangePicker from "./RangePicker";
 import SiteHeader from "./SiteHeader";
@@ -61,6 +61,8 @@ function Site({ domain }: { domain: string }) {
       domain={site.domain}
       timezone={site.timezone}
       trackingStartedAt={site.trackingStartedAt}
+      currency={site.revenueSource === "none" ? null : site.currency}
+      keyGoal={site.keyGoal}
     />
   );
 }
@@ -69,10 +71,15 @@ function Dashboard({
   domain,
   timezone,
   trackingStartedAt,
+  currency,
+  keyGoal,
 }: {
   domain: string;
   timezone: string;
   trackingStartedAt: number | null;
+  /** The site's currency when it takes payments (Stripe or API); null hides revenue */
+  currency: string | null;
+  keyGoal: string | null;
 }) {
   const now = useNow(LIVE_REFRESH_MS);
   const today = localDate(now, timezone);
@@ -97,6 +104,11 @@ function Dashboard({
   const since = now - LIVE_WINDOW_MS;
   const live = useQuery(api.stats.live, tracking ? "skip" : { domain, since });
   const online = useQuery(api.stats.online, tracking ? { domain, since } : "skip");
+  // Paying visitors on a site with revenue, otherwise visitors who completed the key goal
+  const conversions = useQuery(
+    api.stats.conversions,
+    currency !== null || keyGoal !== null ? { domain, ...range } : "skip",
+  );
 
   const cur = summary?.current;
   const prev = summary?.previous;
@@ -107,6 +119,23 @@ function Dashboard({
     const b = pick(prev);
     return a === null || b === null ? null : percentChange(a, b);
   };
+  const rate = (converted: number | null | undefined, t: typeof cur) =>
+    converted == null || !t || t.visitors === 0 ? null : Math.min(1, converted / t.visitors);
+  const curRate = rate(conversions?.current, cur);
+  const prevRate = rate(conversions?.previous, prev);
+  const conversionTile = conversions?.kind != null && (
+    <StatTile
+      label="conversion rate"
+      value={cur && (curRate === null ? "–" : formatShare(curRate))}
+      change={curRate === null || prevRate === null ? null : percentChange(curRate, prevRate)}
+      incomparable={incomparable}
+      title={
+        conversions.kind === "revenue"
+          ? "Visitors who paid ÷ visitors"
+          : `Visitors who completed the key goal "${keyGoal}" ÷ visitors`
+      }
+    />
+  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -155,6 +184,29 @@ function Dashboard({
               title="Average visible-tab time per session"
             />
           )}
+          {currency !== null && (
+            <StatTile
+              label="revenue"
+              value={cur && formatMoney(cur.revenueMinor, currency)}
+              change={change((t) => t.revenueMinor)}
+              title={
+                cur && cur.refundsMinor > 0
+                  ? `Net of ${formatMoney(cur.refundsMinor, currency)} in refunds; ${formatNumber(cur.payments)} payments`
+                  : cur && `${formatNumber(cur.payments)} payments`
+              }
+            />
+          )}
+          {conversionTile}
+          {currency !== null && (
+            <StatTile
+              label="revenue / visitor"
+              value={
+                cur && (cur.visitors === 0 ? "–" : formatMoney(Math.round(cur.revenueMinor / cur.visitors), currency))
+              }
+              change={change((t) => (t.visitors === 0 ? null : t.revenueMinor / t.visitors))}
+              incomparable={incomparable}
+            />
+          )}
           <StatTile
             label="time on page"
             value={cur && (cur.timeOnPageMs === null ? "–" : formatDuration(cur.timeOnPageMs))}
@@ -177,8 +229,16 @@ function Dashboard({
         <RangePicker range={range} preset={preset} today={today} onChange={setRange} />
       </div>
 
-      <TrafficChart data={series} trackingStart={trackingStart} />
-      <Breakdowns domain={domain} range={range} />
+      {conversions !== undefined && conversions.otherCurrencyPayments > 0 && (
+        <p className="-mt-6 text-sm text-muted">
+          {formatNumber(conversions.otherCurrencyPayments)}{" "}
+          {conversions.otherCurrencyPayments === 1 ? "payment" : "payments"} in this period{" "}
+          {conversions.otherCurrencyPayments === 1 ? "is" : "are"} in a currency other than {currency} and{" "}
+          left out of the totals.
+        </p>
+      )}
+      <TrafficChart data={series} trackingStart={trackingStart} currency={currency} />
+      <Breakdowns domain={domain} range={range} currency={currency} />
     </div>
   );
 }

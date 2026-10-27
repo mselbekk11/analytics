@@ -1,4 +1,4 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { Dim } from "./dims";
 
@@ -10,7 +10,13 @@ type StatsDelta = {
   sessions?: number;
   bounces?: number;
   sessionEngagedMs?: number;
+  revenueMinor?: number;
+  payments?: number;
+  refundsMinor?: number;
 };
+
+// Only payments write these, so other days' rows don't gain zero revenue fields
+const REVENUE_FIELDS = ["revenueMinor", "payments", "refundsMinor"] as const;
 
 export async function bumpDailyStats(
   ctx: MutationCtx,
@@ -33,6 +39,7 @@ export async function bumpDailyStats(
       sessions: delta.sessions ?? 0,
       bounces: delta.bounces ?? 0,
       sessionEngagedMs: delta.sessionEngagedMs ?? 0,
+      ...revenueFields(null, delta),
     });
     return;
   }
@@ -44,7 +51,16 @@ export async function bumpDailyStats(
     sessions: (row.sessions ?? 0) + (delta.sessions ?? 0),
     bounces: (row.bounces ?? 0) + (delta.bounces ?? 0),
     sessionEngagedMs: (row.sessionEngagedMs ?? 0) + (delta.sessionEngagedMs ?? 0),
+    ...revenueFields(row, delta),
   });
+}
+
+function revenueFields(row: Doc<"dailyStats"> | null, delta: StatsDelta) {
+  const out: Partial<Record<(typeof REVENUE_FIELDS)[number], number>> = {};
+  for (const f of REVENUE_FIELDS) {
+    if (delta[f] !== undefined) out[f] = (row?.[f] ?? 0) + delta[f];
+  }
+  return out;
 }
 
 export async function bumpDailyDim(
@@ -135,4 +151,29 @@ export async function bumpEventDim(
     visitors: row.visitors + visitors,
     events: (row.events ?? 0) + 1,
   });
+}
+
+/**
+ * Adds net revenue to a key of a session dim (source, channel, campaign, referrer,
+ * country, region, city), on the payment's day. Counts of visitors and sessions stay.
+ */
+export async function bumpRevenueDim(
+  ctx: MutationCtx,
+  siteId: Id<"sites">,
+  date: string,
+  dim: Dim,
+  key: string,
+  revenueMinor: number,
+): Promise<void> {
+  const row = await ctx.db
+    .query("dailyDims")
+    .withIndex("by_site_date_dim_key", (q) =>
+      q.eq("siteId", siteId).eq("date", date).eq("dim", dim).eq("key", key),
+    )
+    .unique();
+  if (row === null) {
+    await ctx.db.insert("dailyDims", { siteId, date, dim, key, pageviews: 0, visitors: 0, revenueMinor });
+    return;
+  }
+  await ctx.db.patch("dailyDims", row._id, { revenueMinor: (row.revenueMinor ?? 0) + revenueMinor });
 }

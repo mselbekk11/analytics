@@ -529,6 +529,38 @@ describe("outbound links", () => {
   });
 });
 
+describe("checkout attribution", () => {
+  test("attribution() returns the visitor and session ids for Checkout metadata", () => {
+    const { window, jar } = load();
+    const api = window.analytics as (cmd: string) => unknown;
+    const ids = api("attribution") as Record<string, string>;
+    expect(ids).toEqual({ va_vid: jar.values.get("_va_vid"), va_sid: jar.values.get("_va_sid") });
+    expect(ids.va_vid).toMatch(/^id-/);
+  });
+
+  test("attribution() leaves out an expired session id, and is empty in cookieless mode", () => {
+    const a = load();
+    a.jar.values.delete("_va_sid");
+    expect((a.window.analytics as (cmd: string) => unknown)("attribution")).toEqual({ va_vid: a.jar.values.get("_va_vid") });
+    const b = load({ attrs: { "data-cookieless": "" } });
+    expect((b.window.analytics as (cmd: string) => unknown)("attribution")).toEqual({});
+  });
+
+  test("a Stripe success page sends the Checkout Session id and nothing else from the URL", () => {
+    const { sent } = load({ search: "?session_id=cs_test_a1B2c3D4e5&email=jo%40example.com" });
+    const pv = sent[0];
+    expect(sent[1]).toEqual({ t: "claim", cs: "cs_test_a1B2c3D4e5", site: "picai.so", pvId: pv.pvId, vid: pv.vid, sid: pv.sid });
+    expect(JSON.stringify(sent)).not.toContain("example.com");
+  });
+
+  test("no claim without a cs_ session id, or in cookieless mode", () => {
+    expect(load({ search: "?session_id=abc" }).sent.map((s) => s.t)).toEqual(["pv"]);
+    expect(load({ search: "?other=1" }).sent.map((s) => s.t)).toEqual(["pv"]);
+    const cookieless = load({ search: "?session_id=cs_test_a1B2c3D4e5", attrs: { "data-cookieless": "" } });
+    expect(cookieless.sent.map((s) => s.t)).toEqual(["pv"]);
+  });
+});
+
 describe("size", () => {
   test("the minified script stays under 3 KB gzipped", () => {
     expect(gzipSync(source).length).toBeLessThan(3 * 1024);

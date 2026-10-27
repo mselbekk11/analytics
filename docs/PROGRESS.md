@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-27 (5e built). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -15,7 +15,8 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
 | 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
 | 5d: Goals, outbound clicks and identify | **Live in production since 2026-10-27** (commit `8b67da8`; `/script.js` serves the minified build, 1.95 KB gzipped; `ingest.event` and `stats.goals` on Convex prod). Awaiting the owner's "Done when" check on production. |
-| 5e to 5h, 6 | Not started. |
+| 5e: Revenue | **Built, awaiting owner review.** All checks pass; tried end to end on Convex dev with signed webhook events (see Checks). Not committed or deployed yet. "Done when" needs a real Stripe test-mode payment, which is for the owner (the Stripe CLI login on this machine has expired). |
+| 5f to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -51,17 +52,22 @@ Vercel build command: `npx convex deploy --cmd 'npm run build'`.
 
 ```text
 convex/
-  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a) and events (5d) with PHASE5.md's fields
+  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a), events (5d), and payments,
+                     checkouts and siteSecrets (5e)
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
   me.ts              whoami test query (Phase 0 check)
   sites.ts           sites.create (normalises the domain, rejects duplicates, validates the timezone),
                      sites.get (null if missing or not yours), sites.list (feeds the site switcher),
                      sites.listWithStats (30 zero-filled days per site), sites.update (timezone),
-                     sites.goalNames + sites.setKeyGoal (5d),
+                     sites.goalNames + sites.setKeyGoal (5d), sites.revenueSettings, setRevenue,
+                     setStripeSecret, createApiKey (action) + internal storeApiKeyHash (5e),
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
-  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.live, stats.online (all behind requireSite)
+  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
+                     stats.online (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
+  payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
+  http.ts            Stripe webhook POST /stripe/{siteId} (Convex HTTP action, Stripe SDK signature check)
   migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
@@ -72,6 +78,9 @@ convex/
   lib/sources.ts     source/channel classifier (adapted from minilytics, MIT), sourceDomain for favicons
   lib/attribution.ts campaign validator, countSession / countCookielessVisit (session dims)
   lib/geo.ts         regionKey / cityKey ("US/CA", "US/CA/San Francisco") and parseGeoKey
+  lib/stripe.ts      parseStripeEvent: verified Stripe events -> payment / refund / checkout records
+  lib/revenue.ts     recordPayment, the four matching rules, credited session, late linking, rollup credit
+  lib/secret.ts      checkSecret (INGEST_SECRET), shared by ingest and payments
   *.test.ts          convex-test suites
 src/
   proxy.ts           clerkMiddleware; everything protected except /sign-in, /sign-up, /api/collect, /script.js
@@ -82,6 +91,7 @@ src/
   app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
   app/sign-in, sign-up   Clerk components inside <Suspense>
   app/api/collect/route.ts   ingest endpoint
+  app/api/payments/route.ts  payments API (Bearer key, real status codes)
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
   components/        ConvexClientProvider, AddWebsiteForm (+ Snippet), CopyButton, TimezoneSelect
   components/dashboard/   SiteHeader (favicon, switcher, Visitors/Settings tabs), SiteDashboard, SiteSwitcher,
@@ -91,10 +101,11 @@ src/
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
+  lib/payments.ts    bearerKey, parsePaymentBody
   lib/*.test.ts      unit tests, including script.test.ts, which runs the minified script in a fake browser
   script/script.js   hand-written ES5 tracking script (the source; see 5d decisions)
 public/script.js     minified copy, built by `npm run build:script` before dev and build; git-ignored
-                     (1.95 KB gzipped after 5d; limit 3 KB)
+                     (2.05 KB gzipped after 5e; limit 3 KB)
 docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
 ```
 
@@ -105,6 +116,7 @@ Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing
 Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing. On Convex dev: the backfill filled source/channel for old days and 5a sessions; a curl hit with `utm_source=test&utm_campaign=phase5b` showed under Campaigns (and as source "test", channel Referral), and one from chatgpt.com as ChatGPT under AI, both seen on the local dashboard.
 Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
 Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing. On Convex dev: curl hits stored a goal with props, an outbound click (query string dropped) and identify (email lower-cased on the visitor, `goals: 1` on the session); on `/test.html` in Chrome, `data-goal`, `analytics("goal")`, a stub-queued goal and goals fired before their pageview landed all showed in the Goals panel and Outbound links list.
+Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
 
@@ -193,6 +205,26 @@ Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing
 - **`/test.html`** (dev only) gained buttons for `data-goal`, `analytics("goal")`, `identify`, an outbound link and a queued goal.
 - **`deleteSiteData`** now also deletes `events`.
 
+### Phase 5e (revenue)
+
+- **Stripe webhook** is a Convex HTTP action at `{CONVEX_SITE_URL}/stripe/{siteId}` (Settings shows the exact URL), verified with the Stripe SDK's `Stripe.webhooks.constructEventAsync` and `createSubtleCryptoProvider()`. The SDK runs in Convex's default runtime and in convex-test, so no `"use node"` action. Unknown site or no secret → 404, bad signature → 400, everything else 200 (unused events too, so Stripe does not retry them).
+- **Events:** `checkout.session.completed` (mode `payment`, `payment_status: paid`), `checkout.session.async_payment_succeeded` (added: bank debits and other delayed methods complete there; same id, so never counted twice), `invoice.paid` (`renewal` on `subscription_cycle`; zero-amount trial invoices skipped) and `charge.refunded`. A subscription Checkout records no money, only a `checkouts` row. The parser (`lib/stripe.ts`) reads both invoice shapes: the subscription under `parent.subscription_details` (API 2025+) or the older top-level `subscription`.
+- **New `checkouts` table** (not in the brief): a subscription's invoices don't carry the Checkout Session, so this row links them to its metadata `va_vid` and its return-page claim. Payments also gained `checkoutSessionId`, `subscriptionId`, `paymentIntentId` and `invoiceId` with indexes, for late linking and refunds.
+- **`providerId`:** the Checkout Session id for one-off payments, the invoice id for invoices, `<charge id>#<total refunded>` for refunds. `charge.refunded` carries the running total, so each refund row is the difference from the ones already stored for that charge.
+- **Matching** (in order): metadata `va_vid` (or `client_reference_id` when it is a UUID; on invoices the subscription's metadata or its Checkout's), return-page claim, an earlier linked payment of the same customer, a visitor whose `identify()` email matches (most recently seen wins). A `va_vid` that is not a known visitor falls through to the next rule. `va_sid` is not used: the credited session always follows the brief's rule (last non-Direct session before the payment, else the last one).
+- **Late linking:** a claim, or a subscription Checkout, that arrives after its payment links a still-unattributed payment and moves its revenue from "Unattributed" to the session's keys. Refunds are not re-linked when their payment is linked later.
+- **Refunds** go to the session their payment was credited to (found by payment intent, then invoice), else through the matching rules.
+- **Rollups:** `dailyStats.revenueMinor` is net of refunds, `payments` counts payments, `refundsMinor` is positive; all on the payment's own day. The new `dailyDims.revenueMinor` is credited on the payment's day to the session's source, channel, UTM and ref tags, referrer, country, region and city. Unattributed payments go to source and channel "Unattributed". Lists keep keys that have revenue but no visitors.
+- **Currency:** one per site (default USD), set in Settings. Payments in another currency are stored and linked but left out of totals, dims and the visitor's `revenueMinor`, and the dashboard says how many. Changing the currency only affects new payments.
+- **Payments API:** `POST /api/payments` (Next route, as the brief says) with `Authorization: Bearer va_<48 hex>`. The route hashes the key with SHA-256 and calls `payments.recordApi` with `INGEST_SECRET`; the hash finds the site (`siteSecrets.by_apiKeyHash`). `amount` is an integer in cents, `ts` seconds or milliseconds, `refund: true` needs its own `id`. A `sessionId` without `visitorId` finds its visitor. Answers 200 (`duplicate: true` on a repeat), 400 with a message, 401, 413. The key is made in an action (mutations have no real randomness), shown once; a new key replaces the old.
+- **Payments are recorded whenever a secret or key is set**; `revenueSource` only decides what the dashboard shows. Switching to None keeps the secrets.
+- **Dashboard:** with revenue on, tiles Revenue (refunds and payment count in its tooltip), Conversion rate and Revenue / visitor; revenue bars on the chart on a hidden scale capped to the lower half, with a Revenue toggle; a green revenue amount at the end of the rows of Channels, Sources, Campaigns, Referrers, Countries, Regions and Cities (rounded to whole units, hidden when 0). A site set to None with a key goal gets the Conversion rate tile on that goal (5d's deferred tile).
+- **Conversion rate** = distinct visitors with a payment (or the key goal) in the range ÷ the Visitors tile, read from raw `payments`/`events` by `stats.conversions` (up to 10,000 rows, else "–"). Its % change follows the visitors rule ("–" across the tracking start).
+- **Script:** `analytics("attribution")` returns `{ va_vid, va_sid }` (only what is set; `{}` in cookieless mode or before the script loads, because the stub returns nothing). On load, `?session_id=cs_...` sends `{ t: "claim", cs }` with nothing else from the URL; not in cookieless mode. Claims are stored as `events` of type `claim` (name = the Checkout Session id, new index `by_site_type_name`).
+- **Settings → Revenue:** None / Stripe / Payments API and the currency; for Stripe the webhook URL, the events to select, a password field for the signing secret (only "saved" is ever shown back), the checkout snippet and "Copy AI prompt"; for the API the key, a curl example and its own AI prompt.
+- **`deleteSiteData`** also deletes `payments`, `checkouts` and `siteSecrets`.
+- **Dev data:** the dev `localhost` site is set to Stripe with a throwaway signing secret and holds two test payments (`cs_test_devmeta0001` $49, `cs_test_localclaim0001` $15).
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -236,7 +268,18 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5d on production, then 5e
+## Next: review 5e, ship it, check it on production
+
+Built on 2026-10-27, not committed. Owner:
+
+1. Review locally: `/sites/localhost` (revenue tiles, bars, revenue in Channels and Countries) and Settings → Revenue.
+2. Commit and push to `main` (deploys Convex and Vercel). The new indexes are on small tables, so no staged index is needed.
+3. "Done when" on production, in Stripe test mode: in a tracked site's Settings → Revenue choose Stripe, add the webhook URL in the Stripe Dashboard (test mode) with the four events, and paste its signing secret. Visit the site with `?utm_source=test`, start a Checkout Session there with `metadata: analytics("attribution")`, and pay with card 4242 4242 4242 4242. The payment shows under Sources → test, and `npx convex data payments --prod` shows `matchedBy: "metadata"`. (Or `stripe login` again and let Claude drive it with `stripe listen` against dev.)
+4. Add `attribution()` to each paying site's checkout (Settings → Revenue → Copy AI prompt), and paste the updated `docs/PRIVACY.md` text (the purchases paragraph) on sites with revenue.
+
+Then 5f.
+
+## Earlier: check 5d on production, then 5e
 
 Pushed to `main` on 2026-10-27 (commit `8b67da8`) and live. The dev `localhost` site holds test events (goals `phase5d-test`, `test-*`, `race-*`, `early-*`, `probe-*`, one outbound click to github.com, and an identified visitor `u_5d` / test@example.com). Owner:
 

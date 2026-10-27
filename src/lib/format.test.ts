@@ -3,9 +3,11 @@ import {
   cityLabel,
   countryFlag,
   countryName,
+  currencyDigits,
   formatChange,
   formatDate,
   formatDuration,
+  formatMoney,
   formatNumber,
   formatShare,
   outboundLabel,
@@ -93,5 +95,19 @@ describe("outboundLabel", () => {
     ["http://example.com/a/", "example.com/a/"],
   ])("%s -> %s", (url, label) => {
     expect(outboundLabel(url)).toBe(label);
+  });
+});
+
+describe("formatMoney", () => {
+  test("uses the currency's smallest unit", () => {
+    expect(formatMoney(123456, "USD")).toBe("$1,234.56");
+    expect(formatMoney(5000, "EUR")).toBe("€50.00");
+    expect(formatMoney(1500, "JPY")).toBe("¥1,500");
+    expect(currencyDigits("JPY")).toBe(0);
+  });
+
+  test("rounds to whole units for lists, and keeps the sign of refunds", () => {
+    expect(formatMoney(123456, "USD", true)).toBe("$1,235");
+    expect(formatMoney(-2500, "USD")).toBe("-$25.00");
   });
 });

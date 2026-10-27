@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Authenticated, AuthLoading, useMutation, useQuery } from "convex/react";
+import { Authenticated, AuthLoading, useAction, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { api } from "../../../convex/_generated/api";
 import { Snippet } from "@/components/AddWebsiteForm";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
-import { embedSnippet } from "@/lib/snippet";
+import { appOrigin, embedSnippet } from "@/lib/snippet";
 import SiteHeader from "@/components/dashboard/SiteHeader";
 
 export default function SiteSettings() {
@@ -67,6 +68,7 @@ function Settings({ domain }: { domain: string }) {
         <Snippet domain={site.domain} />
       </Section>
       <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />
+      <RevenueSection domain={site.domain} />
       <TimezoneSection domain={site.domain} timezone={site.timezone} />
       <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />
     </div>
@@ -229,6 +231,343 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
         )}
       </form>
     </Section>
+  );
+}
+
+const CHECKOUT_SNIPPET = `// In the browser, when the visitor starts checkout: send the ids to your server
+const attribution = window.analytics?.("attribution") ?? {}; // { va_vid, va_sid }
+
+// On your server, where you create the Stripe Checkout Session
+const session = await stripe.checkout.sessions.create({
+  // ...your line_items and mode
+  success_url: "https://example.com/thanks?session_id={CHECKOUT_SESSION_ID}",
+  metadata: attribution,
+  // Subscriptions only: the invoices read the subscription's metadata
+  subscription_data: { metadata: attribution },
+});`;
+
+function apiSnippet(origin: string): string {
+  return `curl ${origin}/api/payments \\
+  -H "Authorization: Bearer $ANALYTICS_PAYMENTS_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"id":"order_1001","amount":4900,"currency":"USD","email":"jo@example.com","visitorId":"<va_vid>"}'
+
+# amount is in cents; add "refund": true (with the refund's own id) for a refund.
+# Optional: customerId, sessionId, ts (Unix time).`;
+}
+
+/** A prompt for a coding agent in the site's own codebase: pass the visitor ids into checkout. */
+function revenuePrompt(domain: string, source: "stripe" | "api", origin: string): string {
+  const common = `My self-hosted analytics script is on every page of this site (${domain}):
+${embedSnippet(domain)}
+
+It defines window.analytics("attribution"), which returns { va_vid, va_sid }: the visitor and session ids from its first-party cookies (an empty object if the script has not loaded or cookies are off). In TypeScript, declare \`window.analytics\` as \`(...args: unknown[]) => any\`.`;
+  if (source === "stripe") {
+    return `Link Stripe payments on this site to my analytics, so I can see which sources bring revenue.
+
+${common}
+
+1. Find every place this codebase creates a Stripe Checkout Session (stripe.checkout.sessions.create, or a Payment Link / pricing-table flow).
+2. In the browser, when the visitor starts checkout, read window.analytics?.("attribution") ?? {} and send it to the server along with the checkout request.
+3. On the server, add it to the Checkout Session as metadata: { va_vid, va_sid } (strings, only the two keys, ignore anything else the client sent). For subscriptions (mode: "subscription"), also set subscription_data.metadata to the same object, so renewals are linked too.
+4. Make sure success_url includes ?session_id={CHECKOUT_SESSION_ID} and that the success page loads the analytics script; it sends the id back as a fallback.
+5. If customers sign in, make sure window.analytics("identify", { id, email, name }) runs after sign-in, so payments can also be matched by email.
+
+Do not change prices, products or the payment flow otherwise. When you are done, list each file you changed.`;
+  }
+  return `Report payments on this site to my analytics, so I can see which sources bring revenue.
+
+${common}
+
+The analytics app has a payments API: POST ${origin}/api/payments with the header Authorization: Bearer <key>, where the key is in the environment variable ANALYTICS_PAYMENTS_KEY (server-side only, never sent to the browser). The JSON body is:
+{ "id": string (unique per payment), "amount": integer in the smallest currency unit (cents), "currency": "USD", "email"?: string, "customerId"?: string, "visitorId"?: va_vid, "sessionId"?: va_sid, "ts"?: Unix time, "refund"?: true }
+It answers 200 (also for a repeated id, which is not counted twice), 400 with { error } for a bad body, and 401 for a wrong key.
+
+1. Find where this codebase learns that a payment succeeded (a payment provider's webhook handler, an order-paid hook, ...).
+2. When the visitor starts checkout, read window.analytics?.("attribution") ?? {} in the browser and store va_vid and va_sid with the order (or pass them through the provider's metadata), so the payment handler has them.
+3. In the payment handler, POST the payment to the API with those ids, the customer's email and the provider's payment id. Send refunds the same way with "refund": true and the refund's own id. Never let a failure of this call break the payment handler: log it and move on.
+
+Add ANALYTICS_PAYMENTS_KEY to the environment example file without a value. When you are done, list each file you changed.`;
+}
+
+const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "NZD", "CHF", "SEK", "NOK", "DKK", "JPY", "INR", "BRL", "MXN", "SGD"];
+
+function RevenueSection({ domain }: { domain: string }) {
+  const settings = useQuery(api.sites.revenueSettings, { domain });
+  if (settings === undefined) {
+    return (
+      <Section id="revenue" title="Revenue" description="Loading…">
+        <div className="h-10 animate-pulse rounded bg-line/50" />
+      </Section>
+    );
+  }
+  return <RevenueForm key={`${settings.revenueSource}${settings.currency}`} domain={domain} settings={settings} />;
+}
+
+type RevenueSettings = FunctionReturnType<typeof api.sites.revenueSettings>;
+
+function RevenueForm({ domain, settings }: { domain: string; settings: RevenueSettings }) {
+  const setRevenue = useMutation(api.sites.setRevenue);
+  const [source, setSource] = useState(settings.revenueSource);
+  const [currency, setCurrency] = useState(settings.currency);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
+  const changed = source !== settings.revenueSource || currency !== settings.currency;
+  const currencies = CURRENCIES.includes(settings.currency) ? CURRENCIES : [settings.currency, ...CURRENCIES];
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setStatus(null);
+    try {
+      await setRevenue({ domain, revenueSource: source, currency });
+      setStatus({ ok: true, text: "Saved" });
+    } catch (err) {
+      setStatus({ ok: false, text: err instanceof ConvexError ? String(err.data) : "Could not save" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Section
+      id="revenue"
+      title="Revenue"
+      description={
+        <>
+          Link payments to the visitors and sources that brought them. With None, the dashboard
+          has no revenue and uses the key goal as its conversion. Payments in another currency
+          are stored but left out of the totals.
+        </>
+      }
+    >
+      <form onSubmit={save} className="flex flex-col gap-3 text-sm">
+        <div role="radiogroup" aria-label="Revenue source" className="flex flex-wrap gap-2">
+          {(
+            [
+              ["none", "None"],
+              ["stripe", "Stripe"],
+              ["api", "Payments API"],
+            ] as const
+          ).map(([value, label]) => (
+            <label
+              key={value}
+              className={`cursor-pointer rounded-md border px-3 py-1.5 ${
+                source === value ? "border-accent text-strong" : "border-line text-muted hover:text-strong"
+              }`}
+            >
+              <input
+                type="radio"
+                name="revenue-source"
+                value={value}
+                checked={source === value}
+                onChange={() => {
+                  setSource(value);
+                  setStatus(null);
+                }}
+                className="sr-only"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label htmlFor="currency" className="text-muted">
+            Currency
+          </label>
+          <select
+            id="currency"
+            value={currency}
+            onChange={(e) => {
+              setCurrency(e.target.value);
+              setStatus(null);
+            }}
+            className="rounded-md border border-line bg-panel px-3 py-2"
+          >
+            {currencies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={pending || !changed}
+            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
+          {status && <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>}
+        </div>
+      </form>
+      {settings.revenueSource === "stripe" && <StripeSetup domain={domain} settings={settings} />}
+      {settings.revenueSource === "api" && <ApiSetup domain={domain} settings={settings} />}
+    </Section>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <h3 className="text-strong">
+        {n}. {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function CodeBox({ text, extra }: { text: string; extra?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-line bg-panel p-3">
+      <div className="flex justify-end gap-2">
+        {extra}
+        <CopyButton text={text} />
+      </div>
+      <pre className="overflow-x-auto font-mono text-xs leading-5">{text}</pre>
+    </div>
+  );
+}
+
+function StripeSetup({ domain, settings }: { domain: string; settings: RevenueSettings }) {
+  const setSecret = useMutation(api.sites.setStripeSecret);
+  const [secret, setSecretValue] = useState("");
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setStatus(null);
+    try {
+      await setSecret({ domain, secret });
+      setSecretValue("");
+      setStatus({ ok: true, text: "Saved" });
+    } catch (err) {
+      setStatus({ ok: false, text: err instanceof ConvexError ? String(err.data) : "Could not save the secret" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-5 border-t border-line pt-4">
+      <Step n={1} title="Add a webhook endpoint in Stripe">
+        <p className="text-muted">
+          In Stripe, open Developers → Webhooks → Add destination, choose your account&apos;s events,
+          paste this URL and select the events below. Do it in test mode first to try it.
+        </p>
+        <div className="flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2">
+          <code className="min-w-0 flex-1 truncate font-mono text-xs">{settings.webhookUrl}</code>
+          <CopyButton text={settings.webhookUrl} />
+        </div>
+        <ul className="flex flex-wrap gap-2">
+          {settings.webhookEvents.map((e) => (
+            <li key={e} className="rounded bg-panel px-2 py-0.5 font-mono text-xs">
+              {e}
+            </li>
+          ))}
+        </ul>
+      </Step>
+      <Step n={2} title="Paste its signing secret">
+        <form onSubmit={save} className="flex flex-wrap items-center gap-3">
+          <input
+            type="password"
+            value={secret}
+            onChange={(e) => {
+              setSecretValue(e.target.value);
+              setStatus(null);
+            }}
+            placeholder={settings.hasWebhookSecret ? "whsec_… (saved; paste to replace)" : "whsec_…"}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Stripe webhook signing secret"
+            className="min-w-64 flex-1 rounded-md border border-line bg-panel px-3 py-2 font-mono"
+          />
+          <button
+            type="submit"
+            disabled={pending || !secret.trim()}
+            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
+          {status ? (
+            <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>
+          ) : (
+            <span className={settings.hasWebhookSecret ? "text-up" : "text-muted"}>
+              {settings.hasWebhookSecret ? "Secret saved" : "Not set: payments are not recorded yet"}
+            </span>
+          )}
+        </form>
+      </Step>
+      <Step n={3} title="Pass the visitor into checkout">
+        <p className="text-muted">
+          Put the ids from <code className="font-mono">analytics(&quot;attribution&quot;)</code> into the
+          Checkout Session&apos;s metadata. Without them, payments are still linked from the success page (
+          <code className="font-mono">?session_id=&#123;CHECKOUT_SESSION_ID&#125;</code>), an earlier payment of
+          the same customer, or an email from <code className="font-mono">identify</code>.
+        </p>
+        <CodeBox
+          text={CHECKOUT_SNIPPET}
+          extra={<CopyButton text={revenuePrompt(domain, "stripe", appOrigin())} label="Copy AI prompt" />}
+        />
+      </Step>
+    </div>
+  );
+}
+
+function ApiSetup({ domain, settings }: { domain: string; settings: RevenueSettings }) {
+  const createKey = useAction(api.sites.createApiKey);
+  const [key, setKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const origin = appOrigin();
+
+  async function create() {
+    setPending(true);
+    setError(null);
+    try {
+      setKey(await createKey({ domain }));
+    } catch (err) {
+      setError(err instanceof ConvexError ? String(err.data) : "Could not create a key");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-5 border-t border-line pt-4">
+      <Step n={1} title="Create an API key">
+        <p className="text-muted">
+          The key is shown once; only its hash is stored. A new key replaces the old one at once.
+          Keep it on your server.
+        </p>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={create}
+            disabled={pending}
+            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+          >
+            {pending ? "Creating…" : settings.hasApiKey || key ? "Replace key" : "Create key"}
+          </button>
+          {!key && settings.hasApiKey && <span className="text-up">A key is set</span>}
+          {error && <span className="text-down">{error}</span>}
+        </div>
+        {key && (
+          <div className="flex items-center gap-2 rounded-md border border-up/40 bg-panel px-3 py-2">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs">{key}</code>
+            <CopyButton text={key} />
+          </div>
+        )}
+      </Step>
+      <Step n={2} title="Send each payment from your server">
+        <CodeBox
+          text={apiSnippet(origin)}
+          extra={<CopyButton text={revenuePrompt(domain, "api", origin)} label="Copy AI prompt" />}
+        />
+      </Step>
+    </div>
   );
 }
 

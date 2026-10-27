@@ -117,3 +117,32 @@ export function truncateMiddle(s: string, max: number): string {
   const tail = Math.floor(keep / 2);
   return `${s.slice(0, keep - tail)}…${s.slice(s.length - tail)}`;
 }
+
+const moneyFormats = new Map<string, Intl.NumberFormat>();
+
+function moneyFormat(currency: string, whole: boolean): Intl.NumberFormat {
+  const key = `${currency}${whole ? ":whole" : ""}`;
+  let f = moneyFormats.get(key);
+  if (f === undefined) {
+    f = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      ...(whole ? { maximumFractionDigits: 0, minimumFractionDigits: 0 } : {}),
+    });
+    moneyFormats.set(key, f);
+  }
+  return f;
+}
+
+/** Digits after the decimal point in a currency's smallest unit: 2 for USD, 0 for JPY. */
+export function currencyDigits(currency: string): number {
+  return moneyFormat(currency, false).resolvedOptions().maximumFractionDigits ?? 2;
+}
+
+/**
+ * An amount in the smallest unit (cents, as Stripe sends it) as money:
+ * (123456, "USD") -> "$1,234.56". `whole` rounds to whole units for lists ("$1,235").
+ */
+export function formatMoney(minor: number, currency: string, whole = false): string {
+  return moneyFormat(currency, whole).format(minor / 10 ** currencyDigits(currency));
+}

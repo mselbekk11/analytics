@@ -106,6 +106,8 @@ describe("access control", () => {
       timezone: "America/Los_Angeles",
       trackingStartedAt: null,
       keyGoal: null,
+      revenueSource: "none",
+      currency: "USD",
     });
     expect(await t.withIdentity(STRANGER).query(api.sites.get, { domain: "picai.so" })).toBeNull();
     expect(await t.withIdentity(STRANGER).query(api.sites.list, {})).toEqual([]);
@@ -133,7 +135,14 @@ describe("stats.summary", () => {
     });
 
     const s = await t.withIdentity(OWNER).query(api.stats.summary, range);
-    const noSessions = { sessions: 0, bounceRate: null, sessionTimeMs: null };
+    const noSessions = {
+      sessions: 0,
+      bounceRate: null,
+      sessionTimeMs: null,
+      revenueMinor: 0,
+      payments: 0,
+      refundsMinor: 0,
+    };
     expect(s.current).toEqual({ visitors: 3, pageviews: 4, timeOnPageMs: 30_000, ...noSessions });
     expect(s.previous).toEqual({ visitors: 1, pageviews: 1, timeOnPageMs: null, ...noSessions });
     expect(s).toMatchObject({ comparable: true, visitorsApprox: false });
@@ -166,10 +175,10 @@ describe("stats.timeseries", () => {
     await visit(t, "2026-10-20T17:00:00Z"); // after the range
 
     expect(await t.withIdentity(OWNER).query(api.stats.timeseries, range)).toEqual([
-      { date: "2026-10-10", pageviews: 1, visitors: 1 },
-      { date: "2026-10-11", pageviews: 0, visitors: 0 },
-      { date: "2026-10-12", pageviews: 2, visitors: 1 },
-      { date: "2026-10-13", pageviews: 0, visitors: 0 },
+      { date: "2026-10-10", pageviews: 1, visitors: 1, revenueMinor: 0 },
+      { date: "2026-10-11", pageviews: 0, visitors: 0, revenueMinor: 0 },
+      { date: "2026-10-12", pageviews: 2, visitors: 1, revenueMinor: 0 },
+      { date: "2026-10-13", pageviews: 0, visitors: 0, revenueMinor: 0 },
     ]);
   });
 });
@@ -188,9 +197,9 @@ describe("stats.breakdown", () => {
       .withIdentity(OWNER)
       .query(api.stats.breakdown, { ...range, dim: "page" });
     expect(b.rows).toEqual([
-      { key: "/pricing", pageviews: 3, visitors: 1, sessions: 0, events: 0 },
-      { key: "/", pageviews: 2, visitors: 2, sessions: 0, events: 0 },
-      { key: "/blog", pageviews: 1, visitors: 0, sessions: 0, events: 0 },
+      { key: "/pricing", pageviews: 3, visitors: 1, sessions: 0, events: 0, revenueMinor: 0 },
+      { key: "/", pageviews: 2, visitors: 2, sessions: 0, events: 0, revenueMinor: 0 },
+      { key: "/blog", pageviews: 1, visitors: 0, sessions: 0, events: 0, revenueMinor: 0 },
     ]);
     expect(b.totalPageviews).toBe(6);
     expect(b.totalVisitors).toBe(3);

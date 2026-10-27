@@ -256,3 +256,23 @@ describe("parsePayload: events", () => {
     expect(parse({ t: "identify" })).toBeNull();
   });
 });
+
+describe("parsePayload: claim", () => {
+  const claim = (cs: unknown) => parsePayload(JSON.stringify({ t: "claim", site: "picai.so", pvId: "pv-1", cs }));
+
+  test("accepts a Checkout Session id", () => {
+    expect(claim("cs_test_a1B2c3D4e5f6")).toEqual({
+      t: "claim",
+      site: "picai.so",
+      pvId: "pv-1",
+      checkoutSessionId: "cs_test_a1B2c3D4e5f6",
+    });
+  });
+
+  test("rejects anything else", () => {
+    expect(claim("pi_123456789012")).toBeNull();
+    expect(claim("cs_short")).toBeNull();
+    expect(claim("cs_test_abc?x=1")).toBeNull();
+    expect(claim(42)).toBeNull();
+  });
+});

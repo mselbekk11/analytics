@@ -12,6 +12,8 @@ export type BreakdownRow = {
   share: number;
   /** Leading icon or flag in share lists; a favicon after the count in count lists */
   icon?: ReactNode;
+  /** Formatted revenue credited to this key, shown at the end of the row */
+  revenue?: string;
 };
 
 const PAGE_SIZE = 10;
@@ -85,6 +87,7 @@ function CountRow({ row }: { row: BreakdownRow }) {
       <span className="w-10 shrink-0 font-medium text-accent tabular-nums text-sm">{row.value}</span>
       {row.icon && <span className="flex size-4 shrink-0 items-center justify-center">{row.icon}</span>}
       <span className="min-w-0 truncate text-sm">{row.label}</span>
+      <Revenue row={row} />
     </li>
   );
 }
@@ -102,6 +105,16 @@ function ShareRow({ row }: { row: BreakdownRow }) {
           {row.value} <span className="text-strong/60">{row.label}</span>
         </span>
       </div>
+      <Revenue row={row} />
     </li>
+  );
+}
+
+function Revenue({ row }: { row: BreakdownRow }) {
+  if (row.revenue === undefined) return null;
+  return (
+    <span className="ml-auto shrink-0 pl-2 text-sm text-up tabular-nums" title="Revenue credited to this row">
+      {row.revenue}
+    </span>
   );
 }

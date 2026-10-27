@@ -71,7 +71,15 @@ export type IdentifyPayload = {
   name?: string;
 };
 
-export type EventPayload = GoalPayload | OutboundPayload | IdentifyPayload;
+/** A Stripe Checkout success page: the `session_id=cs_...` from its URL (5e). */
+export type ClaimPayload = {
+  t: "claim";
+  site: string;
+  pvId: string;
+  checkoutSessionId: string;
+};
+
+export type EventPayload = GoalPayload | OutboundPayload | IdentifyPayload | ClaimPayload;
 
 export type Payload = PageviewPayload | PingPayload | DurationPayload | EventPayload;
 
@@ -84,6 +92,7 @@ export const MAX_GOAL_NAME = 100;
 export const MAX_PROPS = 10;
 export const MAX_PROP_VALUE = 200;
 
+const CHECKOUT_SESSION = /^cs_[A-Za-z0-9_]{8,250}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function str(value: unknown, max: number, min = 0): value is string {
@@ -161,6 +170,11 @@ export function parsePayload(body: string): Payload | null {
     };
     if (Object.keys(user).length === 0) return null;
     return { t: "identify", site: d.site, pvId: d.pvId, ...user };
+  }
+
+  if (d.t === "claim") {
+    if (!str(d.cs, 255) || !CHECKOUT_SESSION.test(d.cs)) return null;
+    return { t: "claim", site: d.site, pvId: d.pvId, checkoutSessionId: d.cs };
   }
 
   if (d.t === "dur") {

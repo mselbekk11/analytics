@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_attribution from "../lib/attribution.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -16,10 +17,14 @@ import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
 import type * as lib_geo from "../lib/geo.js";
 import type * as lib_ranges from "../lib/ranges.js";
+import type * as lib_revenue from "../lib/revenue.js";
 import type * as lib_rollups from "../lib/rollups.js";
+import type * as lib_secret from "../lib/secret.js";
 import type * as lib_sources from "../lib/sources.js";
+import type * as lib_stripe from "../lib/stripe.js";
 import type * as me from "../me.js";
 import type * as migrations from "../migrations.js";
+import type * as payments from "../payments.js";
 import type * as sites from "../sites.js";
 import type * as stats from "../stats.js";
 
@@ -30,6 +35,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  http: typeof http;
   ingest: typeof ingest;
   "lib/attribution": typeof lib_attribution;
   "lib/auth": typeof lib_auth;
@@ -38,10 +44,14 @@ declare const fullApi: ApiFromModules<{
   "lib/domain": typeof lib_domain;
   "lib/geo": typeof lib_geo;
   "lib/ranges": typeof lib_ranges;
+  "lib/revenue": typeof lib_revenue;
   "lib/rollups": typeof lib_rollups;
+  "lib/secret": typeof lib_secret;
   "lib/sources": typeof lib_sources;
+  "lib/stripe": typeof lib_stripe;
   me: typeof me;
   migrations: typeof migrations;
+  payments: typeof payments;
   sites: typeof sites;
   stats: typeof stats;
 }>;

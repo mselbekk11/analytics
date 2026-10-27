@@ -15,6 +15,9 @@ export default defineSchema({
     sourcesBackfilled: v.optional(v.boolean()),
     // The goal a site without revenue converts on, e.g. "signup" (5d)
     keyGoal: v.optional(v.string()),
+    // Revenue (5e): where payments come from (missing means "none") and the one currency totals use
+    revenueSource: v.optional(v.union(v.literal("none"), v.literal("stripe"), v.literal("api"))),
+    currency: v.optional(v.string()), // ISO 4217, "USD" when missing
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),
@@ -50,6 +53,10 @@ export default defineSchema({
     sessions: v.optional(v.number()),
     bounces: v.optional(v.number()), // sessions with one pageview and no goal
     sessionEngagedMs: v.optional(v.number()),
+    // From 5e, on each payment's own day, in the site's currency only
+    revenueMinor: v.optional(v.number()), // net of refunds
+    payments: v.optional(v.number()), // count, refunds not included
+    refundsMinor: v.optional(v.number()), // refunded amount, positive
   }).index("by_site_date", ["siteId", "date"]),
 
   // One row per site, day, dimension and value: the lists (see lib/dims.ts)
@@ -62,6 +69,7 @@ export default defineSchema({
     visitors: v.number(),
     sessions: v.optional(v.number()), // session dims only, from 5b
     events: v.optional(v.number()), // goal completions and outbound clicks, from 5d
+    revenueMinor: v.optional(v.number()), // net revenue credited to this key, from 5e
   })
     .index("by_site_dim_date", ["siteId", "dim", "date"])
     .index("by_site_date_dim_key", ["siteId", "date", "dim", "key"]),
@@ -131,8 +139,13 @@ export default defineSchema({
     siteId: v.id("sites"),
     ts: v.number(),
     date: v.string(), // site-local day of the event
-    type: v.union(v.literal("goal"), v.literal("outbound"), v.literal("identify")),
-    name: v.string(), // goal name, outbound origin + path, or "identify"
+    type: v.union(
+      v.literal("goal"),
+      v.literal("outbound"),
+      v.literal("identify"),
+      v.literal("claim"), // a Stripe Checkout return page (5e)
+    ),
+    name: v.string(), // goal name, outbound origin + path, "identify", or the Checkout Session id
     path: v.string(), // the page it happened on
     pvId: v.string(),
     // From the pageview; both missing for cookieless pageviews
@@ -142,5 +155,67 @@ export default defineSchema({
   })
     .index("by_site_ts", ["siteId", "ts"])
     .index("by_site_visitor_ts", ["siteId", "visitorId", "ts"])
-    .index("by_pvId_name", ["pvId", "name"]),
+    .index("by_pvId_name", ["pvId", "name"])
+    .index("by_site_type_name", ["siteId", "type", "name"]),
+
+  // Payments and refunds from Stripe or the payments API (5e), each linked to a visitor
+  // and credited to one of their sessions when a matching rule finds one
+  payments: defineTable({
+    siteId: v.id("sites"),
+    provider: v.union(v.literal("stripe"), v.literal("api")),
+    providerId: v.string(), // Checkout Session or invoice id, "<charge id>#<total refunded>", or the API's id
+    ts: v.number(),
+    date: v.string(), // site-local day of the payment
+    kind: v.union(v.literal("payment"), v.literal("refund")),
+    amountMinor: v.number(), // smallest currency unit; refunds are negative
+    currency: v.string(), // upper case; other than the site's means left out of totals
+    renewal: v.boolean(),
+    customerId: v.optional(v.string()),
+    email: v.optional(v.string()),
+    visitorId: v.optional(v.string()),
+    sessionId: v.optional(v.string()), // the credited session
+    matchedBy: v.optional(
+      v.union(
+        v.literal("metadata"),
+        v.literal("return_page"),
+        v.literal("customer"),
+        v.literal("email"),
+      ),
+    ),
+    // Stripe ids used to link a payment later (return page, subscription) and refunds to payments
+    checkoutSessionId: v.optional(v.string()),
+    subscriptionId: v.optional(v.string()),
+    paymentIntentId: v.optional(v.string()),
+    invoiceId: v.optional(v.string()),
+  })
+    .index("by_site_ts", ["siteId", "ts"])
+    .index("by_site_provider_id", ["siteId", "provider", "providerId"])
+    .index("by_site_customer", ["siteId", "customerId"])
+    .index("by_site_visitor", ["siteId", "visitorId"])
+    .index("by_site_checkout", ["siteId", "checkoutSessionId"])
+    .index("by_site_subscription", ["siteId", "subscriptionId"])
+    .index("by_site_paymentIntent", ["siteId", "paymentIntentId"])
+    .index("by_site_invoice", ["siteId", "invoiceId"]),
+
+  // Completed Stripe Checkout Sessions. A subscription's invoices don't carry the
+  // Checkout Session, so this links them to its metadata and return-page claim.
+  checkouts: defineTable({
+    siteId: v.id("sites"),
+    checkoutSessionId: v.string(),
+    ts: v.number(),
+    customerId: v.optional(v.string()),
+    subscriptionId: v.optional(v.string()),
+    visitorId: v.optional(v.string()), // va_vid from metadata or client_reference_id
+  })
+    .index("by_site_checkout", ["siteId", "checkoutSessionId"])
+    .index("by_site_subscription", ["siteId", "subscriptionId"]),
+
+  // Never returned by a public query
+  siteSecrets: defineTable({
+    siteId: v.id("sites"),
+    stripeWebhookSecret: v.optional(v.string()),
+    apiKeyHash: v.optional(v.string()), // SHA-256 of the payments API key, hex
+  })
+    .index("by_site", ["siteId"])
+    .index("by_apiKeyHash", ["apiKeyHash"]),
 });

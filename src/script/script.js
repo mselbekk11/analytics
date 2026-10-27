@@ -239,6 +239,15 @@
     function api(cmd, a, b) {
       if (cmd === "goal" && a) track({ t: "goal", name: "" + a, p: b });
       if (cmd === "identify" && a && !cookieless) track({ t: "identify", u: { id: a.id, email: a.email, name: a.name } });
+      // The ids to put in Stripe Checkout metadata; empty in cookieless mode
+      if (cmd === "attribution") {
+        var ids = {};
+        var vid = !cookieless && readCookie(VID);
+        var sid = vid && readCookie(SID);
+        if (vid) ids.va_vid = vid;
+        if (sid) ids.va_sid = sid;
+        return ids;
+      }
     }
 
     // Capture phase, so links that stop propagation still count. Left and middle clicks only.
@@ -261,6 +270,11 @@
     }, 60000);
 
     pageview(true);
+
+    // Back from Stripe Checkout: send the Checkout Session id (nothing else from the URL),
+    // so the payment can be linked even without metadata
+    var checkout = /[?&]session_id=(cs_\w+)/.exec(loc.search);
+    if (checkout && !cookieless) track({ t: "claim", cs: checkout[1] });
 
     // Replay calls queued by the stub before the script loaded. An object here is
     // another tool's `analytics` (Segment's, say), so leave it alone.

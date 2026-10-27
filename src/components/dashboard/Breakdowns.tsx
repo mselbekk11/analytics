@@ -36,6 +36,7 @@ import {
   countryFlag,
   countryName,
   deviceLabel,
+  formatMoney,
   formatNumber,
   formatShare,
   outboundLabel,
@@ -45,7 +46,12 @@ import {
 import BreakdownList, { type BreakdownRow } from "./BreakdownList";
 import GoalsPanel from "./GoalsPanel";
 
-type Props = { domain: string; range: DateRange };
+type Props = {
+  domain: string;
+  range: DateRange;
+  /** The site's currency when it takes payments; adds a revenue column to source and location lists */
+  currency: string | null;
+};
 
 type Tab = { dim: Dim; label: string };
 
@@ -83,6 +89,9 @@ const CAMPAIGN_DIMS: Tab[] = [
   { dim: "ref", label: "ref / via" },
 ];
 
+// Lists that are credited revenue: a payment's session counts on these keys
+const REVENUE_DIMS = new Set<Dim>([...SOURCE_TABS, ...CAMPAIGN_DIMS, ...COUNTRY_TABS].map((t) => t.dim));
+
 // Lists that show a count rather than a share bar
 const COUNT_DIMS = new Set<Dim>([
   ...[...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS].map((t) => t.dim),
@@ -94,30 +103,30 @@ const COUNT_DIMS = new Set<Dim>([
  * pages (Pages, Entry, Exit), devices (Devices, OS) + Browsers, and countries
  * (Countries, Regions, Cities). Goals and Outbound links sit below, two columns each.
  */
-export default function Breakdowns({ domain, range }: Props) {
+export default function Breakdowns({ domain, range, currency }: Props) {
   // Remount the lists when the range changes, so paging starts on page 1
   const k = `${range.from}_${range.to}`;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Tabbed {...{ domain, range }} tabs={SOURCE_TABS} title="Sources" />
-      <Tabbed {...{ domain, range }} tabs={PAGE_TABS} title="Pages" />
+      <Tabbed {...{ domain, range, currency }} tabs={SOURCE_TABS} title="Sources" />
+      <Tabbed {...{ domain, range, currency }} tabs={PAGE_TABS} title="Pages" />
       <div className="flex flex-col gap-4">
-        <Tabbed {...{ domain, range }} tabs={DEVICE_TABS} title="Devices" />
-        <Breakdown key={`browser${k}`} {...{ domain, range }} dim="browser" title="Browsers" />
+        <Tabbed {...{ domain, range, currency }} tabs={DEVICE_TABS} title="Devices" />
+        <Breakdown key={`browser${k}`} {...{ domain, range, currency }} dim="browser" title="Browsers" />
       </div>
-      <Tabbed {...{ domain, range }} tabs={COUNTRY_TABS} title="Countries" />
+      <Tabbed {...{ domain, range, currency }} tabs={COUNTRY_TABS} title="Countries" />
       <div className="sm:col-span-2">
-        <GoalsPanel key={`goal${k}`} {...{ domain, range }} />
+        <GoalsPanel key={`goal${k}`} {...{ domain, range, currency }} />
       </div>
       <div className="sm:col-span-2">
-        <Breakdown key={`outbound${k}`} {...{ domain, range }} dim="outbound" title="Outbound links" />
+        <Breakdown key={`outbound${k}`} {...{ domain, range, currency }} dim="outbound" title="Outbound links" />
       </div>
     </div>
   );
 }
 
 /** A list with tabs in its header; the tab is kept when the range changes. */
-function Tabbed({ domain, range, tabs, title }: Props & { tabs: Tab[]; title: string }) {
+function Tabbed({ domain, range, currency, tabs, title }: Props & { tabs: Tab[]; title: string }) {
   const [tab, setTab] = useState(tabs[0].dim);
   const [campaignDim, setCampaignDim] = useState<Dim>("utm_campaign");
   const isCampaign = CAMPAIGN_DIMS.some((t) => t.dim === tab);
@@ -161,7 +170,7 @@ function Tabbed({ domain, range, tabs, title }: Props & { tabs: Tab[]; title: st
   return (
     <Breakdown
       key={`${dim}${range.from}_${range.to}`}
-      {...{ domain, range, dim, header }}
+      {...{ domain, range, currency, dim, header }}
       title={tabs.find((t) => t.dim === tab)?.label ?? title}
     />
   );
@@ -170,6 +179,7 @@ function Tabbed({ domain, range, tabs, title }: Props & { tabs: Tab[]; title: st
 function Breakdown({
   domain,
   range,
+  currency,
   dim,
   title,
   header,
@@ -190,6 +200,7 @@ function Breakdown({
       }[metric]
     : 0;
 
+  const showRevenue = currency !== null && REVENUE_DIMS.has(dim);
   const rows: BreakdownRow[] | undefined = data?.rows.map((r) => {
     const share = total === 0 ? 0 : r[metric] / total;
     return {
@@ -198,6 +209,7 @@ function Breakdown({
       icon: rowIcon(dim, r.key),
       value: variant === "count" ? formatNumber(r[metric]) : formatShare(share),
       share,
+      ...(showRevenue && r.revenueMinor !== 0 ? { revenue: formatMoney(r.revenueMinor, currency, true) } : {}),
     };
   });
 

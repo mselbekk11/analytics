@@ -1,11 +1,13 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
 import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
 import { eachDate, presetRange } from "./lib/ranges";
+import { siteCurrency } from "./lib/revenue";
+import { STRIPE_EVENTS } from "./lib/stripe";
 
 const MAX_SITES = 500;
 
@@ -41,12 +43,15 @@ export const create = mutation({
   },
 });
 
+const revenueSourceValidator = v.union(v.literal("none"), v.literal("stripe"), v.literal("api"));
+
 const siteSummary = v.object({ domain: v.string(), timezone: v.string() });
 
 /**
  * The signed-in user's site with this domain, or null if it is missing or not theirs.
  * `trackingStartedAt` is when the first hit with a visitor id arrived (null until then,
  * and for cookieless sites). `keyGoal` is the goal the site converts on, if one is set.
+ * `revenueSource` is "none" unless the site takes payments from Stripe or the API.
  */
 export const get = query({
   args: { domain: v.string() },
@@ -57,6 +62,8 @@ export const get = query({
       timezone: v.string(),
       trackingStartedAt: v.union(v.null(), v.number()),
       keyGoal: v.union(v.null(), v.string()),
+      revenueSource: revenueSourceValidator,
+      currency: v.string(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -67,6 +74,8 @@ export const get = query({
       timezone: site.timezone,
       trackingStartedAt: site.trackingStartedAt ?? null,
       keyGoal: site.keyGoal ?? null,
+      revenueSource: site.revenueSource ?? "none",
+      currency: siteCurrency(site),
     };
   },
 });
@@ -189,6 +198,118 @@ export const setKeyGoal = mutation({
 });
 
 /**
+ * The Revenue section of Settings. Secrets never leave the server: only whether each
+ * one is set. The webhook URL is this deployment's HTTP actions URL plus the site id.
+ */
+export const revenueSettings = query({
+  args: { domain: v.string() },
+  returns: v.object({
+    revenueSource: revenueSourceValidator,
+    currency: v.string(),
+    webhookUrl: v.string(),
+    webhookEvents: v.array(v.string()),
+    hasWebhookSecret: v.boolean(),
+    hasApiKey: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const secrets = await ctx.db
+      .query("siteSecrets")
+      .withIndex("by_site", (q) => q.eq("siteId", site._id))
+      .unique();
+    return {
+      revenueSource: site.revenueSource ?? "none",
+      currency: siteCurrency(site),
+      webhookUrl: `${process.env.CONVEX_SITE_URL}/stripe/${site._id}`,
+      webhookEvents: [...STRIPE_EVENTS],
+      hasWebhookSecret: secrets?.stripeWebhookSecret !== undefined,
+      hasApiKey: secrets?.apiKeyHash !== undefined,
+    };
+  },
+});
+
+/**
+ * Where a site's payments come from, and the one currency its totals use. A change of
+ * currency applies to new payments; ones already counted stay in the totals.
+ */
+export const setRevenue = mutation({
+  args: { domain: v.string(), revenueSource: revenueSourceValidator, currency: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const currency = args.currency.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      throw new ConvexError("Currency must be a three-letter code such as USD");
+    }
+    await ctx.db.patch("sites", site._id, { revenueSource: args.revenueSource, currency });
+    return null;
+  },
+});
+
+async function upsertSecrets(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  fields: { stripeWebhookSecret?: string; apiKeyHash?: string },
+): Promise<void> {
+  const secrets = await ctx.db
+    .query("siteSecrets")
+    .withIndex("by_site", (q) => q.eq("siteId", site._id))
+    .unique();
+  if (secrets === null) {
+    await ctx.db.insert("siteSecrets", { siteId: site._id, ...fields });
+  } else {
+    await ctx.db.patch("siteSecrets", secrets._id, fields);
+  }
+}
+
+/** Stores the Stripe webhook signing secret (whsec_...), replacing any earlier one. */
+export const setStripeSecret = mutation({
+  args: { domain: v.string(), secret: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const secret = args.secret.trim();
+    if (!/^whsec_[A-Za-z0-9+/=_-]{16,200}$/.test(secret)) {
+      throw new ConvexError("The signing secret starts with whsec_ (Stripe → Webhooks → your endpoint → Signing secret)");
+    }
+    await upsertSecrets(ctx, site, { stripeWebhookSecret: secret });
+    return null;
+  },
+});
+
+/**
+ * Creates the site's payments API key and returns it, once. Only its SHA-256 is kept,
+ * so a new key replaces the old one. An action, because mutations have no real
+ * randomness.
+ */
+export const createApiKey = action({
+  args: { domain: v.string() },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const key = `va_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    await ctx.runMutation(internal.sites.storeApiKeyHash, { domain: args.domain, apiKeyHash: await sha256Hex(key) });
+    return key;
+  },
+});
+
+export const storeApiKeyHash = internalMutation({
+  args: { domain: v.string(), apiKeyHash: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    // The action's caller is the signed-in user, so this checks their ownership
+    const site = await requireSite(ctx, args.domain);
+    await upsertSecrets(ctx, site, { apiKeyHash: args.apiKeyHash });
+    return null;
+  },
+});
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Deletes a site. The site row goes at once, so the dashboard and ingest stop seeing
  * it; its hits and rollups are deleted in scheduled batches by deleteSiteData,
  * because one mutation can only write so many documents.
@@ -204,7 +325,7 @@ export const remove = mutation({
   },
 });
 
-// Six tables per run, well inside the per-mutation write limit
+// Nine tables per run, well inside the per-mutation write limit (16,000 writes)
 const DELETE_BATCH = 1000;
 
 export const deleteSiteData = internalMutation({
@@ -248,7 +369,25 @@ export const deleteSiteData = internalMutation({
       .take(DELETE_BATCH);
     for (const row of events) await ctx.db.delete("events", row._id);
 
-    const batches = [pageviews, dims, stats, sessions, visitors, events];
+    const payments = await ctx.db
+      .query("payments")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of payments) await ctx.db.delete("payments", row._id);
+
+    const checkouts = await ctx.db
+      .query("checkouts")
+      .withIndex("by_site_checkout", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of checkouts) await ctx.db.delete("checkouts", row._id);
+
+    const secrets = await ctx.db
+      .query("siteSecrets")
+      .withIndex("by_site", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of secrets) await ctx.db.delete("siteSecrets", row._id);
+
+    const batches = [pageviews, dims, stats, sessions, visitors, events, payments, checkouts];
     if (batches.some((rows) => rows.length === DELETE_BATCH)) {
       await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
     }

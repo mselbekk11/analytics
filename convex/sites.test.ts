@@ -128,6 +128,8 @@ describe("sites.update", () => {
       timezone: "Europe/Oslo",
       trackingStartedAt: null,
       keyGoal: null,
+      revenueSource: "none",
+      currency: "USD",
     });
 
     await expect(

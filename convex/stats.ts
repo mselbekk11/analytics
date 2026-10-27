@@ -5,6 +5,7 @@ import { requireSite } from "./lib/auth";
 import { localDate } from "./lib/dates";
 import { dimMetric, dimValidator, type Dim } from "./lib/dims";
 import { eachDate, isValidRange, previousRange, type DateRange } from "./lib/ranges";
+import { siteCurrency } from "./lib/revenue";
 
 // Dashboard reads. Every query checks ownership with requireSite, takes the date range
 // as "YYYY-MM-DD" strings in the site's timezone (the page computes them, because
@@ -33,6 +34,9 @@ const totals = v.object({
   sessions: v.number(),
   bounceRate: v.union(v.null(), v.number()), // fraction of sessions
   sessionTimeMs: v.union(v.null(), v.number()),
+  revenueMinor: v.number(), // net of refunds, in the site's currency
+  payments: v.number(),
+  refundsMinor: v.number(),
 });
 
 function checkRange(range: DateRange): void {
@@ -62,6 +66,9 @@ function sumTotals(rows: Doc<"dailyStats">[]) {
   let sessions = 0;
   let bounces = 0;
   let sessionEngagedMs = 0;
+  let revenueMinor = 0;
+  let payments = 0;
+  let refundsMinor = 0;
   for (const r of rows) {
     visitors += r.visitors;
     pageviews += r.pageviews;
@@ -70,6 +77,9 @@ function sumTotals(rows: Doc<"dailyStats">[]) {
     sessions += r.sessions ?? 0;
     bounces += r.bounces ?? 0;
     sessionEngagedMs += r.sessionEngagedMs ?? 0;
+    revenueMinor += r.revenueMinor ?? 0;
+    payments += r.payments ?? 0;
+    refundsMinor += r.refundsMinor ?? 0;
   }
   return {
     visitors,
@@ -78,6 +88,9 @@ function sumTotals(rows: Doc<"dailyStats">[]) {
     sessions,
     bounceRate: sessions === 0 ? null : bounces / sessions,
     sessionTimeMs: sessions === 0 ? null : Math.round(sessionEngagedMs / sessions),
+    revenueMinor,
+    payments,
+    refundsMinor,
   };
 }
 
@@ -179,7 +192,12 @@ export const summary = query({
 export const timeseries = query({
   args: rangeArgs,
   returns: v.array(
-    v.object({ date: v.string(), pageviews: v.number(), visitors: v.number() }),
+    v.object({
+      date: v.string(),
+      pageviews: v.number(),
+      visitors: v.number(),
+      revenueMinor: v.number(),
+    }),
   ),
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
@@ -190,7 +208,12 @@ export const timeseries = query({
     for (const r of await readDailyStats(ctx, site._id, range)) byDate.set(r.date, r);
     return eachDate(range).map((date) => {
       const r = byDate.get(date);
-      return { date, pageviews: r?.pageviews ?? 0, visitors: r?.visitors ?? 0 };
+      return {
+        date,
+        pageviews: r?.pageviews ?? 0,
+        visitors: r?.visitors ?? 0,
+        revenueMinor: r?.revenueMinor ?? 0,
+      };
     });
   },
 });
@@ -201,7 +224,10 @@ type DimEntry = {
   visitors: number;
   sessions: number;
   events: number;
+  revenueMinor: number;
 };
+
+const DIM_COUNTS = ["pageviews", "visitors", "sessions", "events", "revenueMinor"] as const;
 
 /** Sums one dimension's daily rows per key over the range, plus the totals over every row. */
 async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
@@ -213,21 +239,20 @@ async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }
     .take(MAX_DIM_ROWS);
 
   const byKey = new Map<string, DimEntry>();
-  const total = { pageviews: 0, visitors: 0, sessions: 0, events: 0 };
+  const total = { pageviews: 0, visitors: 0, sessions: 0, events: 0, revenueMinor: 0 };
   for (const r of rows) {
-    const add = { pageviews: r.pageviews, visitors: r.visitors, sessions: r.sessions ?? 0, events: r.events ?? 0 };
-    total.pageviews += add.pageviews;
-    total.visitors += add.visitors;
-    total.sessions += add.sessions;
-    total.events += add.events;
-    const entry = byKey.get(r.key);
-    if (entry === undefined) {
-      byKey.set(r.key, { key: r.key, ...add });
-    } else {
-      entry.pageviews += add.pageviews;
-      entry.visitors += add.visitors;
-      entry.sessions += add.sessions;
-      entry.events += add.events;
+    const add = {
+      pageviews: r.pageviews,
+      visitors: r.visitors,
+      sessions: r.sessions ?? 0,
+      events: r.events ?? 0,
+      revenueMinor: r.revenueMinor ?? 0,
+    };
+    const entry = byKey.get(r.key) ?? { key: r.key, pageviews: 0, visitors: 0, sessions: 0, events: 0, revenueMinor: 0 };
+    byKey.set(r.key, entry);
+    for (const m of DIM_COUNTS) {
+      total[m] += add[m];
+      entry[m] += add[m];
     }
   }
   return { entries: [...byKey.values()], total };
@@ -237,8 +262,9 @@ async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }
  * Pageviews, visitors, sessions and events per key of one dimension over the range,
  * largest first by the dim's metric (see dimMetric): pageviews for pages, sessions for
  * entry and exit pages, events for goals and outbound links, visitors (unique visits,
- * as SA does) for the rest. Keys with none of that metric are left out. The totals
- * cover every key, including any cut off by the row limit.
+ * as SA does) for the rest. Keys with none of that metric are left out, unless they
+ * have revenue ("Unattributed" has no visitors). The totals cover every key, including
+ * any cut off by the row limit.
  */
 export const breakdown = query({
   args: { ...rangeArgs, dim: dimValidator },
@@ -250,12 +276,14 @@ export const breakdown = query({
         visitors: v.number(),
         sessions: v.number(),
         events: v.number(),
+        revenueMinor: v.number(),
       }),
     ),
     totalPageviews: v.number(),
     totalVisitors: v.number(),
     totalSessions: v.number(),
     totalEvents: v.number(),
+    totalRevenueMinor: v.number(),
   }),
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
@@ -266,10 +294,10 @@ export const breakdown = query({
     const metric = dimMetric(args.dim);
     const order: (keyof Omit<DimEntry, "key">)[] = [
       metric,
-      ...(["pageviews", "visitors", "sessions", "events"] as const).filter((m) => m !== metric),
+      ...DIM_COUNTS.filter((m) => m !== metric),
     ];
     const sorted = entries
-      .filter((e) => e[metric] > 0)
+      .filter((e) => e[metric] > 0 || e.revenueMinor !== 0)
       .sort((a, b) => {
         for (const m of order) if (a[m] !== b[m]) return b[m] - a[m];
         return a.key.localeCompare(b.key);
@@ -280,6 +308,7 @@ export const breakdown = query({
       totalVisitors: total.visitors,
       totalSessions: total.sessions,
       totalEvents: total.events,
+      totalRevenueMinor: total.revenueMinor,
     };
   },
 });
@@ -318,6 +347,72 @@ export const goals = query({
       rows: rows.slice(0, MAX_BREAKDOWN_KEYS),
       visitors: stats.reduce((n, r) => n + r.visitors, 0),
       keyGoal,
+    };
+  },
+});
+
+// Payments and goal events read for the conversion count, over two ranges
+const MAX_CONVERSION_ROWS = 10_000;
+
+/**
+ * Distinct visitors who converted in the range and in the one before it: visitors with
+ * a payment in the site's currency on a site with revenue, otherwise visitors who
+ * completed the key goal. Read from the raw rows, so they divide by the Visitors tile.
+ * `kind` is null when the site has neither, and the counts are null when there were
+ * too many rows to read. `otherCurrencyPayments` counts payments in the range left out
+ * of the totals because of their currency.
+ */
+export const conversions = query({
+  args: rangeArgs,
+  returns: v.object({
+    kind: v.union(v.null(), v.literal("revenue"), v.literal("goal")),
+    current: v.union(v.null(), v.number()),
+    previous: v.union(v.null(), v.number()),
+    otherCurrencyPayments: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const range = { from: args.from, to: args.to };
+    checkRange(range);
+    const prev = previousRange(range);
+    // Local days run from UTC-12 to UTC+14; the stored `date` decides
+    const start = Date.parse(`${prev.from}T00:00:00Z`) - 14 * HOUR_MS;
+    const end = Date.parse(`${range.to}T00:00:00Z`) + 36 * HOUR_MS;
+    const inRange = (date: string, r: DateRange) => date >= r.from && date <= r.to;
+    const distinct = (rows: { date: string; visitorId?: string }[], r: DateRange) =>
+      new Set(rows.filter((x) => x.visitorId !== undefined && inRange(x.date, r)).map((x) => x.visitorId)).size;
+
+    if ((site.revenueSource ?? "none") !== "none") {
+      const rows = await ctx.db
+        .query("payments")
+        .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
+        .take(MAX_CONVERSION_ROWS + 1);
+      const currency = siteCurrency(site);
+      const paid = rows.filter((p) => p.kind === "payment" && p.currency === currency);
+      const tooMany = rows.length > MAX_CONVERSION_ROWS;
+      return {
+        kind: "revenue" as const,
+        current: tooMany ? null : distinct(paid, range),
+        previous: tooMany ? null : distinct(paid, prev),
+        otherCurrencyPayments: rows.filter((p) => p.currency !== currency && inRange(p.date, range)).length,
+      };
+    }
+
+    const keyGoal = site.keyGoal;
+    if (keyGoal === undefined) {
+      return { kind: null, current: null, previous: null, otherCurrencyPayments: 0 };
+    }
+    const rows = await ctx.db
+      .query("events")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
+      .take(MAX_CONVERSION_ROWS + 1);
+    const done = rows.filter((e) => e.type === "goal" && e.name === keyGoal);
+    const tooMany = rows.length > MAX_CONVERSION_ROWS;
+    return {
+      kind: "goal" as const,
+      current: tooMany ? null : distinct(done, range),
+      previous: tooMany ? null : distinct(done, prev),
+      otherCurrencyPayments: 0,
     };
   },
 });

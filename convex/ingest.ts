@@ -12,7 +12,9 @@ import {
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
 import { cityKey, regionKey } from "./lib/geo";
+import { claimCheckout } from "./lib/revenue";
 import { bumpDailyDim, bumpDailyStats, bumpEventDim, bumpSessionDim } from "./lib/rollups";
+import { checkSecret } from "./lib/secret";
 
 // These are public because /api/collect calls them over HTTP, so every call must
 // carry INGEST_SECRET. Hits for unknown sites or foreign hostnames are dropped
@@ -25,13 +27,6 @@ const LEGACY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_EVENTS_PER_PAGEVIEW = 50;
 const HOUR_MS = 60 * 60 * 1000;
 const EVENT_RETRY_MS = 5_000;
-
-function checkSecret(secret: string): void {
-  const expected = process.env.INGEST_SECRET;
-  if (!expected || secret !== expected) {
-    throw new Error("Invalid ingest secret");
-  }
-}
 
 async function findSite(
   ctx: MutationCtx,
@@ -342,6 +337,8 @@ const eventValidator = v.union(
     email: v.optional(v.string()),
     name: v.optional(v.string()),
   }),
+  // A Stripe Checkout success page (?session_id=cs_...), 5e
+  v.object({ type: v.literal("claim"), checkoutSessionId: v.string() }),
 );
 
 const eventArgs = {
@@ -358,6 +355,7 @@ type EventArgs = Infer<ReturnType<typeof v.object<typeof eventArgs>>>;
  * another site's is dropped. A repeat of the same goal (or link) on one pageview is
  * dropped too. A goal takes the bounce off its session; identify writes the user id,
  * email and name onto the visitor (cookieless pageviews have none, so it is dropped).
+ * A claim links the Checkout Session's payments to the visitor (see lib/revenue.ts).
  */
 export const event = mutation({
   args: {
@@ -404,13 +402,15 @@ async function recordEvent(
 
   const e = args.event;
   const type = e.type;
-  const name = (e.type === "goal" ? e.name : e.type === "outbound" ? e.url : "identify").trim();
+  const name = (
+    e.type === "goal" ? e.name : e.type === "outbound" ? e.url : e.type === "claim" ? e.checkoutSessionId : "identify"
+  ).trim();
   if (!name) return;
 
   const { visitorId, sessionId } = pv;
-  if (type === "identify") {
+  if (type === "identify" || type === "claim") {
     if (visitorId === undefined) return;
-    await identify(ctx, site, visitorId, e);
+    if (e.type === "identify") await identify(ctx, site, visitorId, e);
   }
 
   const earlier = await ctx.db
@@ -425,6 +425,7 @@ async function recordEvent(
   // A visitor counts once per goal (or link) and day; without ids each completion counts
   const firstToday =
     type === "identify" ||
+    type === "claim" ||
     visitorId === undefined ||
     !(
       await ctx.db
@@ -451,6 +452,10 @@ async function recordEvent(
     ...(e.type === "goal" && e.props && Object.keys(e.props).length > 0 ? { props: e.props } : {}),
   });
   if (type === "identify") return;
+  if (type === "claim") {
+    await claimCheckout(ctx, site, name, visitorId!);
+    return;
+  }
 
   await bumpEventDim(ctx, site._id, date, type, name, firstToday);
   const session =
