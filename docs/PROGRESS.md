@@ -12,7 +12,7 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 3: Websites list and settings | **Built, awaiting owner review.** `/websites`, settings and the `/` redirect work locally against Convex dev. Still to do by the owner: add the snippet to the other seven sites. |
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
-| 5b: Sources, channels and campaigns | **Built, awaiting owner review.** Checks clean and verified against Convex dev; not yet pushed, and the backfill has not run on production. |
+| 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
 | 5c to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -197,12 +197,12 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: ship 5b
+## Next: check 5b on production, then 5c
 
-1. Review the dashboard lists locally (`/sites/localhost`).
-2. Push to `main` (deploys Convex and Next.js), then run the backfill once on production: `npx convex run migrations:backfillSources --prod`.
-3. "Done when" on production: visit a tracked site with `?utm_source=test&utm_campaign=phase5b` (it shows under Campaigns), and click through to it from a chatgpt.com chat (it shows as ChatGPT under AI).
-4. Paste the updated text from `docs/PRIVACY.md` (it now mentions campaign tags).
+Reviewed locally, pushed and backfilled on production on 2026-10-27. Owner:
+
+1. "Done when" on production: visit a tracked site with `?utm_source=test&utm_campaign=phase5b` (it shows under Campaigns), and click through to it from a chatgpt.com chat (it shows as ChatGPT under AI).
+2. Paste the updated text from `docs/PRIVACY.md` (it now mentions campaign tags).
 
 Then 5c.
 
