@@ -187,3 +187,72 @@ describe("parseGeo", () => {
     });
   });
 });
+
+describe("parsePayload: events", () => {
+  const base = { site: "picai.so", pvId: "pv-1", vid: "0b7c2a4e-1f3d-4c5b-9a8e-6d7f8091a2b3", sid: "f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b" };
+  const parse = (body: Record<string, unknown>) => parsePayload(JSON.stringify({ ...base, ...body }));
+
+  test("a goal keeps its trimmed name and drops the ids, which the server takes from the pageview", () => {
+    expect(parse({ t: "goal", name: "  signup " })).toEqual({ t: "goal", site: "picai.so", pvId: "pv-1", name: "signup" });
+  });
+
+  test("goal names are cut to 100 characters; an empty name is rejected", () => {
+    expect((parse({ t: "goal", name: "x".repeat(150) }) as { name: string }).name).toHaveLength(100);
+    expect(parse({ t: "goal", name: "   " })).toBeNull();
+    expect(parse({ t: "goal" })).toBeNull();
+    expect(parse({ t: "goal", name: 42 })).toBeNull();
+  });
+
+  test("goal props keep 10 simple keys with scalar values, as strings cut to 200 characters", () => {
+    const p: Record<string, unknown> = {
+      plan: "pro",
+      seats: 3,
+      trial: false,
+      _private: "x",
+      $bad: "x",
+      "has space": "x",
+      nested: { a: 1 },
+      empty: " ",
+      long: "y".repeat(300),
+    };
+    for (let i = 0; i < 12; i++) p[`k${i}`] = "v";
+    const goal = parse({ t: "goal", name: "signup", p }) as { props: Record<string, string> };
+    expect(Object.keys(goal.props)).toHaveLength(10);
+    expect(goal.props).toMatchObject({ plan: "pro", seats: "3", trial: "false" });
+    expect(goal.props.long).toHaveLength(200);
+    expect(goal.props._private).toBeUndefined();
+  });
+
+  test("props that are not an object are dropped, not the goal", () => {
+    expect(parse({ t: "goal", name: "signup", p: [1, 2] })).toEqual({ t: "goal", site: "picai.so", pvId: "pv-1", name: "signup" });
+  });
+
+  test.each([
+    ["https://github.com/acme/repo?tab=1#x", "https://github.com/acme/repo"],
+    ["http://example.com", "http://example.com/"],
+    ["mailto:jo@example.com", null],
+    ["javascript:void(0)", null],
+    ["not a url", null],
+  ])("outbound %s -> %s", (url, expected) => {
+    const parsed = parse({ t: "out", url });
+    expect(parsed === null ? null : (parsed as { url: string }).url).toBe(expected);
+  });
+
+  test("identify keeps id, email (lower-cased) and name, and accepts a numeric id", () => {
+    expect(parse({ t: "identify", u: { id: 42, email: " Jo@Example.com ", name: "Jo", plan: "pro" } })).toEqual({
+      t: "identify",
+      site: "picai.so",
+      pvId: "pv-1",
+      userId: "42",
+      email: "jo@example.com",
+      name: "Jo",
+    });
+  });
+
+  test("identify drops an invalid email and is rejected when nothing is left", () => {
+    expect(parse({ t: "identify", u: { email: "nope", name: "Jo" } })).toMatchObject({ name: "Jo" });
+    expect(parse({ t: "identify", u: { email: "nope" } })).toBeNull();
+    expect(parse({ t: "identify", u: {} })).toBeNull();
+    expect(parse({ t: "identify" })).toBeNull();
+  });
+});

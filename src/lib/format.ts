@@ -106,6 +106,11 @@ export function deviceLabel(key: string): string {
  * Shortens a long domain in the middle, keeping its end (and so the TLD) readable,
  * as SA's site cards do: "advancedortholabsf.com" -> "advancedo…absf.com".
  */
+/** An outbound link without its scheme or a bare trailing slash: "https://github.com/" -> "github.com". */
+export function outboundLabel(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/^([^/]+)\/$/, "$1");
+}
+
 export function truncateMiddle(s: string, max: number): string {
   if (s.length <= max) return s;
   const keep = max - 1;

@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireSite } from "./lib/auth";
 import { localDate } from "./lib/dates";
-import { dimMetric, dimValidator } from "./lib/dims";
+import { dimMetric, dimValidator, type Dim } from "./lib/dims";
 import { eachDate, isValidRange, previousRange, type DateRange } from "./lib/ranges";
 
 // Dashboard reads. Every query checks ownership with requireSite, takes the date range
@@ -195,12 +195,50 @@ export const timeseries = query({
   },
 });
 
+type DimEntry = {
+  key: string;
+  pageviews: number;
+  visitors: number;
+  sessions: number;
+  events: number;
+};
+
+/** Sums one dimension's daily rows per key over the range, plus the totals over every row. */
+async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
+  const rows = await ctx.db
+    .query("dailyDims")
+    .withIndex("by_site_dim_date", (q) =>
+      q.eq("siteId", siteId).eq("dim", dim).gte("date", from).lte("date", to),
+    )
+    .take(MAX_DIM_ROWS);
+
+  const byKey = new Map<string, DimEntry>();
+  const total = { pageviews: 0, visitors: 0, sessions: 0, events: 0 };
+  for (const r of rows) {
+    const add = { pageviews: r.pageviews, visitors: r.visitors, sessions: r.sessions ?? 0, events: r.events ?? 0 };
+    total.pageviews += add.pageviews;
+    total.visitors += add.visitors;
+    total.sessions += add.sessions;
+    total.events += add.events;
+    const entry = byKey.get(r.key);
+    if (entry === undefined) {
+      byKey.set(r.key, { key: r.key, ...add });
+    } else {
+      entry.pageviews += add.pageviews;
+      entry.visitors += add.visitors;
+      entry.sessions += add.sessions;
+      entry.events += add.events;
+    }
+  }
+  return { entries: [...byKey.values()], total };
+}
+
 /**
- * Pageviews, visitors and sessions per key of one dimension over the range, largest
- * first by the dim's metric (see dimMetric): pageviews for pages, sessions for entry
- * and exit pages, visitors (unique visits, as SA does) for the rest. Keys with none
- * of that metric are left out. The totals cover every key, including any cut off by
- * the row limit.
+ * Pageviews, visitors, sessions and events per key of one dimension over the range,
+ * largest first by the dim's metric (see dimMetric): pageviews for pages, sessions for
+ * entry and exit pages, events for goals and outbound links, visitors (unique visits,
+ * as SA does) for the rest. Keys with none of that metric are left out. The totals
+ * cover every key, including any cut off by the row limit.
  */
 export const breakdown = query({
   args: { ...rangeArgs, dim: dimValidator },
@@ -211,53 +249,26 @@ export const breakdown = query({
         pageviews: v.number(),
         visitors: v.number(),
         sessions: v.number(),
+        events: v.number(),
       }),
     ),
     totalPageviews: v.number(),
     totalVisitors: v.number(),
     totalSessions: v.number(),
+    totalEvents: v.number(),
   }),
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
-    checkRange({ from: args.from, to: args.to });
+    const range = { from: args.from, to: args.to };
+    checkRange(range);
 
-    const rows = await ctx.db
-      .query("dailyDims")
-      .withIndex("by_site_dim_date", (q) =>
-        q
-          .eq("siteId", site._id)
-          .eq("dim", args.dim)
-          .gte("date", args.from)
-          .lte("date", args.to),
-      )
-      .take(MAX_DIM_ROWS);
-
-    type Entry = { key: string; pageviews: number; visitors: number; sessions: number };
-    const byKey = new Map<string, Entry>();
-    let totalPageviews = 0;
-    let totalVisitors = 0;
-    let totalSessions = 0;
-    for (const r of rows) {
-      const sessions = r.sessions ?? 0;
-      totalPageviews += r.pageviews;
-      totalVisitors += r.visitors;
-      totalSessions += sessions;
-      const entry = byKey.get(r.key);
-      if (entry === undefined) {
-        byKey.set(r.key, { key: r.key, pageviews: r.pageviews, visitors: r.visitors, sessions });
-      } else {
-        entry.pageviews += r.pageviews;
-        entry.visitors += r.visitors;
-        entry.sessions += sessions;
-      }
-    }
-
+    const { entries, total } = await sumDim(ctx, site._id, args.dim, range);
     const metric = dimMetric(args.dim);
-    const order: (keyof Omit<Entry, "key">)[] = [
+    const order: (keyof Omit<DimEntry, "key">)[] = [
       metric,
-      ...(["pageviews", "visitors", "sessions"] as const).filter((m) => m !== metric),
+      ...(["pageviews", "visitors", "sessions", "events"] as const).filter((m) => m !== metric),
     ];
-    const sorted = [...byKey.values()]
+    const sorted = entries
       .filter((e) => e[metric] > 0)
       .sort((a, b) => {
         for (const m of order) if (a[m] !== b[m]) return b[m] - a[m];
@@ -265,9 +276,48 @@ export const breakdown = query({
       });
     return {
       rows: sorted.slice(0, MAX_BREAKDOWN_KEYS),
-      totalPageviews,
-      totalVisitors,
-      totalSessions,
+      totalPageviews: total.pageviews,
+      totalVisitors: total.visitors,
+      totalSessions: total.sessions,
+      totalEvents: total.events,
+    };
+  },
+});
+
+/**
+ * Each goal's completions and visitors over the range, most completions first, and the
+ * site's visitors to divide by for a conversion rate. Both visitor counts are summed
+ * per day (a visitor counts once per goal and day, and once per day overall), so the
+ * rate is the share of daily visitors who completed the goal. The key goal is always
+ * listed, with zeros if it had no completions.
+ */
+export const goals = query({
+  args: rangeArgs,
+  returns: v.object({
+    rows: v.array(v.object({ name: v.string(), completions: v.number(), visitors: v.number() })),
+    visitors: v.number(),
+    keyGoal: v.union(v.null(), v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const range = { from: args.from, to: args.to };
+    checkRange(range);
+
+    const { entries } = await sumDim(ctx, site._id, "goal", range);
+    const rows = entries
+      .filter((e) => e.events > 0)
+      .map((e) => ({ name: e.key, completions: e.events, visitors: e.visitors }));
+    const keyGoal = site.keyGoal ?? null;
+    if (keyGoal !== null && !rows.some((r) => r.name === keyGoal)) {
+      rows.push({ name: keyGoal, completions: 0, visitors: 0 });
+    }
+    rows.sort((a, b) => b.completions - a.completions || b.visitors - a.visitors || a.name.localeCompare(b.name));
+
+    const stats = await readDailyStats(ctx, site._id, range);
+    return {
+      rows: rows.slice(0, MAX_BREAKDOWN_KEYS),
+      visitors: stats.reduce((n, r) => n + r.visitors, 0),
+      keyGoal,
     };
   },
 });

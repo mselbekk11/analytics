@@ -228,6 +228,32 @@
       }
     });
     w.addEventListener("pagehide", ping);
+
+    // Goals, identify and outbound links, tied to the current pageview
+    function track(data) {
+      data.site = site;
+      data.pvId = pvId;
+      send(data);
+    }
+
+    function api(cmd, a, b) {
+      if (cmd === "goal" && a) track({ t: "goal", name: "" + a, p: b });
+      if (cmd === "identify" && a && !cookieless) track({ t: "identify", u: { id: a.id, email: a.email, name: a.name } });
+    }
+
+    // Capture phase, so links that stop propagation still count. Left and middle clicks only.
+    function onClick(e) {
+      try {
+        if (e.button > 1) return;
+        var goal = e.target.closest("[data-goal]");
+        if (goal) api("goal", goal.getAttribute("data-goal"));
+        var link = e.target.closest("a[href]");
+        var url = link && new URL(link.href);
+        if (url && url.hostname !== host && /^http/.test(url.protocol)) track({ t: "out", url: url.origin + url.pathname });
+      } catch (x) {}
+    }
+    d.addEventListener("click", onClick, true);
+    d.addEventListener("auxclick", onClick, true);
     w.setInterval(function () {
       try {
         if (d.visibilityState !== "hidden") ping();
@@ -235,5 +261,14 @@
     }, 60000);
 
     pageview(true);
+
+    // Replay calls queued by the stub before the script loaded. An object here is
+    // another tool's `analytics` (Segment's, say), so leave it alone.
+    var stub = w.analytics;
+    if (!stub || typeof stub === "function") {
+      w.analytics = api;
+      var queue = (stub && stub.q) || [];
+      for (var q = 0; q < queue.length; q++) api.apply(null, queue[q]);
+    }
   } catch (e) {}
 })(window, document);

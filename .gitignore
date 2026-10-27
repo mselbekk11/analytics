@@ -42,3 +42,6 @@ next-env.d.ts
 
 !.env.example
 .clerk/
+
+# minified from src/script/script.js by `npm run build:script` (runs before dev and build)
+/public/script.js

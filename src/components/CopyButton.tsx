@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { FiCheck, FiCopy } from "react-icons/fi";
 
-export default function CopyButton({ text }: { text: string }) {
+export default function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function CopyButton({ text }: { text: string }) {
       className="flex shrink-0 items-center gap-1.5 rounded border border-line px-2 py-1 text-xs text-muted hover:text-strong"
     >
       {copied ? <FiCheck aria-hidden className="text-up" /> : <FiCopy aria-hidden />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : label}
     </button>
   );
 }

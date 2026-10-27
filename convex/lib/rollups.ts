@@ -107,3 +107,32 @@ export async function bumpSessionDim(
     sessions: (row.sessions ?? 0) + (delta.sessions ?? 0),
   });
 }
+
+/**
+ * Adds to an event dim (goal, outbound): `events` counts completions or clicks,
+ * `visitors` each visitor once per key and day.
+ */
+export async function bumpEventDim(
+  ctx: MutationCtx,
+  siteId: Id<"sites">,
+  date: string,
+  dim: Dim,
+  key: string,
+  countsVisitor: boolean,
+): Promise<void> {
+  const row = await ctx.db
+    .query("dailyDims")
+    .withIndex("by_site_date_dim_key", (q) =>
+      q.eq("siteId", siteId).eq("date", date).eq("dim", dim).eq("key", key),
+    )
+    .unique();
+  const visitors = countsVisitor ? 1 : 0;
+  if (row === null) {
+    await ctx.db.insert("dailyDims", { siteId, date, dim, key, pageviews: 0, visitors, events: 1 });
+    return;
+  }
+  await ctx.db.patch("dailyDims", row._id, {
+    visitors: row.visitors + visitors,
+    events: (row.events ?? 0) + 1,
+  });
+}

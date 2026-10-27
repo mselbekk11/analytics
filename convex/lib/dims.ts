@@ -2,7 +2,8 @@ import { v, type Infer } from "convex/values";
 
 // Every dimension a dailyDims row can hold. Pageview dims (page, referrer, device,
 // browser, country, and from 5c os, region and city) count each pageview and its visitor. Session dims (5b on) count
-// sessions, and visitors once per visitor, key and day; their `pageviews` stays 0.
+// sessions, and visitors once per visitor, key and day; their `pageviews` stays 0. Event dims (goal and
+// outbound, 5d on) count `events` (completions or clicks) and visitors once per visitor, key and day.
 export const dimValidator = v.union(
   v.literal("page"),
   v.literal("referrer"),
@@ -22,13 +23,19 @@ export const dimValidator = v.union(
   v.literal("os"),
   v.literal("region"),
   v.literal("city"),
+  v.literal("goal"),
+  v.literal("outbound"),
 );
 
 export type Dim = Infer<typeof dimValidator>;
 
-/** Which count a list ranks and shows: pageviews for pages, sessions for entry and exit pages, visitors otherwise. */
-export function dimMetric(dim: Dim): "pageviews" | "sessions" | "visitors" {
+/**
+ * Which count a list ranks and shows: pageviews for pages, sessions for entry and exit
+ * pages, events for goals and outbound links, visitors otherwise.
+ */
+export function dimMetric(dim: Dim): "pageviews" | "sessions" | "visitors" | "events" {
   if (dim === "page") return "pageviews";
   if (dim === "entry" || dim === "exit") return "sessions";
+  if (dim === "goal" || dim === "outbound") return "events";
   return "visitors";
 }

@@ -13,6 +13,8 @@ export default defineSchema({
     // First pageview classified by source and channel (Phase 5b); the backfill covers hits before it
     sourcesStartedAt: v.optional(v.number()),
     sourcesBackfilled: v.optional(v.boolean()),
+    // The goal a site without revenue converts on, e.g. "signup" (5d)
+    keyGoal: v.optional(v.string()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),
@@ -59,6 +61,7 @@ export default defineSchema({
     pageviews: v.number(),
     visitors: v.number(),
     sessions: v.optional(v.number()), // session dims only, from 5b
+    events: v.optional(v.number()), // goal completions and outbound clicks, from 5d
   })
     .index("by_site_dim_date", ["siteId", "dim", "date"])
     .index("by_site_date_dim_key", ["siteId", "date", "dim", "key"]),
@@ -122,4 +125,22 @@ export default defineSchema({
     .index("by_site_visitor_started", ["siteId", "visitorId", "startedAt"])
     // "Online now": pings move lastSeenAt here, so visitor rows stay stable
     .index("by_site_lastSeenAt", ["siteId", "lastSeenAt"]),
+
+  // Goals, outbound clicks and identify calls, each tied to the pageview it came from
+  events: defineTable({
+    siteId: v.id("sites"),
+    ts: v.number(),
+    date: v.string(), // site-local day of the event
+    type: v.union(v.literal("goal"), v.literal("outbound"), v.literal("identify")),
+    name: v.string(), // goal name, outbound origin + path, or "identify"
+    path: v.string(), // the page it happened on
+    pvId: v.string(),
+    // From the pageview; both missing for cookieless pageviews
+    sessionId: v.optional(v.string()),
+    visitorId: v.optional(v.string()),
+    props: v.optional(v.record(v.string(), v.string())), // goals only, up to 10 keys
+  })
+    .index("by_site_ts", ["siteId", "ts"])
+    .index("by_site_visitor_ts", ["siteId", "visitorId", "ts"])
+    .index("by_pvId_name", ["pvId", "name"]),
 });

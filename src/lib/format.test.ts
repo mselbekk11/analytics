@@ -8,6 +8,7 @@ import {
   formatDuration,
   formatNumber,
   formatShare,
+  outboundLabel,
   referrerLabel,
   regionLabel,
   truncateMiddle,
@@ -82,5 +83,15 @@ describe("regionLabel and cityLabel", () => {
     ["Unknown", "Unknown"],
   ])("cityLabel(%s) -> %s", (key, expected) => {
     expect(cityLabel(key)).toBe(expected);
+  });
+});
+
+describe("outboundLabel", () => {
+  test.each([
+    ["https://github.com/", "github.com"],
+    ["https://github.com/acme/repo", "github.com/acme/repo"],
+    ["http://example.com/a/", "example.com/a/"],
+  ])("%s -> %s", (url, label) => {
+    expect(outboundLabel(url)).toBe(label);
   });
 });

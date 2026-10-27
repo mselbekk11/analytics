@@ -14,7 +14,8 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
 | 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
-| 5d to 5h, 6 | Not started. |
+| 5d: Goals, outbound clicks and identify | **Built, awaiting owner review.** Works locally against Convex dev; not committed or deployed. |
+| 5e to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -50,21 +51,23 @@ Vercel build command: `npx convex deploy --cmd 'npm run build'`.
 
 ```text
 convex/
-  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a) with PHASE5.md's fields
+  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a) and events (5d) with PHASE5.md's fields
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
   me.ts              whoami test query (Phase 0 check)
   sites.ts           sites.create (normalises the domain, rejects duplicates, validates the timezone),
                      sites.get (null if missing or not yours), sites.list (feeds the site switcher),
                      sites.listWithStats (30 zero-filled days per site), sites.update (timezone),
+                     sites.goalNames + sites.setKeyGoal (5d),
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
-  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.live, stats.online (all behind requireSite)
-  ingest.ts          ingest.pageview / ingest.ping / ingest.duration (legacy) (public, guarded by INGEST_SECRET)
+  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.live, stats.online (all behind requireSite)
+  ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
+                     internal ingest.retryEvent
   migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
   lib/domain.ts      normalizeDomain, hostMatchesDomain (shared with the collect route)
-  lib/rollups.ts     bumpDailyStats, bumpDailyDim, bumpSessionDim upserts
+  lib/rollups.ts     bumpDailyStats, bumpDailyDim, bumpSessionDim, bumpEventDim upserts
   lib/dims.ts        dimValidator (every dailyDims dim) and dimMetric (which count a list ranks by)
   lib/sources.ts     source/channel classifier (adapted from minilytics, MIT), sourceDomain for favicons
   lib/attribution.ts campaign validator, countSession / countCookielessVisit (session dims)
@@ -82,14 +85,16 @@ src/
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
   components/        ConvexClientProvider, AddWebsiteForm (+ Snippet), CopyButton, TimezoneSelect
   components/dashboard/   SiteHeader (favicon, switcher, Visitors/Settings tabs), SiteDashboard, SiteSwitcher,
-                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, useNow
+                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, useNow
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
-  lib/*.test.ts      unit tests, including script.test.ts, which runs public/script.js in a fake browser
-public/script.js     hand-written ES5 tracking script (2.59 KB gzipped after 5b; limit 3 KB)
+  lib/*.test.ts      unit tests, including script.test.ts, which runs the minified script in a fake browser
+  script/script.js   hand-written ES5 tracking script (the source; see 5d decisions)
+public/script.js     minified copy, built by `npm run build:script` before dev and build; git-ignored
+                     (1.95 KB gzipped after 5d; limit 3 KB)
 docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
 ```
 
@@ -97,8 +102,9 @@ Checks at the end of Phase 1: `npm run build`, `npx tsc --noEmit`, `npm run lint
 Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing; add, settings and delete clicked through locally.
 Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing; curl hits through local `/api/collect` into Convex dev gave 1 visitor, 2 sessions, 1 bounce and the ping's 42 s on the session.
-Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
 Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing. On Convex dev: the backfill filled source/channel for old days and 5a sessions; a curl hit with `utm_source=test&utm_campaign=phase5b` showed under Campaigns (and as source "test", channel Referral), and one from chatgpt.com as ChatGPT under AI, both seen on the local dashboard.
+Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
+Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing. On Convex dev: curl hits stored a goal with props, an outbound click (query string dropped) and identify (email lower-cased on the visitor, `goals: 1` on the session); on `/test.html` in Chrome, `data-goal`, `analytics("goal")`, a stub-queued goal and goals fired before their pageview landed all showed in the Goals panel and Outbound links list.
 
 ## Decisions and differences from PLAN.md
 
@@ -169,6 +175,24 @@ Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing
 - **No backfill:** old pageviews stored no user agent, region or city, so the new lists start on the day 5c is deployed.
 - **Script unchanged.**
 
+### Phase 5d (goals, outbound clicks and identify)
+
+- **The script is now minified for serving.** The source moved to `src/script/script.js` (still hand-written ES5). `npm run build:script` (esbuild, `--target=es5`, which also fails on non-ES5 syntax) writes `public/script.js`, and runs automatically as `predev` and `prebuild`, so Vercel builds it too. `public/script.js` is git-ignored. Reason: with 5d the raw file was 3.13 KB gzipped (3.11 KB even without comments), over the 3 KB limit, and 5e still has to add `attribution()` and the claim. Minified it is 1.95 KB. `script.test.ts` runs the minified output and checks the size.
+- **API:** `window.analytics("goal", name, props?)`, `window.analytics("identify", { id?, email?, name? })`, and `data-goal="name"` on any element (a click on it or inside it). Calls made before the script loads are queued by a one-line stub (shown in Settings) and replayed right after the first pageview. If `window.analytics` is already an object (Segment uses that name), the script leaves it alone and the API is unavailable on that site.
+- **Outbound links:** a capture-phase `click` and `auxclick` listener (left and middle button) sends origin + path for `<a href>` links to another hostname. Subdomains count as other hostnames. The parser rebuilds the URL and drops non-http links.
+- **Events read the visitor, session and path from their pageview** (by `pvId`), so the payload never carries them. A repeat of the same goal (or link) on one pageview is dropped; at most 50 events per pageview.
+- **Events can arrive before their pageview** (separate beacons, e.g. a queued goal sent right after load). `ingest.event` then schedules `ingest.retryEvent` once, 5 s later, keeping the original time. An unknown `pvId` after the retry is dropped.
+- **`events.visitorId` and `sessionId` are optional** (the brief has them required): goals and outbound clicks from cookieless pageviews are stored and counted without them. `identify` on a cookieless pageview is dropped, and the script doesn't send it in cookieless mode.
+- **New `dailyDims.events` field** (optional) holds completions or clicks for the `goal` and `outbound` dims; `visitors` counts each visitor once per key and day (without ids, every completion counts). `dimMetric` is `events` for both, and `stats.breakdown` returns `events` and `totalEvents`.
+- **Conversion rate in the Goals panel** is goal visitors ÷ the site's visitors, both summed per day (`stats.goals`), so it is the share of daily visitors who completed the goal. It can differ slightly from goal visitors ÷ the Visitors tile, which counts distinct ids over the range.
+- **Bounce:** the first goal in a session takes its bounce off (on the session's start day), as a second pageview does; outbound clicks don't. Goals and outbound clicks move `sessions.lastSeenAt` (online now).
+- **Identify** writes `userId`, `email` (lower-cased, must contain `@`) and `name` onto the visitor; fields left out are kept. One `identify` event per pageview is stored for 5f's timeline, without the values.
+- **Goal names** are kept as sent (trimmed, at most 100 characters, case kept). Props: up to 10 keys matching `[A-Za-z][A-Za-z0-9_-]{0,39}`, values string, number or boolean stored as strings of at most 200 characters; anything else is dropped, not the goal.
+- **Key goal** (`sites.keyGoal`) is set in Settings → Goals: any name, with recorded goals offered as suggestions. The Goals panel marks it and always lists it. Its conversion-rate tile comes with 5e.
+- **Settings → Goals** shows the stub and examples, a Copy button, and "Copy AI prompt" (instructions for a coding agent in the site's own codebase, including the key goal).
+- **`/test.html`** (dev only) gained buttons for `data-goal`, `analytics("goal")`, `identify`, an outbound link and a queued goal.
+- **`deleteSiteData`** now also deletes `events`.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -184,6 +208,8 @@ Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing
 - **curl hits need a browser User-Agent**, or `isbot` drops them silently (curl's default UA counts as a bot).
 - **The session tiles stay hidden until a site's first hit with ids** (that hit sets `trackingStartedAt`). A site with only old-script or cookieless hits looks exactly as before 5a, so "nothing changed" right after a deploy is expected.
 - **Next.js 16.4.0 has a known security vulnerability.** `npm run build` and `npm run dev` each stopped once (2026-10-27) with a "SecurityFatalError" upgrade notice and passed on retry. Not upgraded yet; see Open items.
+- **Edit the script in `src/script/script.js`**, not `public/script.js` (generated and git-ignored). A running `next dev` keeps serving the old copy until you run `npm run build:script` or restart dev.
+- **Clicks from the Claude in Chrome extension don't reach the page's click listeners** (0 events on a test listener), so test `data-goal` and outbound links by clicking yourself or with `element.click()` in the console.
 - **Read `convex/_generated/ai/guidelines.md`** before writing Convex code, and the Next.js docs in `node_modules/next/dist/docs/` (AGENTS.md).
 
 ## How to test locally
@@ -210,7 +236,18 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5c on production, then 5d
+## Next: review 5d, ship it, then 5e
+
+Built and checked locally on 2026-10-27; nothing is committed or deployed yet. The 5d functions and schema are pushed to Convex dev only, and the dev `localhost` site holds test events (goals `phase5d-test`, `test-*`, `race-*`, `early-*`, `probe-*`, one outbound click to github.com, and an identified visitor `u_5d` / test@example.com). Owner:
+
+1. Review locally: `/sites/localhost` (Goals and Outbound links below the lists) and `/sites/localhost/settings#goals`. `/test.html` has buttons for every new call.
+2. Approve the minified-script change (see 5d decisions), then commit and push. Vercel runs `prebuild`, so the minified `/script.js` is built there.
+3. "Done when" on production: on advancedortholabsf.com, run `analytics("goal", "test")` in the browser console and click a link to another site; both show within seconds. Then run `analytics("identify", { email: "you@example.com" })` and check the email with `npx convex data visitors --prod`.
+4. Add goals to the sites (Settings → Goals → Copy AI prompt), pick each site's key goal, and paste the updated text from `docs/PRIVACY.md` (goals, outbound links, and identify where used).
+
+Then 5e.
+
+## Earlier: check 5c on production, then 5d
 
 Pushed to `main` on 2026-10-27 (commit `e672a1a`) and live. The dev `localhost` site holds one test hit from San Francisco on iOS. Owner:
 

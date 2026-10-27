@@ -70,6 +70,7 @@ async function tables(t: ReturnType<typeof convexTest>) {
     sessions: await ctx.db.query("sessions").collect(),
     visitors: await ctx.db.query("visitors").collect(),
     sites: await ctx.db.query("sites").collect(),
+    events: await ctx.db.query("events").collect(),
   }));
 }
 
@@ -638,5 +639,208 @@ describe("OS, region and city", () => {
     expect(sessions).toHaveLength(0);
     expect(pageviews[0]).not.toHaveProperty("city");
     expect(dailyDims.find((d) => d.dim === "city")).toMatchObject({ key: "US/CA/San Francisco", visitors: 1 });
+  });
+});
+
+type EventArg =
+  | { type: "goal"; name: string; props?: Record<string, string> }
+  | { type: "outbound"; url: string }
+  | { type: "identify"; userId?: string; email?: string; name?: string };
+
+const send = (pvId: string, event: EventArg, o: { secret?: string; site?: string; hostname?: string } = {}) => ({
+  secret: SECRET,
+  site: "picai.so",
+  hostname: "picai.so",
+  pvId,
+  event,
+  ...o,
+});
+
+async function eventDims(t: ReturnType<typeof convexTest>) {
+  const { dailyDims } = await tables(t);
+  return dailyDims
+    .filter((d) => d.dim === "goal" || d.dim === "outbound")
+    .map((d) => [d.dim, d.date, d.key, d.events, d.visitors])
+    .sort();
+}
+
+describe("ingest.event", () => {
+  test("a goal is stored with the pageview's path, visitor and session, and counted", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/pricing" }));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup", props: { plan: "pro" } }));
+
+    const { events, sessions } = await tables(t);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "goal",
+        name: "signup",
+        date: "2026-10-13",
+        path: "/pricing",
+        pvId: "a",
+        visitorId: "vid-phone",
+        sessionId: "s1",
+        props: { plan: "pro" },
+      }),
+    ]);
+    expect(sessions[0].goals).toBe(1);
+    expect(await eventDims(t)).toEqual([["goal", "2026-10-13", "signup", 1, 1]]);
+  });
+
+  test("the first goal takes the bounce off its session, once", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "newsletter" }));
+    // A second pageview after a goal must not take the bounce off again
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/thanks", unique: false }));
+
+    const { dailyStats, sessions } = await tables(t);
+    expect(sessions[0]).toMatchObject({ goals: 2, pageviews: 2 });
+    expect(dailyStats[0]).toMatchObject({ sessions: 1, bounces: 0 });
+  });
+
+  test("the same goal twice on one pageview counts once", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+
+    const { events, sessions } = await tables(t);
+    expect(events).toHaveLength(1);
+    expect(sessions[0].goals).toBe(1);
+    expect(await eventDims(t)).toEqual([["goal", "2026-10-13", "signup", 1, 1]]);
+  });
+
+  test("a visitor counts once per goal and day, every completion counts", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { unique: false }));
+    await t.mutation(api.ingest.event, send("b", { type: "goal", name: "signup" }));
+    vi.setSystemTime(new Date("2026-10-14T17:00:00Z")); // next local day
+    await t.mutation(api.ingest.pageview, phone("c", "s2"));
+    await t.mutation(api.ingest.event, send("c", { type: "goal", name: "signup" }));
+
+    expect(await eventDims(t)).toEqual([
+      ["goal", "2026-10-13", "signup", 2, 1],
+      ["goal", "2026-10-14", "signup", 1, 1],
+    ]);
+  });
+
+  test("an outbound click is counted per link, without touching the bounce", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "outbound", url: "https://github.com/acme" }));
+    await t.mutation(api.ingest.event, send("a", { type: "outbound", url: "https://github.com/acme" }));
+    await t.mutation(api.ingest.event, send("a", { type: "outbound", url: "https://x.com/acme" }));
+
+    const { dailyStats, sessions, events } = await tables(t);
+    expect(events.map((e) => [e.type, e.name])).toEqual([
+      ["outbound", "https://github.com/acme"],
+      ["outbound", "https://x.com/acme"],
+    ]);
+    expect(sessions[0].goals).toBe(0);
+    expect(dailyStats[0].bounces).toBe(1);
+    expect(await eventDims(t)).toEqual([
+      ["outbound", "2026-10-13", "https://github.com/acme", 1, 1],
+      ["outbound", "2026-10-13", "https://x.com/acme", 1, 1],
+    ]);
+  });
+
+  test("an event is dated on its own day, the bounce on the session's", async () => {
+    const t = await setup();
+    vi.setSystemTime(new Date("2026-10-14T06:50:00Z")); // 23:50 on the 13th in Los Angeles
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-14T07:10:00Z")); // 00:10 on the 14th
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+
+    const { dailyStats, events } = await tables(t);
+    expect(events[0].date).toBe("2026-10-14");
+    expect(dailyStats.find((d) => d.date === "2026-10-13")).toMatchObject({ sessions: 1, bounces: 0 });
+  });
+
+  test("identify writes the user id, lower-cased email and name onto the visitor", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(
+      api.ingest.event,
+      send("a", { type: "identify", userId: "u_1", email: " Jo@Example.com", name: "Jo" }),
+    );
+    // A later call with only some fields keeps the others
+    await t.mutation(api.ingest.event, send("a", { type: "identify", name: "Jo Smith" }));
+
+    const { visitors, events, dailyDims } = await tables(t);
+    expect(visitors[0]).toMatchObject({ userId: "u_1", email: "jo@example.com", name: "Jo Smith" });
+    expect(events.map((e) => [e.type, e.name])).toEqual([["identify", "identify"]]);
+    expect(dailyDims.some((d) => d.dim === "goal")).toBe(false);
+  });
+
+  test("a goal from a cookieless pageview counts without a visitor or session; identify is dropped", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ pvId: "a", cookieless: true }));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "identify", email: "jo@example.com" }));
+
+    const { events, visitors } = await tables(t);
+    expect(events).toEqual([expect.objectContaining({ type: "goal", name: "signup" })]);
+    expect(events[0].visitorId).toBeUndefined();
+    expect(visitors).toHaveLength(0);
+    expect(await eventDims(t)).toEqual([["goal", "2026-10-13", "signup", 1, 1]]);
+  });
+
+  test("ignores an unknown pvId and another site's pageview", async () => {
+    const t = await setup();
+    await t
+      .withIdentity({ subject: "user_2", tokenIdentifier: "clerk|user_2" })
+      .mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("nope", { type: "goal", name: "signup" }));
+    await t.mutation(
+      api.ingest.event,
+      send("a", { type: "goal", name: "signup" }, { site: "other.com", hostname: "other.com" }),
+    );
+    await t.finishAllScheduledFunctions(vi.runAllTimers); // the unknown pvId's one retry
+
+    const { events, dailyDims } = await tables(t);
+    expect(events).toHaveLength(0);
+    expect(dailyDims.some((d) => d.dim === "goal")).toBe(false);
+  });
+
+  test("an event that arrives before its pageview is recorded on a retry, at its own time", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    const sentAt = Date.now();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const { events, sessions, dailyStats } = await tables(t);
+    expect(events).toEqual([expect.objectContaining({ name: "signup", ts: sentAt, sessionId: "s1" })]);
+    expect(sessions[0].goals).toBe(1);
+    expect(dailyStats[0].bounces).toBe(0);
+  });
+
+  test("ignores a hostname that does not match the site", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }, { hostname: "evil.com" }));
+    expect((await tables(t)).events).toHaveLength(0);
+  });
+
+  test("keeps at most 50 events per pageview", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    for (let i = 0; i < 55; i++) {
+      await t.mutation(api.ingest.event, send("a", { type: "goal", name: `g${i}` }));
+    }
+    expect((await tables(t)).events).toHaveLength(50);
+  });
+
+  test("rejects a wrong secret", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await expect(
+      t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }, { secret: "wrong" })),
+    ).rejects.toThrow("Invalid ingest secret");
   });
 });

@@ -1,10 +1,43 @@
 // @vitest-environment node
 /// <reference types="vite/client" />
+import { gzipSync } from "node:zlib";
+import { transformSync } from "esbuild";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import source from "../../public/script.js?raw";
+import raw from "../script/script.js?raw";
+
+// The tests run the minified script, exactly as `npm run build:script` serves it
+const source = transformSync(raw, { minify: true, target: "es5" }).code;
 
 type Sent = Record<string, unknown>;
-type Listener = () => void;
+type Listener = (event?: unknown) => void;
+
+/** Just enough of an Element for the click listener: attributes, href and closest(). */
+type FakeElement = {
+  tag: string;
+  attrs: Record<string, string>;
+  parent?: FakeElement;
+  href?: string;
+  getAttribute: (name: string) => string | null;
+  closest: (selector: string) => FakeElement | null;
+};
+
+function element(tag: string, attrs: Record<string, string> = {}, parent?: FakeElement): FakeElement {
+  const matches = (e: FakeElement, selector: string) =>
+    selector === "[data-goal]" ? "data-goal" in e.attrs : selector === "a[href]" && e.tag === "a" && "href" in e.attrs;
+  const el: FakeElement = {
+    tag,
+    attrs,
+    parent,
+    // Browsers resolve an anchor's href against the page
+    href: attrs.href === undefined ? undefined : new URL(attrs.href, "https://picai.so/").href,
+    getAttribute: (name) => attrs[name] ?? null,
+    closest: (selector) => {
+      for (let e: FakeElement | undefined = el; e; e = e.parent) if (matches(e, selector)) return e;
+      return null;
+    },
+  };
+  return el;
+}
 
 // Domains a browser refuses to set cookies on (a tiny stand-in for the public suffix list)
 const PUBLIC_SUFFIXES = new Set(["so", "com", "uk", "co.uk"]);
@@ -40,7 +73,7 @@ class CookieJar {
   }
 }
 
-/** Runs public/script.js against a minimal fake browser and records what it sends. */
+/** Runs the minified src/script/script.js against a minimal fake browser and records what it sends. */
 function load(opts: {
   hostname?: string;
   pathname?: string;
@@ -53,6 +86,7 @@ function load(opts: {
   ignore?: boolean;
   jar?: CookieJar;
   noRandomUUID?: boolean;
+  analytics?: unknown;
 } = {}) {
   const sent: Sent[] = [];
   const winListeners: Record<string, Listener[]> = {};
@@ -75,7 +109,10 @@ function load(opts: {
     },
     referrer: opts.referrer ?? "",
     visibilityState: "visible",
-    addEventListener: (type: string, fn: Listener) => (docListeners[type] ??= []).push(fn),
+    addEventListener: (type: string, fn: Listener, capture?: boolean) => {
+      if (type === "click" || type === "auxclick") expect(capture).toBe(true);
+      (docListeners[type] ??= []).push(fn);
+    },
     get cookie() {
       return jar.cookie;
     },
@@ -94,7 +131,8 @@ function load(opts: {
   };
 
   let ids = 0;
-  const window = {
+  const window: Record<string, unknown> = {
+    analytics: opts.analytics,
     location,
     history,
     screen: { width: 1440 },
@@ -129,6 +167,12 @@ function load(opts: {
       (docListeners.visibilitychange ?? []).forEach((fn) => fn());
     },
     location,
+    window,
+    /** A click (button 0) or auxclick (1 = middle, 2 = right) on `target`. */
+    click(target: FakeElement, button = 0) {
+      const type = button === 0 ? "click" : "auxclick";
+      (docListeners[type] ?? []).forEach((fn) => fn({ type, button, target }));
+    },
   };
 }
 
@@ -363,6 +407,131 @@ describe("campaign tags", () => {
     expect(sent.filter((s) => s.t === "pv").map((s) => s.c)).toEqual([{ utm_source: "test" }, undefined]);
     expect(load({ search: "?page=2" }).sent[0].c).toBeUndefined();
     expect(load().sent[0].c).toBeUndefined();
+  });
+});
+
+describe("goals and identify", () => {
+  const analytics = (w: Record<string, unknown>) => w.analytics as (...args: unknown[]) => unknown;
+
+  test("analytics('goal') sends the name and props with the current pageview's id", () => {
+    const { sent, window } = load();
+    analytics(window)("goal", "signup", { plan: "pro" });
+    expect(sent[1]).toEqual({
+      t: "goal",
+      name: "signup",
+      p: { plan: "pro" },
+      site: "picai.so",
+      pvId: sent[0].pvId,
+      vid: sent[0].vid,
+      sid: sent[0].sid,
+    });
+  });
+
+  test("a goal after an SPA route change belongs to the new page", () => {
+    const { sent, window, history } = load();
+    history.pushState(null, "", "/pricing");
+    analytics(window)("goal", "signup");
+    const pv = sent.filter((s) => s.t === "pv")[1];
+    expect(sent.at(-1)).toMatchObject({ t: "goal", pvId: pv.pvId });
+  });
+
+  test("identify sends only id, email and name", () => {
+    const { sent, window } = load();
+    analytics(window)("identify", { id: "u_1", email: "jo@example.com", name: "Jo", plan: "pro" });
+    expect(sent[1]).toMatchObject({ t: "identify", u: { id: "u_1", email: "jo@example.com", name: "Jo" } });
+    expect((sent[1].u as Record<string, unknown>).plan).toBeUndefined();
+  });
+
+  test("cookieless mode sends goals but never identify", () => {
+    const { sent, window } = load({ attrs: { "data-cookieless": "" } });
+    analytics(window)("identify", { email: "jo@example.com" });
+    analytics(window)("goal", "signup");
+    expect(sent.map((s) => s.t)).toEqual(["pv", "goal"]);
+  });
+
+  test("ignores unknown commands and a goal without a name", () => {
+    const { sent, window } = load();
+    analytics(window)("goal");
+    analytics(window)("track", "x");
+    analytics(window)("identify");
+    expect(sent).toHaveLength(1);
+  });
+
+  test("calls queued by the stub before the script loaded are sent after the pageview", () => {
+    const stub = Object.assign(() => {}, {
+      q: [
+        ["goal", "newsletter"],
+        ["identify", { email: "jo@example.com" }],
+      ],
+    });
+    const { sent, window } = load({ analytics: stub });
+    expect(sent.map((s) => s.t)).toEqual(["pv", "goal", "identify"]);
+    expect(sent[1].pvId).toBe(sent[0].pvId);
+    expect(window.analytics).not.toBe(stub);
+  });
+
+  test("leaves another tool's analytics object alone", () => {
+    const segment = { track: () => {} };
+    const { window } = load({ analytics: segment });
+    expect(window.analytics).toBe(segment);
+  });
+
+  test("a click inside an element with data-goal sends that goal", () => {
+    const { sent, click } = load();
+    const button = element("button", { "data-goal": "signup" });
+    click(element("span", {}, button));
+    expect(sent[1]).toMatchObject({ t: "goal", name: "signup", pvId: sent[0].pvId });
+  });
+
+  test("a right click on a data-goal element sends nothing", () => {
+    const { sent, click } = load();
+    click(element("button", { "data-goal": "signup" }), 2);
+    expect(sent).toHaveLength(1);
+  });
+});
+
+describe("outbound links", () => {
+  test("a click on a link to another host sends its origin and path only", () => {
+    const { sent, click } = load();
+    const link = element("a", { href: "https://github.com/acme/repo?tab=readme#top" });
+    click(element("img", {}, link));
+    expect(sent[1]).toMatchObject({ t: "out", url: "https://github.com/acme/repo", pvId: sent[0].pvId });
+  });
+
+  test("a middle click counts, a right click does not", () => {
+    const { sent, click } = load();
+    const link = element("a", { href: "https://github.com/" });
+    click(link, 1);
+    click(link, 2);
+    expect(sent.filter((s) => s.t === "out")).toHaveLength(1);
+  });
+
+  test.each([
+    ["a link on the same host", "/pricing"],
+    ["a mailto: link", "mailto:jo@example.com"],
+    ["a tel: link", "tel:+15551234"],
+  ])("ignores %s", (_name, href) => {
+    const { sent, click } = load();
+    click(element("a", { href }));
+    expect(sent).toHaveLength(1);
+  });
+
+  test("ignores clicks outside links", () => {
+    const { sent, click } = load();
+    click(element("div"));
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a data-goal link to another site sends both the goal and the outbound click", () => {
+    const { sent, click } = load();
+    click(element("a", { href: "https://cal.com/jo", "data-goal": "book" }));
+    expect(sent.slice(1).map((s) => s.t)).toEqual(["goal", "out"]);
+  });
+});
+
+describe("size", () => {
+  test("the minified script stays under 3 KB gzipped", () => {
+    expect(gzipSync(source).length).toBeLessThan(3 * 1024);
   });
 });
 

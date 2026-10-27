@@ -44,13 +44,45 @@ export type DurationPayload = {
   ms: number;
 };
 
-export type Payload = PageviewPayload | PingPayload | DurationPayload;
+/** analytics("goal", name, props?) or a click on an element with data-goal (5d). */
+export type GoalPayload = {
+  t: "goal";
+  site: string;
+  pvId: string;
+  name: string;
+  props?: Record<string, string>;
+};
+
+/** A click on a link to another hostname: its origin and path only. */
+export type OutboundPayload = {
+  t: "out";
+  site: string;
+  pvId: string;
+  url: string;
+};
+
+/** analytics("identify", { id, email, name }): at least one of the three. */
+export type IdentifyPayload = {
+  t: "identify";
+  site: string;
+  pvId: string;
+  userId?: string;
+  email?: string;
+  name?: string;
+};
+
+export type EventPayload = GoalPayload | OutboundPayload | IdentifyPayload;
+
+export type Payload = PageviewPayload | PingPayload | DurationPayload | EventPayload;
 
 // Room for six 100-character campaign tags, even in non-Latin scripts
 export const MAX_BODY_BYTES = 4096;
 export const MAX_TAG_LENGTH = 100;
 export const MAX_DURATION_MS = 30 * 60 * 1000;
 export const MAX_PING_MS = 70 * 1000;
+export const MAX_GOAL_NAME = 100;
+export const MAX_PROPS = 10;
+export const MAX_PROP_VALUE = 200;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -104,6 +136,33 @@ export function parsePayload(body: string): Payload | null {
     return { t: "ping", site: d.site, pvId: d.pvId, ms };
   }
 
+  if (d.t === "goal") {
+    if (!str(d.name, 1000)) return null;
+    const name = d.name.trim().slice(0, MAX_GOAL_NAME);
+    if (!name) return null;
+    const props = parseProps(d.p);
+    return { t: "goal", site: d.site, pvId: d.pvId, name, ...(props ? { props } : {}) };
+  }
+
+  if (d.t === "out") {
+    const url = outboundUrl(d.url);
+    return url === null ? null : { t: "out", site: d.site, pvId: d.pvId, url };
+  }
+
+  if (d.t === "identify") {
+    const u = typeof d.u === "object" && d.u !== null ? (d.u as Record<string, unknown>) : {};
+    const userId = idString(u.id, 100);
+    const email = idString(u.email, 254)?.toLowerCase();
+    const name = idString(u.name, 100);
+    const user = {
+      ...(userId ? { userId } : {}),
+      ...(email && /^[^\s@]+@[^\s@]+$/.test(email) ? { email } : {}),
+      ...(name ? { name } : {}),
+    };
+    if (Object.keys(user).length === 0) return null;
+    return { t: "identify", site: d.site, pvId: d.pvId, ...user };
+  }
+
   if (d.t === "dur") {
     const ms = d.ms;
     if (typeof ms !== "number" || !Number.isInteger(ms) || ms < 0 || ms > MAX_DURATION_MS) {
@@ -144,6 +203,51 @@ function parseCampaign(value: unknown): Campaign | undefined | null {
     if (trimmed && campaign[field] === undefined) campaign[field] = trimmed;
   }
   return Object.keys(campaign).length > 0 ? campaign : undefined;
+}
+
+// Prop names must also be valid Convex record keys (no leading "$" or "_")
+const PROP_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
+
+/**
+ * Goal properties: the first 10 keys with a simple name and a string, number or
+ * boolean value, each value cut to 200 characters. Anything else is left out rather
+ * than losing the goal.
+ */
+function parseProps(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const props: Record<string, string> = {};
+  let n = 0;
+  for (const [key, raw] of Object.entries(value)) {
+    if (n === MAX_PROPS) break;
+    if (!PROP_KEY.test(key)) continue;
+    if (typeof raw !== "string" && typeof raw !== "number" && typeof raw !== "boolean") continue;
+    const text = String(raw).trim().slice(0, MAX_PROP_VALUE);
+    if (!text) continue;
+    props[key] = text;
+    n++;
+  }
+  return n > 0 ? props : undefined;
+}
+
+/** An http(s) URL reduced to origin + path; null for anything else. */
+function outboundUrl(value: unknown): string | null {
+  if (!str(value, 2000, 1)) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    const out = url.origin + url.pathname;
+    return out.length <= 500 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A trimmed identify() field (strings and numbers, so numeric user ids work), or undefined. */
+function idString(value: unknown, max: number): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) value = String(value);
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  return text && text.length <= max ? text : undefined;
 }
 
 function isUuid(value: unknown): value is string {

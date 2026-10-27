@@ -127,6 +127,7 @@ describe("sites.update", () => {
       domain: "picai.so",
       timezone: "Europe/Oslo",
       trackingStartedAt: null,
+      keyGoal: null,
     });
 
     await expect(
@@ -202,6 +203,17 @@ describe("sites.remove", () => {
           sessions: 1,
           revenueMinor: 0,
         });
+        await ctx.db.insert("events", {
+          siteId: id,
+          ts: 1,
+          date: "2026-10-14",
+          type: "goal",
+          name: "signup",
+          path: "/",
+          pvId: `${id}-0`,
+          visitorId: `v-${id}`,
+          sessionId: `s-${id}`,
+        });
       }
     });
     await addDay(t, siteId, "2026-10-14", 1_005, 1_005);
@@ -217,12 +229,14 @@ describe("sites.remove", () => {
       stats: (await ctx.db.query("dailyStats").take(100)).map((r) => r.siteId),
       sessions: (await ctx.db.query("sessions").take(100)).map((r) => r.siteId),
       visitors: (await ctx.db.query("visitors").take(100)).map((r) => r.siteId),
+      events: (await ctx.db.query("events").take(100)).map((r) => r.siteId),
     }));
     expect(left.pageviews).toEqual([otherId, otherId, otherId]);
     expect(left.dims).toEqual([otherId]);
     expect(left.stats).toEqual([otherId]);
     expect(left.sessions).toEqual([otherId]);
     expect(left.visitors).toEqual([otherId]);
+    expect(left.events).toEqual([otherId]);
   });
 
   test("refuses someone else's site", async () => {
@@ -232,5 +246,34 @@ describe("sites.remove", () => {
       t.withIdentity(STRANGER).mutation(api.sites.remove, { domain: "picai.so" }),
     ).rejects.toThrow(/Site not found/);
     expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).not.toBeNull();
+  });
+});
+
+describe("key goal", () => {
+  test("goalNames lists every recorded goal once; setKeyGoal sets and clears the key goal", async () => {
+    const t = convexTest(schema, modules);
+    const siteId = await addSite(t, "picai.so", "UTC");
+    await t.run(async (ctx) => {
+      for (const [date, key] of [["2026-10-13", "signup"], ["2026-10-14", "signup"], ["2026-10-14", "booking"]]) {
+        await ctx.db.insert("dailyDims", { siteId, date, dim: "goal", key, pageviews: 0, visitors: 1, events: 1 });
+      }
+    });
+    const owner = t.withIdentity(OWNER);
+    expect(await owner.query(api.sites.goalNames, { domain: "picai.so" })).toEqual(["booking", "signup"]);
+
+    await owner.mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: " signup " });
+    expect((await owner.query(api.sites.get, { domain: "picai.so" }))?.keyGoal).toBe("signup");
+    await owner.mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: null });
+    expect((await owner.query(api.sites.get, { domain: "picai.so" }))?.keyGoal).toBeNull();
+  });
+
+  test("only the owner can read goal names or set the key goal", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const stranger = t.withIdentity(STRANGER);
+    await expect(stranger.query(api.sites.goalNames, { domain: "picai.so" })).rejects.toThrow(/Site not found/);
+    await expect(
+      stranger.mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: "signup" }),
+    ).rejects.toThrow(/Site not found/);
   });
 });

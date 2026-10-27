@@ -1,6 +1,7 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { mutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import {
   attribute,
   campaignValidator,
@@ -11,7 +12,7 @@ import {
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
 import { cityKey, regionKey } from "./lib/geo";
-import { bumpDailyDim, bumpDailyStats, bumpSessionDim } from "./lib/rollups";
+import { bumpDailyDim, bumpDailyStats, bumpEventDim, bumpSessionDim } from "./lib/rollups";
 
 // These are public because /api/collect calls them over HTTP, so every call must
 // carry INGEST_SECRET. Hits for unknown sites or foreign hostnames are dropped
@@ -20,6 +21,10 @@ import { bumpDailyDim, bumpDailyStats, bumpSessionDim } from "./lib/rollups";
 const MAX_DURATION_MS = 30 * 60 * 1000;
 const MAX_PING_MS = 70 * 1000;
 const LEGACY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// Goals, outbound clicks and identify calls kept per pageview; the rest are dropped
+const MAX_EVENTS_PER_PAGEVIEW = 50;
+const HOUR_MS = 60 * 60 * 1000;
+const EVENT_RETRY_MS = 5_000;
 
 function checkSecret(secret: string): void {
   const expected = process.env.INGEST_SECRET;
@@ -323,6 +328,173 @@ export const ping = mutation({
     return null;
   },
 });
+
+const eventValidator = v.union(
+  v.object({
+    type: v.literal("goal"),
+    name: v.string(),
+    props: v.optional(v.record(v.string(), v.string())),
+  }),
+  v.object({ type: v.literal("outbound"), url: v.string() }), // origin + path
+  v.object({
+    type: v.literal("identify"),
+    userId: v.optional(v.string()),
+    email: v.optional(v.string()),
+    name: v.optional(v.string()),
+  }),
+);
+
+const eventArgs = {
+  site: v.string(),
+  hostname: v.string(),
+  pvId: v.string(),
+  event: eventValidator,
+};
+type EventArgs = Infer<ReturnType<typeof v.object<typeof eventArgs>>>;
+
+/**
+ * A goal, outbound click or identify call from the page with this `pvId`. The visitor,
+ * session and path come from that pageview, so an event for an unknown pageview or
+ * another site's is dropped. A repeat of the same goal (or link) on one pageview is
+ * dropped too. A goal takes the bounce off its session; identify writes the user id,
+ * email and name onto the visitor (cookieless pageviews have none, so it is dropped).
+ */
+export const event = mutation({
+  args: {
+    secret: v.string(),
+    ...eventArgs,
+  },
+  returns: v.null(),
+  handler: async (ctx, { secret, ...args }) => {
+    checkSecret(secret);
+    await recordEvent(ctx, { ...args, ts: Date.now() }, false);
+    return null;
+  },
+});
+
+/** The same event a few seconds later, when its pageview had not been written yet. */
+export const retryEvent = internalMutation({
+  args: { ...eventArgs, ts: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await recordEvent(ctx, args, true);
+    return null;
+  },
+});
+
+async function recordEvent(
+  ctx: MutationCtx,
+  args: EventArgs & { ts: number },
+  retried: boolean,
+): Promise<void> {
+  const site = await findSite(ctx, args.site, args.hostname);
+  if (site === null) return;
+
+  const pv = await ctx.db
+    .query("pageviews")
+    .withIndex("by_pvId", (q) => q.eq("pvId", args.pvId))
+    .first();
+  // Beacons sent together can arrive out of order: a goal right after page load (a
+  // queued call, say) may come before its pageview, so give it one more try
+  if (pv === null && !retried) {
+    await ctx.scheduler.runAfter(EVENT_RETRY_MS, internal.ingest.retryEvent, args);
+    return;
+  }
+  if (pv === null || pv.siteId !== site._id) return;
+
+  const e = args.event;
+  const type = e.type;
+  const name = (e.type === "goal" ? e.name : e.type === "outbound" ? e.url : "identify").trim();
+  if (!name) return;
+
+  const { visitorId, sessionId } = pv;
+  if (type === "identify") {
+    if (visitorId === undefined) return;
+    await identify(ctx, site, visitorId, e);
+  }
+
+  const earlier = await ctx.db
+    .query("events")
+    .withIndex("by_pvId_name", (q) => q.eq("pvId", args.pvId))
+    .take(MAX_EVENTS_PER_PAGEVIEW);
+  if (earlier.length >= MAX_EVENTS_PER_PAGEVIEW) return;
+  if (earlier.some((r) => r.type === type && r.name === name)) return;
+
+  const { ts } = args;
+  const date = localDate(ts, site.timezone);
+  // A visitor counts once per goal (or link) and day; without ids each completion counts
+  const firstToday =
+    type === "identify" ||
+    visitorId === undefined ||
+    !(
+      await ctx.db
+        .query("events")
+        .withIndex("by_site_visitor_ts", (q) =>
+          q
+            .eq("siteId", site._id)
+            .eq("visitorId", visitorId)
+            .gte("ts", ts - 48 * HOUR_MS),
+        )
+        .take(500)
+    ).some((r) => r.date === date && r.type === type && r.name === name);
+
+  await ctx.db.insert("events", {
+    siteId: site._id,
+    ts,
+    date,
+    type,
+    name,
+    path: pv.path,
+    pvId: args.pvId,
+    sessionId,
+    visitorId,
+    ...(e.type === "goal" && e.props && Object.keys(e.props).length > 0 ? { props: e.props } : {}),
+  });
+  if (type === "identify") return;
+
+  await bumpEventDim(ctx, site._id, date, type, name, firstToday);
+  const session =
+    sessionId === undefined
+      ? null
+      : await ctx.db
+          .query("sessions")
+          .withIndex("by_site_session", (q) =>
+            q.eq("siteId", site._id).eq("sessionId", sessionId),
+          )
+          .unique();
+  if (session === null) return;
+  if (type === "goal") {
+    await ctx.db.patch("sessions", session._id, { goals: session.goals + 1, lastSeenAt: ts });
+    // A goal means the session did not bounce, as a second pageview does
+    if (session.pageviews === 1 && session.goals === 0) {
+      await bumpDailyStats(ctx, site._id, session.date, { bounces: -1 });
+    }
+  } else {
+    await ctx.db.patch("sessions", session._id, { lastSeenAt: ts });
+  }
+}
+
+/** Writes the fields identify() sent onto the visitor; the email is lower-cased for matching. */
+async function identify(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  visitorId: string,
+  user: { userId?: string; email?: string; name?: string },
+): Promise<void> {
+  const visitor = await ctx.db
+    .query("visitors")
+    .withIndex("by_site_visitor", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+    .unique();
+  if (visitor === null) return;
+  const userId = user.userId?.trim().slice(0, 100);
+  const email = user.email?.trim().toLowerCase().slice(0, 254);
+  const name = user.name?.trim().slice(0, 100);
+  await ctx.db.patch("visitors", visitor._id, {
+    ...(userId ? { userId } : {}),
+    ...(email && email.includes("@") ? { email } : {}),
+    ...(name ? { name } : {}),
+  });
+}
 
 /** Old scripts (cached before 5a) send one duration beacon per pageview instead of pings. */
 export const duration = mutation({

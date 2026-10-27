@@ -81,6 +81,19 @@ export async function POST(request: Request) {
         pvId: payload.pvId,
         ms: payload.ms,
       });
+    } else if (payload.t === "goal" || payload.t === "out" || payload.t === "identify") {
+      await convex.mutation(api.ingest.event, {
+        secret,
+        site: payload.site,
+        hostname,
+        pvId: payload.pvId,
+        event:
+          payload.t === "goal"
+            ? { type: "goal", name: payload.name, props: payload.props }
+            : payload.t === "out"
+              ? { type: "outbound", url: payload.url }
+              : { type: "identify", userId: payload.userId, email: payload.email, name: payload.name },
+      });
     } else {
       await convex.mutation(api.ingest.duration, {
         secret,

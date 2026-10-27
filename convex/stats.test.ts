@@ -73,6 +73,7 @@ describe("access control", () => {
       (c: typeof t) => c.query(api.stats.breakdown, { ...range, dim: "page" }),
       (c: typeof t) => c.query(api.stats.live, { domain: "picai.so", since: 0 }),
       (c: typeof t) => c.query(api.stats.online, { domain: "picai.so", since: 0 }),
+      (c: typeof t) => c.query(api.stats.goals, range),
     ];
     for (const call of calls) {
       await expect(call(t)).rejects.toThrow(/Not signed in/);
@@ -104,6 +105,7 @@ describe("access control", () => {
       domain: "picai.so",
       timezone: "America/Los_Angeles",
       trackingStartedAt: null,
+      keyGoal: null,
     });
     expect(await t.withIdentity(STRANGER).query(api.sites.get, { domain: "picai.so" })).toBeNull();
     expect(await t.withIdentity(STRANGER).query(api.sites.list, {})).toEqual([]);
@@ -186,9 +188,9 @@ describe("stats.breakdown", () => {
       .withIdentity(OWNER)
       .query(api.stats.breakdown, { ...range, dim: "page" });
     expect(b.rows).toEqual([
-      { key: "/pricing", pageviews: 3, visitors: 1, sessions: 0 },
-      { key: "/", pageviews: 2, visitors: 2, sessions: 0 },
-      { key: "/blog", pageviews: 1, visitors: 0, sessions: 0 },
+      { key: "/pricing", pageviews: 3, visitors: 1, sessions: 0, events: 0 },
+      { key: "/", pageviews: 2, visitors: 2, sessions: 0, events: 0 },
+      { key: "/blog", pageviews: 1, visitors: 0, sessions: 0, events: 0 },
     ]);
     expect(b.totalPageviews).toBe(6);
     expect(b.totalVisitors).toBe(3);
@@ -361,5 +363,70 @@ describe("stats.online", () => {
     });
     const since = Date.parse("2026-10-13T16:55:00Z");
     expect(await t.withIdentity(OWNER).query(api.stats.online, { domain: "picai.so", since })).toBe(2);
+  });
+});
+
+/** A goal or outbound click on the pageview `pvId`, at the current fake time. */
+async function event(
+  t: ReturnType<typeof convexTest>,
+  pvId: string,
+  e: { type: "goal"; name: string } | { type: "outbound"; url: string },
+) {
+  await t.mutation(api.ingest.event, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId, event: e });
+}
+
+describe("stats.goals", () => {
+  test("completions and visitors per goal, and the daily visitors to divide by", async () => {
+    const t = await setup();
+    const a1 = await visit(t, "2026-10-12T17:00:00Z", { visitorId: "a", sessionId: "a1" });
+    await event(t, a1, { type: "goal", name: "signup" });
+    const a2 = await visit(t, "2026-10-12T17:05:00Z", { visitorId: "a", sessionId: "a1", path: "/x" });
+    await event(t, a2, { type: "goal", name: "signup" });
+    await event(t, a2, { type: "goal", name: "newsletter" });
+    const b1 = await visit(t, "2026-10-13T17:00:00Z", { visitorId: "b", sessionId: "b1" });
+    await event(t, b1, { type: "goal", name: "newsletter" });
+    await visit(t, "2026-10-13T17:00:00Z", { visitorId: "c", sessionId: "c1" });
+    await visit(t, "2026-10-01T17:00:00Z", { visitorId: "d", sessionId: "d1" }); // outside the range
+
+    expect(await t.withIdentity(OWNER).query(api.stats.goals, range)).toEqual({
+      rows: [
+        { name: "newsletter", completions: 2, visitors: 2 },
+        { name: "signup", completions: 2, visitors: 1 },
+      ],
+      visitors: 3,
+      keyGoal: null,
+    });
+  });
+
+  test("always lists the key goal, even with no completions", async () => {
+    const t = await setup();
+    await t.withIdentity(OWNER).mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: "booking" });
+    const pv = await visit(t, "2026-10-13T17:00:00Z", { visitorId: "a", sessionId: "a1" });
+    await event(t, pv, { type: "goal", name: "signup" });
+
+    const goals = await t.withIdentity(OWNER).query(api.stats.goals, range);
+    expect(goals.keyGoal).toBe("booking");
+    expect(goals.rows).toEqual([
+      { name: "signup", completions: 1, visitors: 1 },
+      { name: "booking", completions: 0, visitors: 0 },
+    ]);
+  });
+});
+
+describe("stats.breakdown for outbound links", () => {
+  test("sorts by clicks and totals them", async () => {
+    const t = await setup();
+    const a = await visit(t, "2026-10-13T17:00:00Z", { visitorId: "a", sessionId: "a1" });
+    await event(t, a, { type: "outbound", url: "https://x.com/acme" });
+    await event(t, a, { type: "outbound", url: "https://github.com/acme" });
+    const b = await visit(t, "2026-10-13T17:01:00Z", { visitorId: "a", sessionId: "a1", path: "/b" });
+    await event(t, b, { type: "outbound", url: "https://github.com/acme" });
+
+    const out = await t.withIdentity(OWNER).query(api.stats.breakdown, { ...range, dim: "outbound" });
+    expect(out.rows.map((r) => [r.key, r.events, r.visitors])).toEqual([
+      ["https://github.com/acme", 2, 1],
+      ["https://x.com/acme", 1, 1],
+    ]);
+    expect(out.totalEvents).toBe(3);
   });
 });

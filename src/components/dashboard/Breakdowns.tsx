@@ -38,10 +38,12 @@ import {
   deviceLabel,
   formatNumber,
   formatShare,
+  outboundLabel,
   referrerLabel,
   regionLabel,
 } from "@/lib/format";
 import BreakdownList, { type BreakdownRow } from "./BreakdownList";
+import GoalsPanel from "./GoalsPanel";
 
 type Props = { domain: string; range: DateRange };
 
@@ -82,12 +84,15 @@ const CAMPAIGN_DIMS: Tab[] = [
 ];
 
 // Lists that show a count rather than a share bar
-const COUNT_DIMS = new Set<Dim>([...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS].map((t) => t.dim));
+const COUNT_DIMS = new Set<Dim>([
+  ...[...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS].map((t) => t.dim),
+  "outbound",
+]);
 
 /**
  * The four columns under the chart: sources (Channels, Sources, Campaigns, Referrers),
  * pages (Pages, Entry, Exit), devices (Devices, OS) + Browsers, and countries
- * (Countries, Regions, Cities).
+ * (Countries, Regions, Cities). Goals and Outbound links sit below, two columns each.
  */
 export default function Breakdowns({ domain, range }: Props) {
   // Remount the lists when the range changes, so paging starts on page 1
@@ -101,6 +106,12 @@ export default function Breakdowns({ domain, range }: Props) {
         <Breakdown key={`browser${k}`} {...{ domain, range }} dim="browser" title="Browsers" />
       </div>
       <Tabbed {...{ domain, range }} tabs={COUNTRY_TABS} title="Countries" />
+      <div className="sm:col-span-2">
+        <GoalsPanel key={`goal${k}`} {...{ domain, range }} />
+      </div>
+      <div className="sm:col-span-2">
+        <Breakdown key={`outbound${k}`} {...{ domain, range }} dim="outbound" title="Outbound links" />
+      </div>
     </div>
   );
 }
@@ -165,12 +176,18 @@ function Breakdown({
 }: Props & { dim: Dim; title: string; header?: ReactNode }) {
   const data = useQuery(api.stats.breakdown, { domain, dim, ...range });
 
-  // Pages count pageviews, entry and exit pages count sessions, and the source lists
-  // count visitors (as SA does); the other lists show each key's share of all visitors.
+  // Pages count pageviews, entry and exit pages count sessions, outbound links count
+  // clicks, and the source lists count visitors (as SA does); the other lists show each
+  // key's share of all visitors.
   const variant = COUNT_DIMS.has(dim) ? "count" : "share";
   const metric = dimMetric(dim);
   const total = data
-    ? { pageviews: data.totalPageviews, visitors: data.totalVisitors, sessions: data.totalSessions }[metric]
+    ? {
+        pageviews: data.totalPageviews,
+        visitors: data.totalVisitors,
+        sessions: data.totalSessions,
+        events: data.totalEvents,
+      }[metric]
     : 0;
 
   const rows: BreakdownRow[] | undefined = data?.rows.map((r) => {
@@ -212,6 +229,12 @@ function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
       return regionLabel(value);
     case "city":
       return cityLabel(value);
+    case "outbound":
+      return (
+        <a href={value} target="_blank" rel="noopener noreferrer nofollow" className="hover:text-accent">
+          {outboundLabel(value)}
+        </a>
+      );
     default:
       return value;
   }

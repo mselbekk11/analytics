@@ -46,7 +46,7 @@ const siteSummary = v.object({ domain: v.string(), timezone: v.string() });
 /**
  * The signed-in user's site with this domain, or null if it is missing or not theirs.
  * `trackingStartedAt` is when the first hit with a visitor id arrived (null until then,
- * and for cookieless sites).
+ * and for cookieless sites). `keyGoal` is the goal the site converts on, if one is set.
  */
 export const get = query({
   args: { domain: v.string() },
@@ -56,6 +56,7 @@ export const get = query({
       domain: v.string(),
       timezone: v.string(),
       trackingStartedAt: v.union(v.null(), v.number()),
+      keyGoal: v.union(v.null(), v.string()),
     }),
   ),
   handler: async (ctx, args) => {
@@ -65,6 +66,7 @@ export const get = query({
       domain: site.domain,
       timezone: site.timezone,
       trackingStartedAt: site.trackingStartedAt ?? null,
+      keyGoal: site.keyGoal ?? null,
     };
   },
 });
@@ -153,6 +155,39 @@ export const update = mutation({
   },
 });
 
+// Goal names for the key-goal picker come from the goal rollups; a site has a handful
+const MAX_GOAL_ROWS = 5_000;
+
+/** Every goal name the site has recorded, sorted, for the key-goal picker in Settings. */
+export const goalNames = query({
+  args: { domain: v.string() },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const rows = await ctx.db
+      .query("dailyDims")
+      .withIndex("by_site_dim_date", (q) => q.eq("siteId", site._id).eq("dim", "goal"))
+      .order("desc")
+      .take(MAX_GOAL_ROWS);
+    return [...new Set(rows.map((r) => r.key))].sort((a, b) => a.localeCompare(b));
+  },
+});
+
+/** Sets the goal a site converts on (null clears it). Any name is accepted, recorded or not. */
+export const setKeyGoal = mutation({
+  args: { domain: v.string(), keyGoal: v.union(v.null(), v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const keyGoal = args.keyGoal?.trim() || undefined;
+    if (keyGoal !== undefined && keyGoal.length > 100) {
+      throw new ConvexError("Goal names are at most 100 characters");
+    }
+    await ctx.db.patch("sites", site._id, { keyGoal });
+    return null;
+  },
+});
+
 /**
  * Deletes a site. The site row goes at once, so the dashboard and ingest stop seeing
  * it; its hits and rollups are deleted in scheduled batches by deleteSiteData,
@@ -169,7 +204,7 @@ export const remove = mutation({
   },
 });
 
-// Five tables per run, well inside the per-mutation write limit
+// Six tables per run, well inside the per-mutation write limit
 const DELETE_BATCH = 1000;
 
 export const deleteSiteData = internalMutation({
@@ -207,7 +242,13 @@ export const deleteSiteData = internalMutation({
       .take(DELETE_BATCH);
     for (const row of visitors) await ctx.db.delete("visitors", row._id);
 
-    const batches = [pageviews, dims, stats, sessions, visitors];
+    const events = await ctx.db
+      .query("events")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of events) await ctx.db.delete("events", row._id);
+
+    const batches = [pageviews, dims, stats, sessions, visitors, events];
     if (batches.some((rows) => rows.length === DELETE_BATCH)) {
       await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
     }

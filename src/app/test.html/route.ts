@@ -14,9 +14,21 @@ const html = `<!doctype html>
   <p>Each load sends a pageview for the site <code>localhost</code>. Switching tabs or closing this one sends the time on page.</p>
   <p><button id="spa">pushState to /test.html/next</button> simulates an SPA route change.</p>
   <p><a href="/test.html">Reload via link</a> (internal navigation, not unique)</p>
+  <p><button data-goal="test-signup">data-goal="test-signup"</button> sends a goal on click.</p>
+  <p><button id="goal">analytics("goal", "test-code", { plan: "pro" })</button></p>
+  <p><button id="identify">analytics("identify", { id: "u_test", email: "test@example.com", name: "Test" })</button></p>
+  <p><a href="https://github.com/mselbekk11" target="_blank">github.com/mselbekk11</a> is an outbound link.</p>
   <script>
+    window.analytics=window.analytics||function(){(window.analytics.q=window.analytics.q||[]).push(arguments)};
+    analytics("goal", "test-queued"); // queued until the script loads
     document.getElementById("spa").onclick = function () {
       history.pushState({}, "", "/test.html/next-" + Date.now());
+    };
+    document.getElementById("goal").onclick = function () {
+      analytics("goal", "test-code", { plan: "pro" });
+    };
+    document.getElementById("identify").onclick = function () {
+      analytics("identify", { id: "u_test", email: "test@example.com", name: "Test" });
     };
   </script>
   <script async src="/script.js" data-site="localhost"></script>
