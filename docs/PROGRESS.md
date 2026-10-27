@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-14. Read this together with [PLAN.md](PLAN.md), which is the brief and lists the remaining phases. This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-26. Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -11,6 +11,8 @@ Last updated: 2026-10-14. Read this together with [PLAN.md](PLAN.md), which is t
 | 2: Site dashboard | Done. `/sites/[domain]` approved by the owner: SA's layout with the original dark look (see Decisions). |
 | 3: Websites list and settings | **Built, awaiting owner review.** `/websites`, settings and the `/` redirect work locally against Convex dev. Still to do by the owner: add the snippet to the other seven sites. |
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
+| 5a: Visitors and sessions | **Pushed to `main` on 2026-10-27, awaiting the phone check.** Checked with tests and with curl hits against Convex dev; the phone check in "Done when" needs production. |
+| 5b to 5h, 6 | Not started. 5a must be live in production first. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -46,15 +48,15 @@ Vercel build command: `npx convex deploy --cmd 'npm run build'`.
 
 ```text
 convex/
-  schema.ts          all four tables from PLAN.md (sites, pageviews, dailyStats, dailyDims)
+  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a) with PHASE5.md's fields
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
   me.ts              whoami test query (Phase 0 check)
   sites.ts           sites.create (normalises the domain, rejects duplicates, validates the timezone),
                      sites.get (null if missing or not yours), sites.list (feeds the site switcher),
                      sites.listWithStats (30 zero-filled days per site), sites.update (timezone),
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
-  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.live (all behind requireSite)
-  ingest.ts          ingest.pageview / ingest.duration (public, guarded by INGEST_SECRET)
+  stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.live, stats.online (all behind requireSite)
+  ingest.ts          ingest.pageview / ingest.ping / ingest.duration (legacy) (public, guarded by INGEST_SECRET)
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
@@ -80,12 +82,14 @@ src/
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname
   lib/*.test.ts      unit tests, including script.test.ts, which runs public/script.js in a fake browser
-public/script.js     hand-written ES5 tracking script (1.47 KB gzipped)
+public/script.js     hand-written ES5 tracking script (2.28 KB gzipped after 5a; limit 3 KB)
+docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
 ```
 
 Checks at the end of Phase 1: `npm run build`, `npx tsc --noEmit`, `npm run lint` clean, `npm test` 89 tests passing.
 Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing; add, settings and delete clicked through locally.
+Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing; curl hits through local `/api/collect` into Convex dev gave 1 visitor, 2 sessions, 1 bounce and the ping's 42 s on the session.
 
 ## Decisions and differences from PLAN.md
 
@@ -116,6 +120,22 @@ Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing;
 - **Deleting a site** needs the domain typed to confirm (no browser `confirm()`). The `sites` row is deleted at once, so ingest and the dashboard stop seeing it; `deleteSiteData` then removes pageviews, dailyDims and dailyStats 1,000 rows per table per run and reschedules itself until done. Re-adding the same domain later starts fresh.
 - **Changing the timezone** affects only new hits; stored days keep their dates (as PLAN.md says).
 - **Removed the Phase 0/1 placeholders** (`WhoAmI`, `SiteLinks`, the old home page). `convex/me.ts` (`me.whoami`) is still deployed and tested but no longer used by the UI.
+
+### Phase 5a (visitors and sessions)
+
+- **How ids flow:** `script.js` reads `_va_vid` (400 days) and `_va_sid` (30 minutes, sliding) on every send, creates any that are missing, writes both back on the root domain (found by probing parent domains with a test cookie; `data-cookie-domain` overrides) and adds `vid` and `sid` to every payload. `ingest.pageview` then upserts the session and visitor; pings carry the ids only to slide the cookies, and the server uses the pageview's own `sessionId`.
+- **`trackingStartedAt` is per site:** set by the first pageview that carries ids, not a global launch date. Its local day is the "visitor tracking on" chart marker and the cut-over for the Visitors tile. Sites added later get it from their first hit.
+- **Visitors tile:** SA-style `dailyStats.visitors` for days before that day, plus distinct `visitorId`s from `sessions` on and after it (read through `by_site_started` with a widened window, then filtered on the stored `date`). Over 10,000 sessions it falls back to the sum of daily visitors and shows "≈".
+- **"–" instead of a % change** on visitors, sessions, bounce rate and session time while the previous range starts before that day. Pageviews and time on page keep their changes (definitions unchanged).
+- **Daily visitors and the lists use one rule:** with ids, a hit counts as a visitor when it is the visitor's first pageview of that local day (`visitors.lastSeenDate`). This feeds `dailyStats.visitors` (the chart) and the `visitors` column of the existing dims, so list percentages match. Cookieless and old-script hits still use the script's `unique` flag.
+- **Session-level counters go on the session's start day:** `sessions`, `bounces` (+1 at start, −1 on the second pageview) and `sessionEngagedMs`. Pageview counters and time on page stay on the pageview's own day.
+- **"Online now" reads `sessions` through a new index `by_site_lastSeenAt`**, not `visitors.lastSeen`. Pings move `sessions.lastSeenAt`, so someone reading one page stays online, while visitor rows only change on pageviews (Convex's guidance: keep heartbeats off profile documents). Cookieless sites (no `trackingStartedAt`) keep "live pageviews", and the session tiles are hidden for them.
+- **Pings:** every 60 s while visible, on hidden, on `pagehide` and before an SPA route change, only when there is visible time to send; at most 30 per pageview. The script caps a ping at 70 s and the parser rejects more; `ingest.ping` caps again and stops at 30 minutes per pageview. Time on page counts each pageview once, on its first ping.
+- **Cookieless mode:** `data-cookieless` on the snippet sends `nc: 1` and no ids. If a browser refuses cookies, the script sends the same cookieless hit rather than a new visitor on every page.
+- **Old cached scripts:** hits with neither ids nor `nc` are stored the old way until 7 days after the site's `trackingStartedAt`, then dropped. `ingest.duration` stays for their `dur` beacons; both can be removed once 5a has been live for a week.
+- **Deferred to their sub-phase:** `sessions.source`/`channel` are optional for now (5b fills them and backfills 5a sessions from `referrer`); `sites.currency` and the revenue fields on `dailyStats` come with 5e; the new `dailyDims` fields and `dim` values come with 5b to 5d. Entry and exit are kept on the session (`entryPath`, `exitPath`) but not yet as dims.
+- **`deleteSiteData`** now also deletes `sessions` and `visitors`.
+- **Settings copy** no longer says the snippet sets no cookies; it names the two cookies and `data-cookieless`.
 
 ## Gotchas
 
@@ -152,6 +172,10 @@ Read production data with `npx convex data <table> --prod`.
 - Before real use: create a Clerk production instance on a custom domain, swap in its keys and issuer, and update `sites.ownerId` (see the first decision above).
 - Add the snippet to mselbekk.com and the other six sites (planned for Phase 3).
 
-## Next: finish Phase 3, then Phase 4
+## Next: review and ship Phase 5a
+
+Owner: review the diff, then push to `main` to deploy. On production, check "Done when": visit a tracked site on your phone, come back after 40 minutes, and `/sites/[domain]` should show 1 visitor, 2 sessions and a bounce rate of 100% for two one-page visits. Paste the text from `docs/PRIVACY.md` into each site's privacy policy. A week after launch, remove the old-script fallback and `ingest.duration`. Then 5b.
+
+## Earlier: finish Phase 3, then Phase 4
 
 Owner: review `/websites` and the settings page against `public/SA-websites.png`, then add each remaining site under Add website (production) and paste its snippet (Settings → Embed snippet) into mselbekk.com and the other six sites, next to the SA snippet. Phase 4 is then the two-week side-by-side run.

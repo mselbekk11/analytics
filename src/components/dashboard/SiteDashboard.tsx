@@ -14,7 +14,7 @@ import {
   type DateRange,
   type Preset,
 } from "../../../convex/lib/ranges";
-import { formatDuration, formatNumber } from "@/lib/format";
+import { formatDuration, formatNumber, formatShare } from "@/lib/format";
 import Breakdowns from "./Breakdowns";
 import RangePicker from "./RangePicker";
 import SiteHeader from "./SiteHeader";
@@ -56,12 +56,30 @@ function Site({ domain }: { domain: string }) {
       </p>
     );
   }
-  return <Dashboard domain={site.domain} timezone={site.timezone} />;
+  return (
+    <Dashboard
+      domain={site.domain}
+      timezone={site.timezone}
+      trackingStartedAt={site.trackingStartedAt}
+    />
+  );
 }
 
-function Dashboard({ domain, timezone }: { domain: string; timezone: string }) {
+function Dashboard({
+  domain,
+  timezone,
+  trackingStartedAt,
+}: {
+  domain: string;
+  timezone: string;
+  trackingStartedAt: number | null;
+}) {
   const now = useNow(LIVE_REFRESH_MS);
   const today = localDate(now, timezone);
+  // Sites with visitor ids get session tiles and "online now"; cookieless sites keep
+  // the Phase 2 row
+  const tracking = trackingStartedAt !== null;
+  const trackingStart = tracking ? localDate(trackingStartedAt, timezone) : null;
 
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -76,10 +94,19 @@ function Dashboard({ domain, timezone }: { domain: string; timezone: string }) {
 
   const summary = useQuery(api.stats.summary, { domain, ...range });
   const series = useQuery(api.stats.timeseries, { domain, ...range });
-  const live = useQuery(api.stats.live, { domain, since: now - LIVE_WINDOW_MS });
+  const since = now - LIVE_WINDOW_MS;
+  const live = useQuery(api.stats.live, tracking ? "skip" : { domain, since });
+  const online = useQuery(api.stats.online, tracking ? { domain, since } : "skip");
 
   const cur = summary?.current;
   const prev = summary?.previous;
+  const incomparable = summary?.comparable === false;
+  const change = (pick: (t: NonNullable<typeof cur>) => number | null) => {
+    if (!cur || !prev) return null;
+    const a = pick(cur);
+    const b = pick(prev);
+    return a === null || b === null ? null : percentChange(a, b);
+  };
 
   return (
     <div className="flex flex-col gap-10">
@@ -87,39 +114,81 @@ function Dashboard({ domain, timezone }: { domain: string; timezone: string }) {
         <div className="flex flex-wrap gap-x-10 gap-y-6">
           <StatTile
             label="visitors"
-            value={cur && formatNumber(cur.visitors)}
-            change={cur && prev && percentChange(cur.visitors, prev.visitors)}
+            value={cur && (summary.visitorsApprox ? "≈" : "") + formatNumber(cur.visitors)}
+            change={change((t) => t.visitors)}
+            incomparable={incomparable}
+            title={
+              summary?.visitorsApprox
+                ? "Too many sessions to count distinct visitors: this is the sum of daily visitors"
+                : undefined
+            }
           />
+          {tracking && (
+            <StatTile
+              label="sessions"
+              value={cur && formatNumber(cur.sessions)}
+              change={change((t) => t.sessions)}
+              incomparable={incomparable}
+            />
+          )}
           <StatTile
             label="pageviews"
             value={cur && formatNumber(cur.pageviews)}
-            change={cur && prev && percentChange(cur.pageviews, prev.pageviews)}
+            change={change((t) => t.pageviews)}
           />
+          {tracking && (
+            <StatTile
+              label="bounce rate"
+              value={cur && (cur.bounceRate === null ? "–" : formatShare(cur.bounceRate))}
+              change={change((t) => t.bounceRate)}
+              incomparable={incomparable}
+              lowerIsBetter
+              title="Sessions with one pageview and no goal"
+            />
+          )}
+          {tracking && (
+            <StatTile
+              label="session time"
+              value={cur && (cur.sessionTimeMs === null ? "–" : formatDuration(cur.sessionTimeMs))}
+              change={change((t) => t.sessionTimeMs)}
+              incomparable={incomparable}
+              title="Average visible-tab time per session"
+            />
+          )}
           <StatTile
             label="time on page"
             value={cur && (cur.timeOnPageMs === null ? "–" : formatDuration(cur.timeOnPageMs))}
-            change={
-              cur?.timeOnPageMs != null && prev?.timeOnPageMs != null
-                ? percentChange(cur.timeOnPageMs, prev.timeOnPageMs)
-                : null
-            }
+            change={change((t) => t.timeOnPageMs)}
           />
-          <StatTile
-            label={
-              <span className="flex items-center gap-1.5" title="Pageviews in the last 5 minutes">
-                <span className="size-2 animate-pulse rounded-full bg-down" />
-                live pageviews
-              </span>
-            }
-            value={live === undefined ? undefined : formatNumber(live)}
-          />
+          {tracking ? (
+            <StatTile
+              label={<LiveLabel text="online now" />}
+              value={online === undefined ? undefined : formatNumber(online)}
+              title="Visitors with a pageview or ping in the last 5 minutes"
+            />
+          ) : (
+            <StatTile
+              label={<LiveLabel text="live pageviews" />}
+              value={live === undefined ? undefined : formatNumber(live)}
+              title="Pageviews in the last 5 minutes"
+            />
+          )}
         </div>
         <RangePicker range={range} preset={preset} today={today} onChange={setRange} />
       </div>
 
-      <TrafficChart data={series} />
+      <TrafficChart data={series} trackingStart={trackingStart} />
       <Breakdowns domain={domain} range={range} />
     </div>
+  );
+}
+
+function LiveLabel({ text }: { text: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="size-2 animate-pulse rounded-full bg-down" />
+      {text}
+    </span>
   );
 }
 

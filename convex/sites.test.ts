@@ -126,6 +126,7 @@ describe("sites.update", () => {
     expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).toEqual({
       domain: "picai.so",
       timezone: "Europe/Oslo",
+      trackingStartedAt: null,
     });
 
     await expect(
@@ -172,6 +173,37 @@ describe("sites.remove", () => {
         });
       }
     });
+    await t.run(async (ctx) => {
+      for (const id of [siteId, otherId]) {
+        await ctx.db.insert("sessions", {
+          siteId: id,
+          sessionId: `s-${id}`,
+          visitorId: `v-${id}`,
+          date: "2026-10-14",
+          startedAt: 1,
+          lastSeenAt: 1,
+          engagedMs: 0,
+          pageviews: 1,
+          goals: 0,
+          entryPath: "/",
+          exitPath: "/",
+          referrer: "(direct)",
+          country: "US",
+          device: "desktop",
+          browser: "Chrome",
+          revenueMinor: 0,
+        });
+        await ctx.db.insert("visitors", {
+          siteId: id,
+          visitorId: `v-${id}`,
+          firstSeen: 1,
+          lastSeen: 1,
+          lastSeenDate: "2026-10-14",
+          sessions: 1,
+          revenueMinor: 0,
+        });
+      }
+    });
     await addDay(t, siteId, "2026-10-14", 1_005, 1_005);
     await addDay(t, otherId, "2026-10-14", 3, 3);
 
@@ -183,10 +215,14 @@ describe("sites.remove", () => {
       pageviews: (await ctx.db.query("pageviews").take(5_000)).map((r) => r.siteId),
       dims: (await ctx.db.query("dailyDims").take(100)).map((r) => r.siteId),
       stats: (await ctx.db.query("dailyStats").take(100)).map((r) => r.siteId),
+      sessions: (await ctx.db.query("sessions").take(100)).map((r) => r.siteId),
+      visitors: (await ctx.db.query("visitors").take(100)).map((r) => r.siteId),
     }));
     expect(left.pageviews).toEqual([otherId, otherId, otherId]);
     expect(left.dims).toEqual([otherId]);
     expect(left.stats).toEqual([otherId]);
+    expect(left.sessions).toEqual([otherId]);
+    expect(left.visitors).toEqual([otherId]);
   });
 
   test("refuses someone else's site", async () => {

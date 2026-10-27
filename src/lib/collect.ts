@@ -11,8 +11,21 @@ export type PageviewPayload = {
   unique: boolean;
   pvId: string;
   sw?: number;
+  /** _va_vid and _va_sid; both or neither */
+  vid?: string;
+  sid?: string;
+  /** Sent by the snippet's data-cookieless mode (or when cookies are blocked) */
+  nc: boolean;
 };
 
+export type PingPayload = {
+  t: "ping";
+  site: string;
+  pvId: string;
+  ms: number;
+};
+
+/** One beacon per pageview from scripts cached before Phase 5a; pings replaced it. */
 export type DurationPayload = {
   t: "dur";
   site: string;
@@ -20,10 +33,13 @@ export type DurationPayload = {
   ms: number;
 };
 
-export type Payload = PageviewPayload | DurationPayload;
+export type Payload = PageviewPayload | PingPayload | DurationPayload;
 
 export const MAX_BODY_BYTES = 2048;
 export const MAX_DURATION_MS = 30 * 60 * 1000;
+export const MAX_PING_MS = 70 * 1000;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function str(value: unknown, max: number, min = 0): value is string {
   return typeof value === "string" && value.length >= min && value.length <= max;
@@ -48,6 +64,8 @@ export function parsePayload(body: string): Payload | null {
     if (!str(d.host, 253) || !str(d.path, 500, 1) || !str(d.ref, 1000)) return null;
     if (typeof d.unique !== "boolean") return null;
     const sw = typeof d.sw === "number" && Number.isFinite(d.sw) ? d.sw : undefined;
+    const ids = d.vid !== undefined || d.sid !== undefined;
+    if (ids && !(isUuid(d.vid) && isUuid(d.sid))) return null;
     return {
       t: "pv",
       site: d.site,
@@ -57,7 +75,17 @@ export function parsePayload(body: string): Payload | null {
       unique: d.unique,
       pvId: d.pvId,
       sw,
+      ...(ids ? { vid: d.vid as string, sid: d.sid as string } : {}),
+      nc: d.nc === 1 || d.nc === true,
     };
+  }
+
+  if (d.t === "ping") {
+    const ms = d.ms;
+    if (typeof ms !== "number" || !Number.isInteger(ms) || ms < 0 || ms > MAX_PING_MS) {
+      return null;
+    }
+    return { t: "ping", site: d.site, pvId: d.pvId, ms };
   }
 
   if (d.t === "dur") {
@@ -69,6 +97,10 @@ export function parsePayload(body: string): Payload | null {
   }
 
   return null;
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
 }
 
 function hostnameOf(value: string): string | null {

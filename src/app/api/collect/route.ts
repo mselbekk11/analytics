@@ -64,6 +64,17 @@ export async function POST(request: Request) {
         browser: parsed.browser.name ?? "Unknown",
         country: geolocation(request).country ?? "Unknown",
         pvId: payload.pvId,
+        visitorId: payload.vid,
+        sessionId: payload.sid,
+        cookieless: payload.nc,
+      });
+    } else if (payload.t === "ping") {
+      await convex.mutation(api.ingest.ping, {
+        secret,
+        site: payload.site,
+        hostname,
+        pvId: payload.pvId,
+        ms: payload.ms,
       });
     } else {
       await convex.mutation(api.ingest.duration, {

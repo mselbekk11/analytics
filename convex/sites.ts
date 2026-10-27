@@ -43,14 +43,29 @@ export const create = mutation({
 
 const siteSummary = v.object({ domain: v.string(), timezone: v.string() });
 
-/** The signed-in user's site with this domain, or null if it is missing or not theirs. */
+/**
+ * The signed-in user's site with this domain, or null if it is missing or not theirs.
+ * `trackingStartedAt` is when the first hit with a visitor id arrived (null until then,
+ * and for cookieless sites).
+ */
 export const get = query({
   args: { domain: v.string() },
-  returns: v.union(v.null(), siteSummary),
+  returns: v.union(
+    v.null(),
+    v.object({
+      domain: v.string(),
+      timezone: v.string(),
+      trackingStartedAt: v.union(v.null(), v.number()),
+    }),
+  ),
   handler: async (ctx, args) => {
     const site = await findOwnedSite(ctx, args.domain);
     if (site === null) return null;
-    return { domain: site.domain, timezone: site.timezone };
+    return {
+      domain: site.domain,
+      timezone: site.timezone,
+      trackingStartedAt: site.trackingStartedAt ?? null,
+    };
   },
 });
 
@@ -154,7 +169,7 @@ export const remove = mutation({
   },
 });
 
-// Three tables per run, well inside the per-mutation write limit
+// Five tables per run, well inside the per-mutation write limit
 const DELETE_BATCH = 1000;
 
 export const deleteSiteData = internalMutation({
@@ -180,7 +195,20 @@ export const deleteSiteData = internalMutation({
       .take(DELETE_BATCH);
     for (const row of stats) await ctx.db.delete("dailyStats", row._id);
 
-    if ([pageviews, dims, stats].some((rows) => rows.length === DELETE_BATCH)) {
+    const sessions = await ctx.db
+      .query("sessions")
+      .withIndex("by_site_started", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of sessions) await ctx.db.delete("sessions", row._id);
+
+    const visitors = await ctx.db
+      .query("visitors")
+      .withIndex("by_site_lastSeen", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of visitors) await ctx.db.delete("visitors", row._id);
+
+    const batches = [pageviews, dims, stats, sessions, visitors];
+    if (batches.some((rows) => rows.length === DELETE_BATCH)) {
       await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
     }
     return null;

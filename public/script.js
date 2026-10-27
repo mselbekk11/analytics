@@ -1,4 +1,4 @@
-/* Cookieless analytics. Stores nothing on the visitor's device. */
+/* Analytics. Sets a first-party visitor and session cookie, unless the snippet has data-cookieless. */
 (function (w, d) {
   try {
     var script = d.currentScript;
@@ -8,6 +8,39 @@
     var loc = w.location;
     var nav = w.navigator;
     var host = loc.hostname;
+    var cookieless = script.getAttribute("data-cookieless") !== null;
+    var VID = "_va_vid";
+    var SID = "_va_sid";
+    var secure = loc.protocol === "https:" ? "; Secure" : "";
+    var cookieDomain = null;
+
+    function readCookie(name) {
+      var m = d.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+      return m ? m[1] : null;
+    }
+
+    function writeCookie(name, value, maxAge, domain) {
+      d.cookie =
+        name + "=" + value + "; Max-Age=" + maxAge + "; Path=/" +
+        (domain ? "; Domain=" + domain : "") + "; SameSite=Lax" + secure;
+    }
+
+    // The widest domain that takes a cookie (example.com for app.example.com), so
+    // subdomains share one visitor. Browsers refuse public suffixes such as co.uk.
+    function rootDomain() {
+      if (cookieDomain !== null) return cookieDomain;
+      cookieDomain = script.getAttribute("data-cookie-domain") || "";
+      var parts = host.split(".");
+      for (var i = 2; !cookieDomain && i <= parts.length; i++) {
+        var candidate = parts.slice(-i).join(".");
+        writeCookie("_va_t", "1", 10, candidate);
+        if (readCookie("_va_t")) {
+          writeCookie("_va_t", "", 0, candidate);
+          cookieDomain = candidate;
+        }
+      }
+      return cookieDomain;
+    }
 
     // Skip local and IP hosts (unless tracking a site literally called "localhost"),
     // automated browsers, and anyone who opted out with localStorage.sa_ignore = "true"
@@ -15,12 +48,40 @@
     if (isLocal && site !== "localhost") return;
     if (nav.webdriver) return;
     try {
-      if (w.localStorage.getItem("sa_ignore") === "true") return;
+      if (w.localStorage.getItem("sa_ignore") === "true") {
+        writeCookie(VID, "", 0, rootDomain());
+        writeCookie(SID, "", 0, rootDomain());
+        return;
+      }
     } catch (e) {}
 
     var endpoint = script.src.split("/script.js")[0] + "/api/collect";
 
+    function uuid() {
+      try {
+        if (w.crypto && w.crypto.randomUUID) return w.crypto.randomUUID();
+      } catch (e) {}
+      return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+        var r = (Math.random() * 16) | 0;
+        return (c === "x" ? r : (r & 3) | 8).toString(16);
+      });
+    }
+
+    // Every send renews the visitor id (400 days) and slides the session (30 minutes).
+    // If the browser refuses cookies, count the hit the cookieless way instead.
     function send(data) {
+      if (!cookieless) {
+        var domain = rootDomain();
+        var vid = readCookie(VID) || uuid();
+        var sid = readCookie(SID) || uuid();
+        writeCookie(VID, vid, 34560000, domain);
+        writeCookie(SID, sid, 1800, domain);
+        if (readCookie(VID) === vid) {
+          data.vid = vid;
+          data.sid = sid;
+        }
+      }
+      if (!data.vid) data.nc = 1;
       var body = JSON.stringify(data);
       try {
         if (nav.sendBeacon && nav.sendBeacon(endpoint, body)) return;
@@ -28,13 +89,6 @@
       try {
         w.fetch(endpoint, { method: "POST", body: body, keepalive: true });
       } catch (e) {}
-    }
-
-    function randomId() {
-      try {
-        if (w.crypto && w.crypto.randomUUID) return w.crypto.randomUUID();
-      } catch (e) {}
-      return Math.random().toString(36).slice(2) + Date.now().toString(36);
     }
 
     function hostnameOf(url) {
@@ -57,9 +111,9 @@
     // Visible time on the current page, paused while the tab is hidden
     var pvId = null;
     var lastPath = null;
-    var visibleMs = 0;
+    var pendingMs = 0;
     var visibleSince = null;
-    var durationSent = false;
+    var pings = 0;
 
     function now() {
       return Date.now();
@@ -67,7 +121,7 @@
 
     function pause() {
       if (visibleSince !== null) {
-        visibleMs += now() - visibleSince;
+        pendingMs += now() - visibleSince;
         visibleSince = null;
       }
     }
@@ -76,17 +130,23 @@
       if (visibleSince === null && d.visibilityState !== "hidden") visibleSince = now();
     }
 
-    function sendDuration() {
-      if (!pvId || durationSent) return;
+    // Sends the visible time since the last ping, at most 30 pings per pageview
+    function ping() {
+      if (!pvId) return;
       pause();
-      durationSent = true;
-      send({ t: "dur", site: site, pvId: pvId, ms: Math.min(Math.round(visibleMs), 1800000) });
+      var ms = Math.min(Math.round(pendingMs), 70000);
+      pendingMs = 0;
+      resume();
+      if (ms > 0 && pings < 30) {
+        pings++;
+        send({ t: "ping", site: site, pvId: pvId, ms: ms });
+      }
     }
 
     function pageview(isFirst) {
       var path = loc.pathname;
       if (path === lastPath) return;
-      if (!isFirst) sendDuration();
+      if (!isFirst) ping();
 
       var ref = "";
       var unique = false;
@@ -101,10 +161,10 @@
       }
 
       lastPath = path;
-      pvId = randomId();
-      visibleMs = 0;
+      pvId = uuid();
+      pendingMs = 0;
       visibleSince = null;
-      durationSent = false;
+      pings = 0;
       resume();
 
       send({
@@ -141,12 +201,17 @@
 
     d.addEventListener("visibilitychange", function () {
       if (d.visibilityState === "hidden") {
-        sendDuration();
+        ping();
       } else {
         resume();
       }
     });
-    w.addEventListener("pagehide", sendDuration);
+    w.addEventListener("pagehide", ping);
+    w.setInterval(function () {
+      try {
+        if (d.visibilityState !== "hidden") ping();
+      } catch (e) {}
+    }, 60000);
 
     pageview(true);
   } catch (e) {}

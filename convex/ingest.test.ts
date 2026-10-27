@@ -18,6 +18,9 @@ type Hit = {
   browser: string;
   country: string;
   pvId: string;
+  visitorId?: string;
+  sessionId?: string;
+  cookieless?: boolean;
 };
 
 function hit(overrides: Partial<Hit> = {}): Hit {
@@ -51,6 +54,9 @@ async function tables(t: ReturnType<typeof convexTest>) {
     pageviews: await ctx.db.query("pageviews").collect(),
     dailyStats: await ctx.db.query("dailyStats").collect(),
     dailyDims: await ctx.db.query("dailyDims").collect(),
+    sessions: await ctx.db.query("sessions").collect(),
+    visitors: await ctx.db.query("visitors").collect(),
+    sites: await ctx.db.query("sites").collect(),
   }));
 }
 
@@ -222,6 +228,228 @@ describe("ingest.duration", () => {
     await t.mutation(api.ingest.pageview, hit());
     await expect(t.mutation(api.ingest.duration, dur({ secret: "nope" }))).rejects.toThrow();
     await t.mutation(api.ingest.duration, dur({ hostname: "evil.com" }));
+    expect((await tables(t)).pageviews[0].durationMs).toBeUndefined();
+  });
+});
+
+// Hits from the 5a script: the phone's visitor id, and a session id per visit
+const phone = (pvId: string, sessionId: string, o: Partial<Hit> = {}) =>
+  hit({ pvId, visitorId: "vid-phone", sessionId, ...o });
+
+describe("ingest.pageview with visitor and session ids", () => {
+  test("the first hit starts a session, creates the visitor and counts a bounce", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/pricing" }));
+
+    const { pageviews, sessions, visitors, dailyStats, sites } = await tables(t);
+    expect(pageviews[0]).toMatchObject({ visitorId: "vid-phone", sessionId: "s1" });
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        sessionId: "s1",
+        visitorId: "vid-phone",
+        date: "2026-10-13",
+        pageviews: 1,
+        entryPath: "/pricing",
+        exitPath: "/pricing",
+        referrer: "google.com",
+        country: "US",
+      }),
+    ]);
+    expect(visitors).toEqual([
+      expect.objectContaining({ visitorId: "vid-phone", sessions: 1, lastSeenDate: "2026-10-13" }),
+    ]);
+    expect(dailyStats[0]).toMatchObject({ pageviews: 1, visitors: 1, sessions: 1, bounces: 1 });
+    expect(sites[0].trackingStartedAt).toBe(Date.now());
+  });
+
+  test("a second pageview takes the bounce back and moves the exit page", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/pricing", unique: false }));
+    await t.mutation(api.ingest.pageview, phone("c", "s1", { path: "/signup", unique: false }));
+
+    const { sessions, dailyStats } = await tables(t);
+    expect(sessions[0]).toMatchObject({ pageviews: 3, entryPath: "/", exitPath: "/signup" });
+    expect(dailyStats[0]).toMatchObject({ pageviews: 3, visitors: 1, sessions: 1, bounces: 0 });
+  });
+
+  test("two visits 40 minutes apart are one visitor and two sessions, both bounces", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-13T17:40:00Z"));
+    // The session cookie expired after 30 minutes, so the script sends a new id
+    await t.mutation(api.ingest.pageview, phone("b", "s2", { referrer: "(direct)" }));
+
+    const { sessions, visitors, dailyStats } = await tables(t);
+    expect(sessions.map((x) => x.sessionId)).toEqual(["s1", "s2"]);
+    expect(visitors).toEqual([expect.objectContaining({ sessions: 2 })]);
+    expect(dailyStats[0]).toMatchObject({ visitors: 1, sessions: 2, bounces: 2 });
+  });
+
+  test("with ids, a visitor counts once a day in the lists, whatever the unique flag says", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { unique: false }));
+    await t.mutation(api.ingest.pageview, phone("b", "s2", { unique: true }));
+    const { dailyStats, dailyDims } = await tables(t);
+    expect(dailyStats[0]).toMatchObject({ pageviews: 2, visitors: 1 });
+    expect(dailyDims.find((d) => d.dim === "country")).toMatchObject({ pageviews: 2, visitors: 1 });
+  });
+
+  test("a returning visitor counts again on a new local day", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-14T17:00:00Z"));
+    await t.mutation(api.ingest.pageview, phone("b", "s2"));
+    const { dailyStats, visitors } = await tables(t);
+    expect(dailyStats.map((d) => [d.date, d.visitors, d.sessions])).toEqual([
+      ["2026-10-13", 1, 1],
+      ["2026-10-14", 1, 1],
+    ]);
+    expect(visitors[0]).toMatchObject({ lastSeenDate: "2026-10-14", sessions: 2 });
+  });
+
+  test("a session that runs past midnight takes the bounce off the day it started", async () => {
+    const t = await setup();
+    vi.setSystemTime(new Date("2026-10-14T06:55:00Z")); // 23:55 on Oct 13 in LA
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-14T07:05:00Z")); // 00:05 on Oct 14
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { unique: false }));
+    const { dailyStats } = await tables(t);
+    expect(dailyStats.map((d) => [d.date, d.pageviews, d.visitors, d.sessions, d.bounces])).toEqual([
+      ["2026-10-13", 1, 1, 1, 0],
+      ["2026-10-14", 1, 1, 0, 0],
+    ]);
+  });
+
+  test("keeps the first trackingStartedAt", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    const started = Date.now();
+    vi.setSystemTime(new Date("2026-10-15T17:00:00Z"));
+    await t.mutation(api.ingest.pageview, phone("b", "s2"));
+    expect((await tables(t)).sites[0].trackingStartedAt).toBe(started);
+  });
+});
+
+describe("hits without ids", () => {
+  test("are counted the old way until the site's first id-carrying hit", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ pvId: "a" }));
+    const { pageviews, sessions, dailyStats, sites } = await tables(t);
+    expect(pageviews[0].visitorId).toBeUndefined();
+    expect(sessions).toHaveLength(0);
+    expect(dailyStats[0]).toMatchObject({ visitors: 1, sessions: 0, bounces: 0 });
+    expect(sites[0].trackingStartedAt).toBeUndefined();
+  });
+
+  test("from a cached old script are kept for 7 days after tracking starts, then dropped", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-19T17:00:00Z")); // 6 days later
+    await t.mutation(api.ingest.pageview, hit({ pvId: "old-1" }));
+    vi.setSystemTime(new Date("2026-10-20T17:00:01Z")); // just over 7 days
+    await t.mutation(api.ingest.pageview, hit({ pvId: "old-2" }));
+    const { pageviews } = await tables(t);
+    expect(pageviews.map((p) => p.pvId)).toEqual(["a", "old-1"]);
+  });
+
+  test("in cookieless mode are always kept and use the unique-visit rule", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-11-30T18:00:00Z"));
+    await t.mutation(api.ingest.pageview, hit({ pvId: "b", cookieless: true }));
+    await t.mutation(api.ingest.pageview, hit({ pvId: "c", cookieless: true, unique: false }));
+    const { dailyStats } = await tables(t);
+    expect(dailyStats.find((d) => d.date === "2026-11-30")).toMatchObject({
+      pageviews: 2,
+      visitors: 1,
+      sessions: 0,
+    });
+  });
+});
+
+describe("ingest.ping", () => {
+  const ping = (o: Partial<{ secret: string; site: string; hostname: string; pvId: string; ms: number }> = {}) => ({
+    secret: SECRET,
+    site: "picai.so",
+    hostname: "picai.so",
+    pvId: "a",
+    ms: 60_000,
+    ...o,
+  });
+
+  test("adds engaged time to the pageview, the session and the day", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-13T17:01:00Z"));
+    await t.mutation(api.ingest.ping, ping());
+    await t.mutation(api.ingest.ping, ping({ ms: 15_000 }));
+
+    const { pageviews, sessions, dailyStats } = await tables(t);
+    expect(pageviews[0].durationMs).toBe(75_000);
+    expect(sessions[0]).toMatchObject({ engagedMs: 75_000, lastSeenAt: Date.now() });
+    // Time on page counts the pageview once, however many pings it sent
+    expect(dailyStats[0]).toMatchObject({
+      durationSumMs: 75_000,
+      durationCount: 1,
+      sessionEngagedMs: 75_000,
+    });
+  });
+
+  test("caps a ping at 70 seconds and a pageview at 30 minutes", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.ping, ping({ ms: 600_000 }));
+    expect((await tables(t)).pageviews[0].durationMs).toBe(70_000);
+    for (let i = 0; i < 30; i++) await t.mutation(api.ingest.ping, ping());
+    const { pageviews, sessions, dailyStats } = await tables(t);
+    expect(pageviews[0].durationMs).toBe(1_800_000);
+    expect(sessions[0].engagedMs).toBe(1_800_000);
+    expect(dailyStats[0]).toMatchObject({ durationSumMs: 1_800_000, sessionEngagedMs: 1_800_000 });
+  });
+
+  test("counts session time on the day the session started", async () => {
+    const t = await setup();
+    vi.setSystemTime(new Date("2026-10-14T06:55:00Z")); // Oct 13 in LA
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-14T07:05:00Z")); // Oct 14
+    await t.mutation(api.ingest.pageview, phone("b", "s1"));
+    await t.mutation(api.ingest.ping, ping({ pvId: "b", ms: 20_000 }));
+    const { dailyStats } = await tables(t);
+    expect(dailyStats.map((d) => [d.date, d.durationSumMs, d.sessionEngagedMs])).toEqual([
+      ["2026-10-13", 0, 20_000],
+      ["2026-10-14", 20_000, 0],
+    ]);
+  });
+
+  test("works for a cookieless pageview", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ pvId: "a", cookieless: true }));
+    await t.mutation(api.ingest.ping, ping({ ms: 5_000 }));
+    expect((await tables(t)).dailyStats[0]).toMatchObject({ durationSumMs: 5_000, durationCount: 1 });
+  });
+
+  test("ignores an unknown pvId, another site's pvId and zero or fractional time", async () => {
+    const t = await setup();
+    const asOwner = t.withIdentity({ tokenIdentifier: "clerk|user_1" });
+    await asOwner.mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.ping, ping({ pvId: "nope" }));
+    await t.mutation(api.ingest.ping, ping({ site: "other.com", hostname: "other.com" }));
+    await t.mutation(api.ingest.ping, ping({ ms: 0 }));
+    await t.mutation(api.ingest.ping, ping({ ms: 1.5 }));
+    const { pageviews, sessions } = await tables(t);
+    expect(pageviews[0].durationMs).toBeUndefined();
+    expect(sessions[0].engagedMs).toBe(0);
+  });
+
+  test("rejects a wrong secret and ignores a foreign hostname", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await expect(t.mutation(api.ingest.ping, ping({ secret: "nope" }))).rejects.toThrow(
+      "Invalid ingest secret",
+    );
+    await t.mutation(api.ingest.ping, ping({ hostname: "evil.com" }));
     expect((await tables(t)).pageviews[0].durationMs).toBeUndefined();
   });
 });

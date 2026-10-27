@@ -10,6 +10,8 @@ const OWNER = { subject: "user_1", tokenIdentifier: "clerk|user_1" };
 const STRANGER = { subject: "user_2", tokenIdentifier: "clerk|user_2" };
 
 type Hit = {
+  visitorId?: string;
+  sessionId?: string;
   path?: string;
   referrer?: string;
   unique?: boolean;
@@ -35,6 +37,8 @@ async function visit(t: ReturnType<typeof convexTest>, iso: string, h: Hit = {})
     browser: h.browser ?? "Chrome",
     country: h.country ?? "US",
     pvId,
+    visitorId: h.visitorId,
+    sessionId: h.sessionId,
   });
   return pvId;
 }
@@ -68,6 +72,7 @@ describe("access control", () => {
       (c: typeof t) => c.query(api.stats.timeseries, range),
       (c: typeof t) => c.query(api.stats.breakdown, { ...range, dim: "page" }),
       (c: typeof t) => c.query(api.stats.live, { domain: "picai.so", since: 0 }),
+      (c: typeof t) => c.query(api.stats.online, { domain: "picai.so", since: 0 }),
     ];
     for (const call of calls) {
       await expect(call(t)).rejects.toThrow(/Not signed in/);
@@ -98,6 +103,7 @@ describe("access control", () => {
     expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "www.picai.so" })).toEqual({
       domain: "picai.so",
       timezone: "America/Los_Angeles",
+      trackingStartedAt: null,
     });
     expect(await t.withIdentity(STRANGER).query(api.sites.get, { domain: "picai.so" })).toBeNull();
     expect(await t.withIdentity(STRANGER).query(api.sites.list, {})).toEqual([]);
@@ -125,8 +131,10 @@ describe("stats.summary", () => {
     });
 
     const s = await t.withIdentity(OWNER).query(api.stats.summary, range);
-    expect(s.current).toEqual({ visitors: 3, pageviews: 4, timeOnPageMs: 30_000 });
-    expect(s.previous).toEqual({ visitors: 1, pageviews: 1, timeOnPageMs: null });
+    const noSessions = { sessions: 0, bounceRate: null, sessionTimeMs: null };
+    expect(s.current).toEqual({ visitors: 3, pageviews: 4, timeOnPageMs: 30_000, ...noSessions });
+    expect(s.previous).toEqual({ visitors: 1, pageviews: 1, timeOnPageMs: null, ...noSessions });
+    expect(s).toMatchObject({ comparable: true, visitorsApprox: false });
   });
 
   test("averages time on page over the beacons received", async () => {
@@ -227,5 +235,101 @@ describe("stats.live", () => {
     await visit(t, "2026-10-13T16:59:00Z", { unique: false });
     const since = Date.parse("2026-10-13T16:55:00Z");
     expect(await t.withIdentity(OWNER).query(api.stats.live, { domain: "picai.so", since })).toBe(2);
+  });
+});
+
+describe("stats.summary with visitor ids", () => {
+  const summary = (t: ReturnType<typeof convexTest>, r = range) =>
+    t.withIdentity(OWNER).query(api.stats.summary, r);
+
+  test("counts distinct visitors, sessions, bounce rate and session time", async () => {
+    const t = await setup();
+    // One visitor on two days, three sessions; one session has two pageviews
+    await visit(t, "2026-10-11T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s2" });
+    const pv = await visit(t, "2026-10-12T17:10:00Z", { visitorId: "v1", sessionId: "s2" });
+    await visit(t, "2026-10-13T17:00:00Z", { visitorId: "v2", sessionId: "s3" });
+    await t.mutation(api.ingest.ping, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: pv,
+      ms: 60_000,
+    });
+
+    const s = await summary(t);
+    // The chart's daily visitors add up to 3; the tile counts 2 distinct ids
+    expect(s.current).toMatchObject({
+      visitors: 2,
+      pageviews: 4,
+      sessions: 3,
+      bounceRate: 2 / 3,
+      sessionTimeMs: 20_000,
+    });
+  });
+
+  test("adds SA-style visitors from the days before tracking started", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-10T17:00:00Z"); // old script, unique visit
+    await visit(t, "2026-10-10T18:00:00Z"); // old script, unique visit
+    await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    await visit(t, "2026-10-13T17:00:00Z", { visitorId: "v1", sessionId: "s2" });
+    expect((await summary(t)).current.visitors).toBe(3);
+  });
+
+  test("hides changes while the previous range starts before tracking", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-07T17:00:00Z");
+    await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    expect((await summary(t)).comparable).toBe(false);
+    // Once both ranges are after the launch day, they compare again
+    expect(
+      (await summary(t, { domain: "picai.so", from: "2026-10-16", to: "2026-10-19" })).comparable,
+    ).toBe(true);
+    // A range entirely before the launch day uses the old definition throughout
+    expect(
+      (await summary(t, { domain: "picai.so", from: "2026-10-01", to: "2026-10-04" })).comparable,
+    ).toBe(true);
+  });
+
+  test("the previous range counts its own distinct visitors", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-01T17:00:00Z", { visitorId: "v0", sessionId: "s0" }); // launch day
+    await visit(t, "2026-10-07T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    await visit(t, "2026-10-08T17:00:00Z", { visitorId: "v1", sessionId: "s2" });
+    await visit(t, "2026-10-11T17:00:00Z", { visitorId: "v1", sessionId: "s3" });
+    const s = await summary(t);
+    expect(s.comparable).toBe(true);
+    expect(s.previous).toMatchObject({ visitors: 1, sessions: 2 });
+    expect(s.current).toMatchObject({ visitors: 1, sessions: 1 });
+  });
+
+  test("sites.get reports when tracking started", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    expect(await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" })).toMatchObject({
+      trackingStartedAt: Date.parse("2026-10-12T17:00:00Z"),
+    });
+  });
+});
+
+describe("stats.online", () => {
+  test("counts distinct visitors with a pageview or ping since the timestamp", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-13T16:50:00Z", { visitorId: "v1", sessionId: "s1" });
+    const reading = await visit(t, "2026-10-13T16:51:00Z", { visitorId: "v2", sessionId: "s2" });
+    await visit(t, "2026-10-13T16:56:00Z", { visitorId: "v3", sessionId: "s3" });
+    await visit(t, "2026-10-13T16:57:00Z", { visitorId: "v3", sessionId: "s3" });
+    // v2 is still reading the page they opened at 16:51
+    vi.setSystemTime(new Date("2026-10-13T16:58:00Z"));
+    await t.mutation(api.ingest.ping, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: reading,
+      ms: 60_000,
+    });
+    const since = Date.parse("2026-10-13T16:55:00Z");
+    expect(await t.withIdentity(OWNER).query(api.stats.online, { domain: "picai.so", since })).toBe(2);
   });
 });

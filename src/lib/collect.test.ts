@@ -67,14 +67,35 @@ describe("requestHostname", () => {
 describe("parsePayload", () => {
   const pv = { t: "pv", site: "picai.so", host: "picai.so", path: "/", ref: "", unique: true, pvId: "abc", sw: 390 };
 
+  const VID = "0b7c2a4e-1f3d-4c5b-9a8e-6d7f8091a2b3";
+  const SID = "f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b";
+
   test("accepts a valid pageview and duration", () => {
-    expect(parsePayload(JSON.stringify(pv))).toEqual(pv);
+    expect(parsePayload(JSON.stringify(pv))).toEqual({ ...pv, nc: false });
     expect(parsePayload(JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: 5000 }))).toEqual({
       t: "dur",
       site: "picai.so",
       pvId: "abc",
       ms: 5000,
     });
+  });
+
+  test("accepts visitor and session ids", () => {
+    expect(parsePayload(JSON.stringify({ ...pv, vid: VID, sid: SID }))).toEqual({
+      ...pv,
+      vid: VID,
+      sid: SID,
+      nc: false,
+    });
+  });
+
+  test("reads the cookieless marker", () => {
+    expect(parsePayload(JSON.stringify({ ...pv, nc: 1 }))).toMatchObject({ nc: true });
+  });
+
+  test("accepts a ping and ignores the ids it carries", () => {
+    const ping = { t: "ping", site: "picai.so", pvId: "abc", ms: 60_000 };
+    expect(parsePayload(JSON.stringify({ ...ping, vid: VID, sid: SID }))).toEqual(ping);
   });
 
   test("drops a non-numeric screen width instead of rejecting", () => {
@@ -95,6 +116,12 @@ describe("parsePayload", () => {
     ["duration over 30 min", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: 1_800_001 })],
     ["negative duration", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: -1 })],
     ["fractional duration", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: 1.5 })],
+    ["visitor id that is not a UUID", JSON.stringify({ ...pv, vid: "abc", sid: SID })],
+    ["session id that is not a UUID", JSON.stringify({ ...pv, vid: VID, sid: 42 })],
+    ["visitor id without a session id", JSON.stringify({ ...pv, vid: VID })],
+    ["ping over 70 seconds", JSON.stringify({ t: "ping", site: "picai.so", pvId: "abc", ms: 70_001 })],
+    ["negative ping", JSON.stringify({ t: "ping", site: "picai.so", pvId: "abc", ms: -1 })],
+    ["fractional ping", JSON.stringify({ t: "ping", site: "picai.so", pvId: "abc", ms: 0.5 })],
   ])("rejects %s", (_name, body) => {
     expect(parsePayload(body)).toBeNull();
   });

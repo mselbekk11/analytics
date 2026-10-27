@@ -10,6 +10,8 @@ import { bumpDailyDim, bumpDailyStats } from "./lib/rollups";
 // silently: the route always answers 204, so there is no one to report to.
 
 const MAX_DURATION_MS = 30 * 60 * 1000;
+const MAX_PING_MS = 70 * 1000;
+const LEGACY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function checkSecret(secret: string): void {
   const expected = process.env.INGEST_SECRET;
@@ -45,6 +47,10 @@ export const pageview = mutation({
     browser: v.string(),
     country: v.string(),
     pvId: v.string(),
+    // From the _va_vid and _va_sid cookies; both missing for cookieless and old scripts
+    visitorId: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    cookieless: v.optional(v.boolean()), // the snippet has data-cookieless
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -60,6 +66,12 @@ export const pageview = mutation({
     if (seen !== null) return null;
 
     const ts = Date.now();
+    const date = localDate(ts, site.timezone);
+    const { visitorId, sessionId } = args;
+    const ids =
+      visitorId !== undefined && sessionId !== undefined ? { visitorId, sessionId } : null;
+    if (ids === null && !args.cookieless && legacyWindowOver(site, ts)) return null;
+
     await ctx.db.insert("pageviews", {
       siteId: site._id,
       ts,
@@ -70,22 +82,191 @@ export const pageview = mutation({
       browser: args.browser,
       country: args.country,
       pvId: args.pvId,
+      ...ids,
     });
 
-    const date = localDate(ts, site.timezone);
+    // With ids, a visitor counts once per local day; without, SA's unique-visit rule applies
+    let countsVisitor = args.unique;
+    let newSession = false;
+    if (ids !== null) {
+      const visit = await trackVisit(ctx, site, { ...args, ...ids, ts, date });
+      countsVisitor = visit.firstToday;
+      newSession = visit.newSession;
+    }
+
     await bumpDailyStats(ctx, site._id, date, {
       pageviews: 1,
-      visitors: args.unique ? 1 : 0,
+      visitors: countsVisitor ? 1 : 0,
+      ...(newSession ? { sessions: 1, bounces: 1 } : {}),
     });
-    await bumpDailyDim(ctx, site._id, date, "page", args.path, args.unique);
-    await bumpDailyDim(ctx, site._id, date, "referrer", args.referrer, args.unique);
-    await bumpDailyDim(ctx, site._id, date, "device", args.device, args.unique);
-    await bumpDailyDim(ctx, site._id, date, "browser", args.browser, args.unique);
-    await bumpDailyDim(ctx, site._id, date, "country", args.country, args.unique);
+    await bumpDailyDim(ctx, site._id, date, "page", args.path, countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "referrer", args.referrer, countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "device", args.device, countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "browser", args.browser, countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "country", args.country, countsVisitor);
     return null;
   },
 });
 
+/** Hits without ids after this come from a script cached for over a week; drop them. */
+function legacyWindowOver(site: Doc<"sites">, ts: number): boolean {
+  return site.trackingStartedAt !== undefined && ts > site.trackingStartedAt + LEGACY_WINDOW_MS;
+}
+
+type Visit = {
+  visitorId: string;
+  sessionId: string;
+  ts: number;
+  date: string;
+  path: string;
+  referrer: string;
+  country: string;
+  device: string;
+  browser: string;
+};
+
+/**
+ * Starts or extends the session and upserts the visitor. The caller adds the session
+ * and its bounce to the day; a second pageview takes the bounce back off the day the
+ * session started.
+ */
+async function trackVisit(
+  ctx: MutationCtx,
+  site: Doc<"sites">,
+  hit: Visit,
+): Promise<{ firstToday: boolean; newSession: boolean }> {
+  if (site.trackingStartedAt === undefined) {
+    await ctx.db.patch("sites", site._id, { trackingStartedAt: hit.ts });
+  }
+
+  const session = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_session", (q) =>
+      q.eq("siteId", site._id).eq("sessionId", hit.sessionId),
+    )
+    .unique();
+  if (session === null) {
+    await ctx.db.insert("sessions", {
+      siteId: site._id,
+      sessionId: hit.sessionId,
+      visitorId: hit.visitorId,
+      date: hit.date,
+      startedAt: hit.ts,
+      lastSeenAt: hit.ts,
+      engagedMs: 0,
+      pageviews: 1,
+      goals: 0,
+      entryPath: hit.path,
+      exitPath: hit.path,
+      referrer: hit.referrer,
+      country: hit.country,
+      device: hit.device,
+      browser: hit.browser,
+      revenueMinor: 0,
+    });
+  } else {
+    await ctx.db.patch("sessions", session._id, {
+      pageviews: session.pageviews + 1,
+      lastSeenAt: hit.ts,
+      exitPath: hit.path,
+    });
+    if (session.pageviews === 1 && session.goals === 0) {
+      await bumpDailyStats(ctx, site._id, session.date, { bounces: -1 });
+    }
+  }
+  const newSession = session === null;
+
+  const visitor = await ctx.db
+    .query("visitors")
+    .withIndex("by_site_visitor", (q) =>
+      q.eq("siteId", site._id).eq("visitorId", hit.visitorId),
+    )
+    .unique();
+  if (visitor === null) {
+    await ctx.db.insert("visitors", {
+      siteId: site._id,
+      visitorId: hit.visitorId,
+      firstSeen: hit.ts,
+      lastSeen: hit.ts,
+      lastSeenDate: hit.date,
+      sessions: 1,
+      revenueMinor: 0,
+    });
+    return { firstToday: true, newSession };
+  }
+  await ctx.db.patch("visitors", visitor._id, {
+    lastSeen: hit.ts,
+    lastSeenDate: hit.date,
+    sessions: visitor.sessions + (newSession ? 1 : 0),
+  });
+  return { firstToday: visitor.lastSeenDate !== hit.date, newSession };
+}
+
+/**
+ * Engaged (visible-tab) time since the script's last ping for this pageview. Adds it
+ * to the pageview and its day, and to the session and the day the session started.
+ * Each ping counts at most 70 s and each pageview at most 30 minutes in total.
+ */
+export const ping = mutation({
+  args: {
+    secret: v.string(),
+    site: v.string(),
+    hostname: v.string(),
+    pvId: v.string(),
+    ms: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    checkSecret(args.secret);
+    if (!Number.isInteger(args.ms) || args.ms <= 0) return null;
+    const site = await findSite(ctx, args.site, args.hostname);
+    if (site === null) return null;
+
+    const pv = await ctx.db
+      .query("pageviews")
+      .withIndex("by_pvId", (q) => q.eq("pvId", args.pvId))
+      .first();
+    if (pv === null || pv.siteId !== site._id) return null;
+
+    const used = pv.durationMs ?? 0;
+    const ms = Math.min(args.ms, MAX_PING_MS, MAX_DURATION_MS - used);
+    if (ms <= 0) return null;
+
+    await ctx.db.patch("pageviews", pv._id, { durationMs: used + ms });
+    const pvDate = localDate(pv.ts, site.timezone);
+    // Time on page averages over pageviews that sent any time, so count each one once
+    const pvDelta = { durationSumMs: ms, durationCount: pv.durationMs === undefined ? 1 : 0 };
+
+    const sessionId = pv.sessionId;
+    const session =
+      sessionId === undefined
+        ? null
+        : await ctx.db
+            .query("sessions")
+            .withIndex("by_site_session", (q) =>
+              q.eq("siteId", site._id).eq("sessionId", sessionId),
+            )
+            .unique();
+    if (session === null) {
+      await bumpDailyStats(ctx, site._id, pvDate, pvDelta);
+      return null;
+    }
+
+    await ctx.db.patch("sessions", session._id, {
+      engagedMs: session.engagedMs + ms,
+      lastSeenAt: Date.now(),
+    });
+    if (session.date === pvDate) {
+      await bumpDailyStats(ctx, site._id, pvDate, { ...pvDelta, sessionEngagedMs: ms });
+    } else {
+      await bumpDailyStats(ctx, site._id, pvDate, pvDelta);
+      await bumpDailyStats(ctx, site._id, session.date, { sessionEngagedMs: ms });
+    }
+    return null;
+  },
+});
+
+/** Old scripts (cached before 5a) send one duration beacon per pageview instead of pings. */
 export const duration = mutation({
   args: {
     secret: v.string(),

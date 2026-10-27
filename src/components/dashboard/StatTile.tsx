@@ -7,12 +7,24 @@ type Props = {
   value: string | undefined;
   /** Fraction from percentChange; null when there is nothing to compare against */
   change?: number | null;
+  /** Show "–" instead of the change: the previous period used another definition */
+  incomparable?: boolean;
+  /** For rates where going up is bad (bounce rate): a rise shows red */
+  lowerIsBetter?: boolean;
+  title?: string;
 };
 
 /** One figure in the stat row: small lowercase label over a large number and its % change. */
-export default function StatTile({ label, value, change }: Props) {
+export default function StatTile({
+  label,
+  value,
+  change,
+  incomparable,
+  lowerIsBetter,
+  title,
+}: Props) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" title={title}>
       <span className="text-sm text-muted">{label}</span>
       <div className="flex items-center gap-2">
         {value === undefined ? (
@@ -20,18 +32,29 @@ export default function StatTile({ label, value, change }: Props) {
         ) : (
           <span className="text-4xl leading-10 text-strong tabular-nums">{value}</span>
         )}
-        {value !== undefined && change != null && <ChangeBadge change={change} />}
+        {value !== undefined && incomparable && (
+          <span
+            className="rounded bg-panel px-1.5 py-0.5 text-xs text-muted"
+            title="Not comparable: visitor tracking started during the previous period"
+          >
+            –
+          </span>
+        )}
+        {value !== undefined && !incomparable && change != null && (
+          <ChangeBadge change={change} lowerIsBetter={lowerIsBetter} />
+        )}
       </div>
     </div>
   );
 }
 
-function ChangeBadge({ change }: { change: number }) {
+function ChangeBadge({ change, lowerIsBetter }: { change: number; lowerIsBetter?: boolean }) {
   const rounded = Math.round(change * 100);
+  const good = lowerIsBetter ? -rounded : rounded;
   const tone =
-    rounded > 0
+    good > 0
       ? "bg-up/15 text-up"
-      : rounded < 0
+      : good < 0
         ? "bg-down/15 text-down"
         : "bg-panel text-muted";
   return (

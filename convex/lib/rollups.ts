@@ -8,6 +8,9 @@ type StatsDelta = {
   visitors?: number;
   durationSumMs?: number;
   durationCount?: number;
+  sessions?: number;
+  bounces?: number;
+  sessionEngagedMs?: number;
 };
 
 export async function bumpDailyStats(
@@ -28,6 +31,9 @@ export async function bumpDailyStats(
       visitors: delta.visitors ?? 0,
       durationSumMs: delta.durationSumMs ?? 0,
       durationCount: delta.durationCount ?? 0,
+      sessions: delta.sessions ?? 0,
+      bounces: delta.bounces ?? 0,
+      sessionEngagedMs: delta.sessionEngagedMs ?? 0,
     });
     return;
   }
@@ -36,6 +42,9 @@ export async function bumpDailyStats(
     visitors: row.visitors + (delta.visitors ?? 0),
     durationSumMs: row.durationSumMs + (delta.durationSumMs ?? 0),
     durationCount: row.durationCount + (delta.durationCount ?? 0),
+    sessions: (row.sessions ?? 0) + (delta.sessions ?? 0),
+    bounces: (row.bounces ?? 0) + (delta.bounces ?? 0),
+    sessionEngagedMs: (row.sessionEngagedMs ?? 0) + (delta.sessionEngagedMs ?? 0),
   });
 }
 
@@ -45,7 +54,7 @@ export async function bumpDailyDim(
   date: string,
   dim: Dim,
   key: string,
-  unique: boolean,
+  countsVisitor: boolean, // first hit of the visitor that day (an SA unique visit without cookies)
 ): Promise<void> {
   const row = await ctx.db
     .query("dailyDims")
@@ -53,7 +62,7 @@ export async function bumpDailyDim(
       q.eq("siteId", siteId).eq("date", date).eq("dim", dim).eq("key", key),
     )
     .unique();
-  const visitors = unique ? 1 : 0;
+  const visitors = countsVisitor ? 1 : 0;
   if (row === null) {
     await ctx.db.insert("dailyDims", { siteId, date, dim, key, pageviews: 1, visitors });
     return;

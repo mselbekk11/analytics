@@ -5,6 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,7 +22,13 @@ const SERIES = [
 
 type SeriesKey = (typeof SERIES)[number]["key"];
 
-export default function TrafficChart({ data }: { data: Point[] | undefined }) {
+type Props = {
+  data: Point[] | undefined;
+  /** The day visitor tracking started, marked on the chart when it is in range */
+  trackingStart?: string | null;
+};
+
+export default function TrafficChart({ data, trackingStart }: Props) {
   const [shown, setShown] = useState<Record<SeriesKey, boolean>>({
     pageviews: true,
     visitors: true,
@@ -76,6 +83,19 @@ export default function TrafficChart({ data }: { data: Point[] | undefined }) {
                 labelFormatter={(d) => formatDate(String(d), true)}
                 formatter={(value, name) => [formatNumber(Number(value)), name]}
               />
+              {trackingStart != null && data.some((p) => p.date === trackingStart) && (
+                <ReferenceLine
+                  x={trackingStart}
+                  stroke="#71717a"
+                  strokeDasharray="3 3"
+                  label={{
+                    value: "visitor tracking on",
+                    position: "insideTopLeft",
+                    fill: "#a1a1aa",
+                    fontSize: 11,
+                  }}
+                />
+              )}
               {SERIES.filter((s) => shown[s.key]).map((s) => (
                 <Area
                   key={s.key}

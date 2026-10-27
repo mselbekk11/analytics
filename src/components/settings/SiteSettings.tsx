@@ -53,8 +53,12 @@ function Settings({ domain }: { domain: string }) {
         description={
           <>
             Paste this into the HTML of every page on {site.domain}, for example just before{" "}
-            <code className="font-mono">&lt;/head&gt;</code>. It sets no cookies and stores
-            nothing in the visitor&apos;s browser.
+            <code className="font-mono">&lt;/head&gt;</code>. It sets two first-party cookies,{" "}
+            <code className="font-mono">_va_vid</code> and{" "}
+            <code className="font-mono">_va_sid</code>, to recognise returning visitors and
+            group pageviews into sessions. Add{" "}
+            <code className="font-mono">data-cookieless</code> to the tag to set no cookies
+            and count visits the old way.
           </>
         }
       >
