@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-26. Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -11,7 +11,7 @@ Last updated: 2026-10-26. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 2: Site dashboard | Done. `/sites/[domain]` approved by the owner: SA's layout with the original dark look (see Decisions). |
 | 3: Websites list and settings | **Built, awaiting owner review.** `/websites`, settings and the `/` redirect work locally against Convex dev. Still to do by the owner: add the snippet to the other seven sites. |
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
-| 5a: Visitors and sessions | **Pushed to `main` on 2026-10-27, awaiting the phone check.** Checked with tests and with curl hits against Convex dev; the phone check in "Done when" needs production. |
+| 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
 | 5b to 5h, 6 | Not started. 5a must be live in production first. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -99,7 +99,7 @@ Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing
 - **The script sends only the referrer's hostname**, never the full URL, so query strings and search terms stay in the browser.
 - **The script skips localhost** unless `data-site` is literally `localhost`, which is what makes `/test.html` work against a dev site called `localhost`.
 - **`ingest.pageview` ignores a repeated `pvId`**, so a retried beacon is not counted twice.
-- **The duration beacon is sent once per pageview** (as the plan says), so time after a hidden tab comes back is lost and time on page reads a little low.
+- **The duration beacon is sent once per pageview** (as the plan says), so time after a hidden tab comes back is lost and time on page reads a little low. Replaced by pings in 5a (see below).
 - **Country is `"Unknown"`** when Vercel gives none, e.g. in local dev. The plan's schema comment said `"??"`, but its ingest section says "Unknown".
 - **Embed snippets use `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`**, falling back to `window.location.origin` locally. Deployment-specific `*.vercel.app` URLs sit behind Vercel's login and broke the first install.
 - **`INGEST_SECRET` is read with `process.env`**, not Convex's typed `env` from `defineApp`, because that API is marked beta and unstable.
@@ -150,6 +150,8 @@ Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing
 - **`npx convex codegen` does not push functions** to the dev deployment; run `npx convex dev --once` (or keep `npx convex dev` running) or the browser gets "Could not find public function".
 - **If the dev page reloads itself non-stop** (stuck on "Connecting…", the dev log full of `GET` lines), stop `next dev`, delete `.next` and start it again. A stale dev cache caused this once.
 - **curl hits need a browser User-Agent**, or `isbot` drops them silently (curl's default UA counts as a bot).
+- **The session tiles stay hidden until a site's first hit with ids** (that hit sets `trackingStartedAt`). A site with only old-script or cookieless hits looks exactly as before 5a, so "nothing changed" right after a deploy is expected.
+- **Next.js 16.4.0 has a known security vulnerability.** `npm run build` and `npm run dev` each stopped once (2026-10-27) with a "SecurityFatalError" upgrade notice and passed on retry. Not upgraded yet; see Open items.
 - **Read `convex/_generated/ai/guidelines.md`** before writing Convex code, and the Next.js docs in `node_modules/next/dist/docs/` (AGENTS.md).
 
 ## How to test locally
@@ -164,6 +166,8 @@ curl -X POST http://localhost:3000/api/collect -H 'Origin: http://localhost:3000
   --data '{"t":"pv","site":"localhost","host":"localhost","path":"/","ref":"","unique":true,"pvId":"test-1","sw":390}'
 ```
 
+That hit has no ids, so it is stored the old way. To test 5a, add `"vid"` and `"sid"` (two lowercase UUIDs, e.g. from `uuidgen | tr A-Z a-z`) to the body, and send pings as `{"t":"ping","site":"localhost","pvId":"<the pageview's pvId>","ms":30000}`. The dev `localhost` site holds 5a test sessions from 2026-10-26 and 2026-10-27.
+
 Read production data with `npx convex data <table> --prod`.
 
 ## Open items for the owner
@@ -171,10 +175,18 @@ Read production data with `npx convex data <table> --prod`.
 - In Vercel, check that `CONVEX_DEPLOY_KEY` is scoped to Production only.
 - Before real use: create a Clerk production instance on a custom domain, swap in its keys and issuer, and update `sites.ownerId` (see the first decision above).
 - Add the snippet to mselbekk.com and the other six sites (planned for Phase 3).
+- Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
+- Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review and ship Phase 5a
+## Next: check Phase 5a on production, then 5b
 
-Owner: review the diff, then push to `main` to deploy. On production, check "Done when": visit a tracked site on your phone, come back after 40 minutes, and `/sites/[domain]` should show 1 visitor, 2 sessions and a bounce rate of 100% for two one-page visits. Paste the text from `docs/PRIVACY.md` into each site's privacy policy. A week after launch, remove the old-script fallback and `ingest.duration`. Then 5b.
+5a was pushed to `main` on 2026-10-27 and is live. Owner:
+
+1. Phone check ("Done when"): visit a tracked site on your phone and leave after one page, come back after 40+ minutes and do the same. `/sites/[domain]` should show 1 visitor, 2 sessions and a bounce rate of 100% for those visits. The new tiles appear only after the site's first hit from the new script (browsers may keep the old cached script for up to a day).
+2. Paste the text from `docs/PRIVACY.md` into each site's privacy policy (the sites now set two cookies).
+3. Seven days after a site's `trackingStartedAt` (check with `npx convex data sites --prod`), remove the old-script fallback in `ingest.pageview` and `ingest.duration`, with its `dur` payload in `src/lib/collect.ts`.
+
+Then 5b.
 
 ## Earlier: finish Phase 3, then Phase 4
 
