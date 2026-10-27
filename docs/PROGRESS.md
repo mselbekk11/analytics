@@ -14,7 +14,7 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
 | 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
-| 5d: Goals, outbound clicks and identify | **Built, awaiting owner review.** Works locally against Convex dev; not committed or deployed. |
+| 5d: Goals, outbound clicks and identify | **Live in production since 2026-10-27** (commit `8b67da8`; `/script.js` serves the minified build, 1.95 KB gzipped; `ingest.event` and `stats.goals` on Convex prod). Awaiting the owner's "Done when" check on production. |
 | 5e to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -236,14 +236,12 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review 5d, ship it, then 5e
+## Next: check 5d on production, then 5e
 
-Built and checked locally on 2026-10-27; nothing is committed or deployed yet. The 5d functions and schema are pushed to Convex dev only, and the dev `localhost` site holds test events (goals `phase5d-test`, `test-*`, `race-*`, `early-*`, `probe-*`, one outbound click to github.com, and an identified visitor `u_5d` / test@example.com). Owner:
+Pushed to `main` on 2026-10-27 (commit `8b67da8`) and live. The dev `localhost` site holds test events (goals `phase5d-test`, `test-*`, `race-*`, `early-*`, `probe-*`, one outbound click to github.com, and an identified visitor `u_5d` / test@example.com). Owner:
 
-1. Review locally: `/sites/localhost` (Goals and Outbound links below the lists) and `/sites/localhost/settings#goals`. `/test.html` has buttons for every new call.
-2. Approve the minified-script change (see 5d decisions), then commit and push. Vercel runs `prebuild`, so the minified `/script.js` is built there.
-3. "Done when" on production: on advancedortholabsf.com, run `analytics("goal", "test")` in the browser console and click a link to another site; both show within seconds. Then run `analytics("identify", { email: "you@example.com" })` and check the email with `npx convex data visitors --prod`.
-4. Add goals to the sites (Settings → Goals → Copy AI prompt), pick each site's key goal, and paste the updated text from `docs/PRIVACY.md` (goals, outbound links, and identify where used).
+1. "Done when" on production: on advancedortholabsf.com, run `analytics("goal", "test")` in the browser console and click a link to another site; both show within seconds. Then run `analytics("identify", { email: "you@example.com" })` and check the email with `npx convex data visitors --prod`.
+2. Add goals to the sites (Settings → Goals → Copy AI prompt), pick each site's key goal, and paste the updated text from `docs/PRIVACY.md` (goals, outbound links, and identify where used).
 
 Then 5e.
 
