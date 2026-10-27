@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-27 (5e built). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-27 (5e live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -15,7 +15,7 @@ Last updated: 2026-10-27 (5e built). Read this together with [PLAN.md](PLAN.md) 
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
 | 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
 | 5d: Goals, outbound clicks and identify | **Live in production since 2026-10-27** (commit `8b67da8`; `/script.js` serves the minified build, 1.95 KB gzipped; `ingest.event` and `stats.goals` on Convex prod). Awaiting the owner's "Done when" check on production. |
-| 5e: Revenue | **Built, awaiting owner review.** All checks pass; tried end to end on Convex dev with signed webhook events (see Checks). Not committed or deployed yet. "Done when" needs a real Stripe test-mode payment, which is for the owner (the Stripe CLI login on this machine has expired). |
+| 5e: Revenue | **Live in production since 2026-10-27** (commit `ff97cba`, Vercel deploy succeeded; `/script.js` sends the claim, `/api/payments` answers 401 without a key, `payments.*` and the `/stripe/` route are on Convex prod). Every site is still set to None, so nothing changes on the dashboards until one is switched to Stripe or API. Awaiting the owner's "Done when" check (a Stripe test-mode payment). |
 | 5f to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -268,14 +268,12 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review 5e, ship it, check it on production
+## Next: check 5e on production, then 5f
 
-Built on 2026-10-27, not committed. Owner:
+Pushed to `main` on 2026-10-27 (commit `ff97cba`) and live. The production webhook URL for a site is `https://strong-robin-642.convex.site/stripe/<siteId>`; Settings → Revenue shows it. Owner:
 
-1. Review locally: `/sites/localhost` (revenue tiles, bars, revenue in Channels and Countries) and Settings → Revenue.
-2. Commit and push to `main` (deploys Convex and Vercel). The new indexes are on small tables, so no staged index is needed.
-3. "Done when" on production, in Stripe test mode: in a tracked site's Settings → Revenue choose Stripe, add the webhook URL in the Stripe Dashboard (test mode) with the four events, and paste its signing secret. Visit the site with `?utm_source=test`, start a Checkout Session there with `metadata: analytics("attribution")`, and pay with card 4242 4242 4242 4242. The payment shows under Sources → test, and `npx convex data payments --prod` shows `matchedBy: "metadata"`. (Or `stripe login` again and let Claude drive it with `stripe listen` against dev.)
-4. Add `attribution()` to each paying site's checkout (Settings → Revenue → Copy AI prompt), and paste the updated `docs/PRIVACY.md` text (the purchases paragraph) on sites with revenue.
+1. "Done when" on production, in Stripe test mode: in a tracked site's Settings → Revenue choose Stripe, add the webhook URL in the Stripe Dashboard (test mode) with the four events, and paste its signing secret. Visit the site with `?utm_source=test`, start a Checkout Session there with `metadata: analytics("attribution")`, and pay with card 4242 4242 4242 4242. The payment shows under Sources → test, and `npx convex data payments --prod` shows `matchedBy: "metadata"`. (Or `stripe login` again and let Claude drive it with `stripe listen` against dev.)
+2. Add `attribution()` to each paying site's checkout (Settings → Revenue → Copy AI prompt), and paste the updated `docs/PRIVACY.md` text (the purchases paragraph) on sites with revenue.
 
 Then 5f.
 
