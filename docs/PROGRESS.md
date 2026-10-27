@@ -13,7 +13,7 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
-| 5c: OS, region and city | **Built, awaiting owner review** (local, against Convex dev). Not pushed yet. |
+| 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
 | 5d to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -210,13 +210,12 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review 5c, push, then 5d
+## Next: check 5c on production, then 5d
 
-5c is built and checked locally. Owner:
+Pushed to `main` on 2026-10-27 (commit `e672a1a`) and live. The dev `localhost` site holds one test hit from San Francisco on iOS. Owner:
 
-1. Review the dashboard locally (`npm run dev`): Devices has a Devices | OS tab, Countries has Countries | Regions | Cities. The dev `localhost` site has one test hit from San Francisco on iOS (2026-10-27).
-2. Push to `main` (deploys Convex and Next.js together), then "Done when" on production: visit a tracked site yourself and check that your city shows under Cities and your OS under OS.
-3. Paste the updated text from `docs/PRIVACY.md` (it now mentions OS, region, city and the rough position).
+1. "Done when" on production: visit a tracked site yourself and check that your city shows under Countries → Cities and your OS under Devices → OS. The lists only hold hits from after the deploy.
+2. Paste the updated text from `docs/PRIVACY.md` (it now mentions OS, region, city and the rough position).
 
 Then 5d.
 
