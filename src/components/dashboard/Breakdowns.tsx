@@ -3,7 +3,18 @@
 import { createElement, useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import type { IconType } from "react-icons";
-import { FaEdge, FaFacebook, FaGlobe, FaInstagram } from "react-icons/fa";
+import {
+  FaAndroid,
+  FaApple,
+  FaChrome,
+  FaEdge,
+  FaFacebook,
+  FaGlobe,
+  FaInstagram,
+  FaLinux,
+  FaUbuntu,
+  FaWindows,
+} from "react-icons/fa";
 import { FiMonitor, FiSmartphone, FiTablet } from "react-icons/fi";
 import {
   SiBrave,
@@ -17,15 +28,18 @@ import {
 } from "react-icons/si";
 import { api } from "../../../convex/_generated/api";
 import { dimMetric, type Dim } from "../../../convex/lib/dims";
+import { parseGeoKey } from "../../../convex/lib/geo";
 import type { DateRange } from "../../../convex/lib/ranges";
 import { sourceDomain } from "../../../convex/lib/sources";
 import {
+  cityLabel,
   countryFlag,
   countryName,
   deviceLabel,
   formatNumber,
   formatShare,
   referrerLabel,
+  regionLabel,
 } from "@/lib/format";
 import BreakdownList, { type BreakdownRow } from "./BreakdownList";
 
@@ -46,6 +60,17 @@ const PAGE_TABS: Tab[] = [
   { dim: "exit", label: "Exit" },
 ];
 
+const DEVICE_TABS: Tab[] = [
+  { dim: "device", label: "Devices" },
+  { dim: "os", label: "OS" },
+];
+
+const COUNTRY_TABS: Tab[] = [
+  { dim: "country", label: "Countries" },
+  { dim: "region", label: "Regions" },
+  { dim: "city", label: "Cities" },
+];
+
 // The Campaigns tab can switch to any tag from the landing page's URL
 const CAMPAIGN_DIMS: Tab[] = [
   { dim: "utm_campaign", label: "Campaign" },
@@ -61,7 +86,8 @@ const COUNT_DIMS = new Set<Dim>([...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS]
 
 /**
  * The four columns under the chart: sources (Channels, Sources, Campaigns, Referrers),
- * pages (Pages, Entry, Exit), Devices + Browsers, and Countries.
+ * pages (Pages, Entry, Exit), devices (Devices, OS) + Browsers, and countries
+ * (Countries, Regions, Cities).
  */
 export default function Breakdowns({ domain, range }: Props) {
   // Remount the lists when the range changes, so paging starts on page 1
@@ -71,10 +97,10 @@ export default function Breakdowns({ domain, range }: Props) {
       <Tabbed {...{ domain, range }} tabs={SOURCE_TABS} title="Sources" />
       <Tabbed {...{ domain, range }} tabs={PAGE_TABS} title="Pages" />
       <div className="flex flex-col gap-4">
-        <Breakdown key={`device${k}`} {...{ domain, range }} dim="device" title="Devices" />
+        <Tabbed {...{ domain, range }} tabs={DEVICE_TABS} title="Devices" />
         <Breakdown key={`browser${k}`} {...{ domain, range }} dim="browser" title="Browsers" />
       </div>
-      <Breakdown key={`country${k}`} {...{ domain, range }} dim="country" title="Countries" />
+      <Tabbed {...{ domain, range }} tabs={COUNTRY_TABS} title="Countries" />
     </div>
   );
 }
@@ -182,6 +208,10 @@ function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
       return value;
     case "country":
       return countryName(value);
+    case "region":
+      return regionLabel(value);
+    case "city":
+      return cityLabel(value);
     default:
       return value;
   }
@@ -193,12 +223,18 @@ function rowIcon(dim: Dim, value: string): ReactNode {
       return createElement(DEVICE_ICONS[value] ?? FiMonitor, { "aria-hidden": true });
     case "browser":
       return createElement(browserIcon(value), { "aria-hidden": true });
+    case "os":
+      return createElement(osIcon(value), { "aria-hidden": true });
     case "country":
+    case "region":
+    case "city": {
+      const country = dim === "country" ? value : (parseGeoKey(value)?.country ?? "");
       return (
         <span className="text-2xl leading-none" aria-hidden>
-          {countryFlag(value) || "🌐"}
+          {countryFlag(country) || "🌐"}
         </span>
       );
+    }
     case "source":
       return <SourceIcon key={value} source={value} />;
     default:
@@ -249,4 +285,18 @@ const BROWSER_ICONS: [RegExp, IconType][] = [
 
 function browserIcon(name: string): IconType {
   return BROWSER_ICONS.find(([re]) => re.test(name))?.[1] ?? FaGlobe;
+}
+
+// OS names come from ua-parser-js v1 ("Mac OS", "iOS", "Windows", "Chromium OS", ...)
+const OS_ICONS: [RegExp, IconType][] = [
+  [/mac|ios/i, FaApple],
+  [/windows/i, FaWindows],
+  [/android/i, FaAndroid],
+  [/chrom/i, FaChrome],
+  [/ubuntu/i, FaUbuntu],
+  [/linux|debian|fedora|arch|mint/i, FaLinux],
+];
+
+function osIcon(name: string): IconType {
+  return OS_ICONS.find(([re]) => re.test(name))?.[1] ?? FaGlobe;
 }

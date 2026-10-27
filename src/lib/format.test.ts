@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  cityLabel,
   countryFlag,
   countryName,
   formatChange,
@@ -8,6 +9,7 @@ import {
   formatNumber,
   formatShare,
   referrerLabel,
+  regionLabel,
   truncateMiddle,
 } from "./format";
 
@@ -62,5 +64,23 @@ describe("format", () => {
     expect(truncateMiddle("advancedortholabsf.com", 22)).toBe("advancedortholabsf.com");
     expect(truncateMiddle("advancedortholabsf.com", 18)).toBe("advancedo…absf.com");
     expect(truncateMiddle("roaminternational.com", 18)).toHaveLength(18);
+  });
+});
+
+describe("regionLabel and cityLabel", () => {
+  test.each([
+    ["US/CA", "California"],
+    ["DE/BE", "BE, Germany"],
+    ["Unknown", "Unknown"],
+  ])("regionLabel(%s) -> %s", (key, expected) => {
+    expect(regionLabel(key)).toBe(expected);
+  });
+
+  test.each([
+    ["US/CA/San Francisco", "San Francisco, CA"],
+    ["SG//Singapore", "Singapore"],
+    ["Unknown", "Unknown"],
+  ])("cityLabel(%s) -> %s", (key, expected) => {
+    expect(cityLabel(key)).toBe(expected);
   });
 });

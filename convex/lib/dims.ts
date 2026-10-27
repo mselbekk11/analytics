@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 // Every dimension a dailyDims row can hold. Pageview dims (page, referrer, device,
-// browser, country) count each pageview and its visitor. Session dims (5b on) count
+// browser, country, and from 5c os, region and city) count each pageview and its visitor. Session dims (5b on) count
 // sessions, and visitors once per visitor, key and day; their `pageviews` stays 0.
 export const dimValidator = v.union(
   v.literal("page"),
@@ -19,6 +19,9 @@ export const dimValidator = v.union(
   v.literal("ref"),
   v.literal("entry"),
   v.literal("exit"),
+  v.literal("os"),
+  v.literal("region"),
+  v.literal("city"),
 );
 
 export type Dim = Infer<typeof dimValidator>;

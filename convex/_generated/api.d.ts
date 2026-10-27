@@ -14,6 +14,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dates from "../lib/dates.js";
 import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
+import type * as lib_geo from "../lib/geo.js";
 import type * as lib_ranges from "../lib/ranges.js";
 import type * as lib_rollups from "../lib/rollups.js";
 import type * as lib_sources from "../lib/sources.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   "lib/dates": typeof lib_dates;
   "lib/dims": typeof lib_dims;
   "lib/domain": typeof lib_domain;
+  "lib/geo": typeof lib_geo;
   "lib/ranges": typeof lib_ranges;
   "lib/rollups": typeof lib_rollups;
   "lib/sources": typeof lib_sources;

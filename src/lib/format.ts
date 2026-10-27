@@ -57,6 +57,36 @@ export function countryFlag(code: string): string {
   return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
+// Vercel gives regions as ISO 3166-2 codes; US states get their names, other codes show as is
+const US_STATES: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
+  CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas",
+  KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts",
+  MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana",
+  NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico",
+  NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma",
+  OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota",
+  TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington",
+  WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", PR: "Puerto Rico",
+};
+
+/** "US/CA" -> "California"; "DE/BE" -> "BE, Germany". Anything else comes back as given. */
+export function regionLabel(key: string): string {
+  const [country, region] = key.split("/");
+  if (!region) return key;
+  if (country === "US" && US_STATES[region]) return US_STATES[region];
+  return `${region}, ${countryName(country)}`;
+}
+
+/** "US/CA/San Francisco" -> "San Francisco, CA"; "SG//Singapore" -> "Singapore". */
+export function cityLabel(key: string): string {
+  const [, region, ...rest] = key.split("/");
+  if (rest.length === 0) return key;
+  const city = rest.join("/");
+  return region ? `${city}, ${region}` : city;
+}
+
 /** Referrer keys are hostnames or "(direct)", which SA shows as is. */
 export function referrerLabel(key: string): string {
   return key;

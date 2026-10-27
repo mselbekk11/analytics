@@ -13,7 +13,8 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
 | 5b: Sources, channels and campaigns | **Live in production since 2026-10-27** (commit `2827448`; `/script.js` sends campaign tags). Backfill run on production: all 8 sessions classified (7 Direct, 1 Google), 316 visitors on old days. Awaiting the owner's "Done when" check on production. |
-| 5c to 5h, 6 | Not started. |
+| 5c: OS, region and city | **Built, awaiting owner review** (local, against Convex dev). Not pushed yet. |
+| 5d to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -67,6 +68,7 @@ convex/
   lib/dims.ts        dimValidator (every dailyDims dim) and dimMetric (which count a list ranks by)
   lib/sources.ts     source/channel classifier (adapted from minilytics, MIT), sourceDomain for favicons
   lib/attribution.ts campaign validator, countSession / countCookielessVisit (session dims)
+  lib/geo.ts         regionKey / cityKey ("US/CA", "US/CA/San Francisco") and parseGeoKey
   *.test.ts          convex-test suites
 src/
   proxy.ts           clerkMiddleware; everything protected except /sign-in, /sign-up, /api/collect, /script.js
@@ -85,7 +87,7 @@ src/
   components/settings/    SiteSettings
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
-  lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname
+  lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
   lib/*.test.ts      unit tests, including script.test.ts, which runs public/script.js in a fake browser
 public/script.js     hand-written ES5 tracking script (2.59 KB gzipped after 5b; limit 3 KB)
 docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
@@ -95,6 +97,7 @@ Checks at the end of Phase 1: `npm run build`, `npx tsc --noEmit`, `npm run lint
 Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing; add, settings and delete clicked through locally.
 Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing; curl hits through local `/api/collect` into Convex dev gave 1 visitor, 2 sessions, 1 bounce and the ping's 42 s on the session.
+Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
 Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing. On Convex dev: the backfill filled source/channel for old days and 5a sessions; a curl hit with `utm_source=test&utm_campaign=phase5b` showed under Campaigns (and as source "test", channel Referral), and one from chatgpt.com as ChatGPT under AI, both seen on the local dashboard.
 
 ## Decisions and differences from PLAN.md
@@ -156,6 +159,16 @@ Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing
 - **Backfill** (`npx convex run migrations:backfillSources [--prod]`): days before visitor tracking come from the `referrer` dim rows (visitors per referrer → source and channel); 5a sessions get `source`/`channel` and are counted exactly as ingest counts new sessions (entry and exit included), and their visitors get `firstSource`; unique hits without ids between the tracking day and the cut-off are counted as ingest now does. A test replays the same traffic both ways and gets identical rows. `utm_*` and `ref` can't be recovered for old data.
 - **Hydration warning on the dashboard** comes from Clerk's `UserButton` in the header (was there before 5b), not from the lists.
 
+### Phase 5c (OS, region and city)
+
+- **OS, region and city are pageview dims**, like device, browser and country: they count pageviews and visitors (with ids, a visitor's first pageview of the day), not sessions. The OS tab sits next to Devices and the Regions/Cities tabs next to Countries, which all show each key's share of visitors, so they use the same rule. PHASE5.md also lists country, device, browser and OS among the session dims; that is left out until something (5e's revenue by country, say) needs a per-session count.
+- **Region is Vercel's `countryRegion`** (ISO 3166-2 code such as `CA`), not `geolocation().region`, which is Vercel's data-centre region (`iad1`). Codes are kept as sent; the dashboard names US states and shows other codes as "BE, Germany". No subdivision name table beyond the US.
+- **Keys:** region `US/CA`, city `US/CA/San Francisco` (empty region part when Vercel gives a city but no region, e.g. `SG//Singapore`). A missing region or city counts under `Unknown`, as country does. Built and parsed in `convex/lib/geo.ts`.
+- **OS is ua-parser's `os.name`** without the version ("Mac OS", "iOS", "Windows", "Android", "Chromium OS"); `Unknown` when it has none.
+- **Raw rows:** `sessions` get `os`, `region`, `city`, `lat`, `lon` at session start. `parseGeo` in the route rounds the coordinates to one decimal and drops a pair with one half missing or out of range. `pageviews` don't get the new fields (not in PHASE5.md), so cookieless hits count in the lists but no location is stored for them.
+- **No backfill:** old pageviews stored no user agent, region or city, so the new lists start on the day 5c is deployed.
+- **Script unchanged.**
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -197,7 +210,17 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5b on production, then 5c
+## Next: review 5c, push, then 5d
+
+5c is built and checked locally. Owner:
+
+1. Review the dashboard locally (`npm run dev`): Devices has a Devices | OS tab, Countries has Countries | Regions | Cities. The dev `localhost` site has one test hit from San Francisco on iOS (2026-10-27).
+2. Push to `main` (deploys Convex and Next.js together), then "Done when" on production: visit a tracked site yourself and check that your city shows under Cities and your OS under OS.
+3. Paste the updated text from `docs/PRIVACY.md` (it now mentions OS, region, city and the rough position).
+
+Then 5d.
+
+## Earlier: check 5b on production, then 5c
 
 Reviewed locally, pushed and backfilled on production on 2026-10-27. Owner:
 

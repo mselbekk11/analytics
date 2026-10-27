@@ -3,6 +3,7 @@ import {
   detectDevice,
   normalizePath,
   normalizeReferrer,
+  parseGeo,
   parsePayload,
   requestHostname,
 } from "./collect";
@@ -150,5 +151,39 @@ describe("parsePayload", () => {
     ["fractional ping", JSON.stringify({ t: "ping", site: "picai.so", pvId: "abc", ms: 0.5 })],
   ])("rejects %s", (_name, body) => {
     expect(parsePayload(body)).toBeNull();
+  });
+});
+
+describe("parseGeo", () => {
+  test("keeps country, region and city, and rounds coordinates to one decimal", () => {
+    expect(
+      parseGeo({
+        country: "US",
+        countryRegion: "CA",
+        city: "San Francisco",
+        latitude: "37.7749",
+        longitude: "-122.4194",
+      }),
+    ).toEqual({ country: "US", region: "CA", city: "San Francisco", lat: 37.8, lon: -122.4 });
+  });
+
+  test("missing headers give Unknown and nothing else", () => {
+    expect(parseGeo({})).toEqual({ country: "Unknown" });
+  });
+
+  test("drops malformed regions, out-of-range or half coordinates, and long city names", () => {
+    expect(
+      parseGeo({ country: "DE", countryRegion: "Berlin!", city: " " + "x".repeat(150), latitude: "52.52" }),
+    ).toEqual({ country: "DE", city: "x".repeat(100) });
+    expect(parseGeo({ country: "US", latitude: "91", longitude: "0" })).toEqual({ country: "US" });
+    expect(parseGeo({ country: "US", latitude: "-0.01", longitude: "abc" })).toEqual({ country: "US" });
+  });
+
+  test("never returns negative zero", () => {
+    expect(parseGeo({ country: "GH", latitude: "-0.04", longitude: "-0.02" })).toEqual({
+      country: "GH",
+      lat: 0,
+      lon: 0,
+    });
   });
 });

@@ -2,7 +2,7 @@
 
 Paste the section below into the privacy policy of each site that loads the analytics snippet. Replace `[Site]` with the site's name and `[contact email]` with your address. Sites that use `data-cookieless` should use the second version instead.
 
-These texts describe what the script does as of Phase 5b. Update them when later phases store more: operating system, region and city (5c), goals and `identify()` (5d) and payments (5e).
+These texts describe what the script does as of Phase 5c. Update them when later phases store more: goals and `identify()` (5d) and payments (5e).
 
 This is plain-language wording, not legal advice. If a site gets meaningful traffic from the EU or UK, a cookie used for analytics generally needs consent there: add a consent banner that loads the script only after consent, or switch that site to `data-cookieless`.
 
@@ -21,7 +21,7 @@ This is plain-language wording, not legal advice. If a site gets meaningful traf
 >
 > These IDs are random. They do not contain your name, email address or any other personal details, and they are not used on other websites.
 >
-> With each page you view, we record the page address (without any query string), the website you came from (its domain only), your browser and device type, your approximate location (country) derived by our hosting provider, and how long the page was open in a visible tab. If the link you arrived from carries campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref` or `via`), we record those tags too, but nothing else from the address. Your IP address is used by our hosting provider only to work out the country and is never stored by us.
+> With each page you view, we record the page address (without any query string), the website you came from (its domain only), your browser, device type and operating system, your approximate location (country, region and city) derived by our hosting provider, and how long the page was open in a visible tab. If the link you arrived from carries campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref` or `via`), we record those tags too, but nothing else from the address. For each visit we also keep a rough position (accurate to about 10 km) to show where visitors are on a map. Your IP address is used by our hosting provider only to work out this location and is never stored by us.
 >
 > You can delete the cookies at any time in your browser settings, and blocking cookies does not stop the site from working.
 >
@@ -33,6 +33,6 @@ This is plain-language wording, not legal advice. If a site gets meaningful traf
 >
 > [Site] uses its own privacy-friendly analytics to understand how the site is used, for example which pages are read and where visitors come from. The analytics sets no cookies and stores nothing on your device. We do not use Google Analytics or any advertising trackers, and we do not sell or share this data.
 >
-> With each page you view, we record the page address (without any query string), the website you came from (its domain only), your browser and device type, your approximate location (country) derived by our hosting provider, and how long the page was open in a visible tab. If the link you arrived from carries campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref` or `via`), we record those tags too, but nothing else from the address. Your IP address is used by our hosting provider only to work out the country and is never stored by us. None of this is linked to you or to your other visits.
+> With each page you view, we record the page address (without any query string), the website you came from (its domain only), your browser, device type and operating system, your approximate location (country, region and city) derived by our hosting provider, and how long the page was open in a visible tab. If the link you arrived from carries campaign tags (`utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `ref` or `via`), we record those tags too, but nothing else from the address. Your IP address is used by our hosting provider only to work out this location and is never stored by us. None of this is linked to you or to your other visits.
 >
 > If you have questions about this, contact [contact email].

@@ -8,6 +8,7 @@ import {
   detectDevice,
   normalizePath,
   normalizeReferrer,
+  parseGeo,
   parsePayload,
   requestHostname,
 } from "@/lib/collect";
@@ -53,6 +54,8 @@ export async function POST(request: Request) {
 
     if (payload.t === "pv") {
       const parsed = new UAParser(ua).getResult();
+      // The IP itself is never read; Vercel resolves it to these headers
+      const geo = parseGeo(geolocation(request));
       await convex.mutation(api.ingest.pageview, {
         secret,
         site: payload.site,
@@ -62,7 +65,8 @@ export async function POST(request: Request) {
         unique: payload.unique,
         device: detectDevice(parsed.device.type, payload.sw),
         browser: parsed.browser.name ?? "Unknown",
-        country: geolocation(request).country ?? "Unknown",
+        os: parsed.os.name ?? "Unknown",
+        ...geo,
         pvId: payload.pvId,
         visitorId: payload.vid,
         sessionId: payload.sid,

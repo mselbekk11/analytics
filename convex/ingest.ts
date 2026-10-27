@@ -10,6 +10,7 @@ import {
 } from "./lib/attribution";
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
+import { cityKey, regionKey } from "./lib/geo";
 import { bumpDailyDim, bumpDailyStats, bumpSessionDim } from "./lib/rollups";
 
 // These are public because /api/collect calls them over HTTP, so every call must
@@ -53,6 +54,12 @@ export const pageview = mutation({
     device: v.union(v.literal("mobile"), v.literal("tablet"), v.literal("desktop")),
     browser: v.string(),
     country: v.string(),
+    // From 5c. Region is the ISO 3166-2 subdivision code ("CA"); lat/lon are rounded by the route
+    os: v.optional(v.string()),
+    region: v.optional(v.string()),
+    city: v.optional(v.string()),
+    lat: v.optional(v.number()),
+    lon: v.optional(v.number()),
     pvId: v.string(),
     // From the _va_vid and _va_sid cookies; both missing for cookieless and old scripts
     visitorId: v.optional(v.string()),
@@ -119,6 +126,9 @@ export const pageview = mutation({
     await bumpDailyDim(ctx, site._id, date, "device", args.device, countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "browser", args.browser, countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "country", args.country, countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "os", args.os ?? "Unknown", countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "region", regionKey(args.country, args.region), countsVisitor);
+    await bumpDailyDim(ctx, site._id, date, "city", cityKey(args.country, args.region, args.city), countsVisitor);
     return null;
   },
 });
@@ -147,8 +157,13 @@ type Visit = {
   path: string;
   referrer: string;
   country: string;
+  region?: string;
+  city?: string;
+  lat?: number;
+  lon?: number;
   device: string;
   browser: string;
+  os?: string;
   campaign: Campaign | undefined;
 };
 
@@ -190,8 +205,13 @@ async function trackVisit(
       referrer: hit.referrer,
       ...attribution,
       country: hit.country,
+      region: hit.region,
+      city: hit.city,
+      lat: hit.lat,
+      lon: hit.lon,
       device: hit.device,
       browser: hit.browser,
+      os: hit.os,
       revenueMinor: 0,
     });
     await countSession(ctx, (await ctx.db.get("sessions", id))!);

@@ -17,6 +17,11 @@ type Hit = {
   device: "mobile" | "tablet" | "desktop";
   browser: string;
   country: string;
+  os?: string;
+  region?: string;
+  city?: string;
+  lat?: number;
+  lon?: number;
   pvId: string;
   visitorId?: string;
   sessionId?: string;
@@ -100,10 +105,13 @@ describe("ingest.pageview", () => {
     expect(dailyDims.map((d) => [d.dim, d.key, d.pageviews, d.visitors]).sort()).toEqual([
       ["browser", "Chrome", 1, 1],
       ["channel", "Organic Search", 0, 1],
+      ["city", "Unknown", 1, 1],
       ["country", "US", 1, 1],
       ["device", "desktop", 1, 1],
+      ["os", "Unknown", 1, 1],
       ["page", "/", 1, 1],
       ["referrer", "google.com", 1, 1],
+      ["region", "Unknown", 1, 1],
       ["source", "Google", 0, 1],
     ]);
   });
@@ -576,5 +584,59 @@ describe("ingest.ping", () => {
     );
     await t.mutation(api.ingest.ping, ping({ hostname: "evil.com" }));
     expect((await tables(t)).pageviews[0].durationMs).toBeUndefined();
+  });
+});
+
+describe("OS, region and city", () => {
+  const sf = {
+    os: "iOS",
+    region: "CA",
+    city: "San Francisco",
+    lat: 37.8,
+    lon: -122.4,
+  };
+
+  test("are stored on the session and counted per pageview with the visitor", async () => {
+    const t = await setup();
+    const ids = { visitorId: "11111111-1111-4111-8111-111111111111", sessionId: "22222222-2222-4222-8222-222222222222" };
+    await t.mutation(api.ingest.pageview, hit({ ...sf, ...ids, pvId: "a" }));
+    await t.mutation(api.ingest.pageview, hit({ ...sf, ...ids, pvId: "b", path: "/pricing" }));
+
+    const { sessions, dailyDims } = await tables(t);
+    expect(sessions[0]).toMatchObject(sf);
+    const geo = dailyDims
+      .filter((d) => d.dim === "os" || d.dim === "region" || d.dim === "city")
+      .map((d) => [d.dim, d.key, d.pageviews, d.visitors])
+      .sort();
+    expect(geo).toEqual([
+      ["city", "US/CA/San Francisco", 2, 1],
+      ["os", "iOS", 2, 1],
+      ["region", "US/CA", 2, 1],
+    ]);
+  });
+
+  test("two cities with the same name in different regions stay apart", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ pvId: "a", region: "OR", city: "Portland" }));
+    await t.mutation(api.ingest.pageview, hit({ pvId: "b", region: "ME", city: "Portland" }));
+    const keys = (await tables(t)).dailyDims.filter((d) => d.dim === "city").map((d) => d.key);
+    expect(keys.sort()).toEqual(["US/ME/Portland", "US/OR/Portland"]);
+  });
+
+  test("a city without a region keeps an empty region part", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ country: "SG", city: "Singapore" }));
+    const { dailyDims } = await tables(t);
+    expect(dailyDims.find((d) => d.dim === "city")?.key).toBe("SG//Singapore");
+    expect(dailyDims.find((d) => d.dim === "region")?.key).toBe("Unknown");
+  });
+
+  test("cookieless hits are counted in the lists without storing a location", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, hit({ ...sf, cookieless: true }));
+    const { sessions, pageviews, dailyDims } = await tables(t);
+    expect(sessions).toHaveLength(0);
+    expect(pageviews[0]).not.toHaveProperty("city");
+    expect(dailyDims.find((d) => d.dim === "city")).toMatchObject({ key: "US/CA/San Francisco", visitors: 1 });
   });
 });

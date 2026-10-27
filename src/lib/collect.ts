@@ -192,6 +192,47 @@ export function detectDevice(uaDeviceType: string | undefined, screenWidth: numb
   return "desktop";
 }
 
+/** What Vercel's geolocation() gives the route (header values, all optional). */
+export type GeoHeaders = {
+  country?: string;
+  countryRegion?: string;
+  city?: string;
+  latitude?: string;
+  longitude?: string;
+};
+
+export type Geo = {
+  country: string;
+  region?: string;
+  city?: string;
+  lat?: number;
+  lon?: number;
+};
+
+/**
+ * Country, region (ISO 3166-2 code, "CA"), city and coordinates rounded to one
+ * decimal place (about 10 km), so a precise location never leaves the route.
+ */
+export function parseGeo(geo: GeoHeaders): Geo {
+  const region = geo.countryRegion?.trim().toUpperCase();
+  const city = geo.city?.trim().slice(0, 100);
+  const lat = coord(geo.latitude, 90);
+  const lon = coord(geo.longitude, 180);
+  return {
+    country: geo.country || "Unknown",
+    ...(region && /^[A-Z0-9]{1,3}$/.test(region) ? { region } : {}),
+    ...(city ? { city } : {}),
+    ...(lat !== undefined && lon !== undefined ? { lat, lon } : {}),
+  };
+}
+
+function coord(value: string | undefined, max: number): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || Math.abs(n) > max) return undefined;
+  return Math.round(n * 10) / 10 || 0; // no -0
+}
+
 /** The hostname the request came from: Origin, then Referer, then the payload's own host. */
 export function requestHostname(
   origin: string | null,
