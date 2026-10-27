@@ -10,7 +10,7 @@ export type BreakdownRow = {
   value: string;
   /** 0 to 1, sets the bar width in share lists */
   share: number;
-  /** Leading icon or flag in share lists */
+  /** Leading icon or flag in share lists; a favicon after the count in count lists */
   icon?: ReactNode;
 };
 
@@ -18,6 +18,8 @@ const PAGE_SIZE = 10;
 
 type Props = {
   title: string;
+  /** Replaces the title, e.g. with tabs; `title` still names the paging buttons */
+  header?: ReactNode;
   /**
    * "count": cyan number then label (Referrals, Pages).
    * "share": icon then a bar holding the percentage (Devices, Browsers, Countries).
@@ -26,7 +28,7 @@ type Props = {
   rows: BreakdownRow[] | undefined;
 };
 
-export default function BreakdownList({ title, variant, rows }: Props) {
+export default function BreakdownList({ title, header, variant, rows }: Props) {
   const [page, setPage] = useState(0);
   const pages = rows ? Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) : 1;
   const current = Math.min(page, pages - 1);
@@ -34,7 +36,7 @@ export default function BreakdownList({ title, variant, rows }: Props) {
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel/40 p-4">
-      <h2 className="font-medium text-strong">{title}</h2>
+      {header ?? <h2 className="font-medium text-strong">{title}</h2>}
       {visible === undefined ? (
         <ul className="flex flex-col gap-2">
           {Array.from({ length: 4 }, (_, i) => (
@@ -81,6 +83,7 @@ function CountRow({ row }: { row: BreakdownRow }) {
   return (
     <li className="flex h-7 items-center gap-3">
       <span className="w-10 shrink-0 font-medium text-accent tabular-nums text-sm">{row.value}</span>
+      {row.icon && <span className="flex size-4 shrink-0 items-center justify-center">{row.icon}</span>}
       <span className="min-w-0 truncate text-sm">{row.label}</span>
     </li>
   );

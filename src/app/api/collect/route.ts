@@ -67,6 +67,7 @@ export async function POST(request: Request) {
         visitorId: payload.vid,
         sessionId: payload.sid,
         cookieless: payload.nc,
+        campaign: payload.campaign,
       });
     } else if (payload.t === "ping") {
       await convex.mutation(api.ingest.ping, {

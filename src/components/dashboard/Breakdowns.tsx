@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, type ReactNode } from "react";
+import { createElement, useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import type { IconType } from "react-icons";
 import { FaEdge, FaFacebook, FaGlobe, FaInstagram } from "react-icons/fa";
@@ -16,7 +16,9 @@ import {
   SiVivaldi,
 } from "react-icons/si";
 import { api } from "../../../convex/_generated/api";
+import { dimMetric, type Dim } from "../../../convex/lib/dims";
 import type { DateRange } from "../../../convex/lib/ranges";
+import { sourceDomain } from "../../../convex/lib/sources";
 import {
   countryFlag,
   countryName,
@@ -27,18 +29,47 @@ import {
 } from "@/lib/format";
 import BreakdownList, { type BreakdownRow } from "./BreakdownList";
 
-type Dim = "page" | "referrer" | "device" | "browser" | "country";
-
 type Props = { domain: string; range: DateRange };
 
-/** The four columns under the chart: Referrals, Pages, Devices + Browsers, Countries. */
+type Tab = { dim: Dim; label: string };
+
+const SOURCE_TABS: Tab[] = [
+  { dim: "channel", label: "Channels" },
+  { dim: "source", label: "Sources" },
+  { dim: "utm_campaign", label: "Campaigns" },
+  { dim: "referrer", label: "Referrers" },
+];
+
+const PAGE_TABS: Tab[] = [
+  { dim: "page", label: "Pages" },
+  { dim: "entry", label: "Entry" },
+  { dim: "exit", label: "Exit" },
+];
+
+// The Campaigns tab can switch to any tag from the landing page's URL
+const CAMPAIGN_DIMS: Tab[] = [
+  { dim: "utm_campaign", label: "Campaign" },
+  { dim: "utm_source", label: "Source" },
+  { dim: "utm_medium", label: "Medium" },
+  { dim: "utm_term", label: "Term" },
+  { dim: "utm_content", label: "Content" },
+  { dim: "ref", label: "ref / via" },
+];
+
+// Lists that show a count rather than a share bar
+const COUNT_DIMS = new Set<Dim>([...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS].map((t) => t.dim));
+
+/**
+ * The four columns under the chart: sources (Channels, Sources, Campaigns, Referrers),
+ * pages (Pages, Entry, Exit), Devices + Browsers, and Countries.
+ */
 export default function Breakdowns({ domain, range }: Props) {
   // Remount the lists when the range changes, so paging starts on page 1
   const k = `${range.from}_${range.to}`;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Breakdown key={`referrer${k}`} {...{ domain, range }} dim="referrer" title="Referrals" />
-      <Breakdown key={`page${k}`} {...{ domain, range }} dim="page" title="Pages" />
+      <Tabbed {...{ domain, range }} tabs={SOURCE_TABS} title="Sources" />
+      <Tabbed {...{ domain, range }} tabs={PAGE_TABS} title="Pages" />
       <div className="flex flex-col gap-4">
         <Breakdown key={`device${k}`} {...{ domain, range }} dim="device" title="Devices" />
         <Breakdown key={`browser${k}`} {...{ domain, range }} dim="browser" title="Browsers" />
@@ -48,27 +79,86 @@ export default function Breakdowns({ domain, range }: Props) {
   );
 }
 
-function Breakdown({ domain, range, dim, title }: Props & { dim: Dim; title: string }) {
+/** A list with tabs in its header; the tab is kept when the range changes. */
+function Tabbed({ domain, range, tabs, title }: Props & { tabs: Tab[]; title: string }) {
+  const [tab, setTab] = useState(tabs[0].dim);
+  const [campaignDim, setCampaignDim] = useState<Dim>("utm_campaign");
+  const isCampaign = CAMPAIGN_DIMS.some((t) => t.dim === tab);
+  const dim = isCampaign ? campaignDim : tab;
+
+  const header = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div role="tablist" aria-label={title} className="flex flex-wrap gap-x-2.5 gap-y-1 text-sm">
+        {tabs.map((t) => (
+          <button
+            key={t.dim}
+            type="button"
+            role="tab"
+            aria-selected={t.dim === tab}
+            onClick={() => setTab(t.dim)}
+            className={
+              t.dim === tab ? "font-medium text-strong" : "font-medium text-muted hover:text-strong"
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {isCampaign && (
+        <select
+          value={campaignDim}
+          onChange={(e) => setCampaignDim(e.target.value as Dim)}
+          aria-label="Campaign tag"
+          className="ml-auto rounded border border-line bg-panel px-1.5 py-0.5 text-xs text-muted"
+        >
+          {CAMPAIGN_DIMS.map((t) => (
+            <option key={t.dim} value={t.dim}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+
+  return (
+    <Breakdown
+      key={`${dim}${range.from}_${range.to}`}
+      {...{ domain, range, dim, header }}
+      title={tabs.find((t) => t.dim === tab)?.label ?? title}
+    />
+  );
+}
+
+function Breakdown({
+  domain,
+  range,
+  dim,
+  title,
+  header,
+}: Props & { dim: Dim; title: string; header?: ReactNode }) {
   const data = useQuery(api.stats.breakdown, { domain, dim, ...range });
 
-  // Pages count pageviews and Referrals count visitors (as SA does); the other
-  // lists show each key's share of all visitors.
-  const variant = dim === "page" || dim === "referrer" ? "count" : "share";
-  const metric = dim === "page" ? "pageviews" : "visitors";
-  const total = data ? (dim === "page" ? data.totalPageviews : data.totalVisitors) : 0;
+  // Pages count pageviews, entry and exit pages count sessions, and the source lists
+  // count visitors (as SA does); the other lists show each key's share of all visitors.
+  const variant = COUNT_DIMS.has(dim) ? "count" : "share";
+  const metric = dimMetric(dim);
+  const total = data
+    ? { pageviews: data.totalPageviews, visitors: data.totalVisitors, sessions: data.totalSessions }[metric]
+    : 0;
 
   const rows: BreakdownRow[] | undefined = data?.rows.map((r) => {
     const share = total === 0 ? 0 : r[metric] / total;
     return {
       key: r.key,
       label: <Label dim={dim} value={r.key} />,
-      icon: <RowIcon dim={dim} value={r.key} />,
+      icon: rowIcon(dim, r.key),
       value: variant === "count" ? formatNumber(r[metric]) : formatShare(share),
       share,
     };
   });
 
-  return <BreakdownList title={title} variant={variant} rows={rows} />;
+  return <BreakdownList title={title} header={header} variant={variant} rows={rows} />;
 }
 
 function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
@@ -86,18 +176,18 @@ function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
           {value}
         </a>
       );
-    case "page":
-      return value;
     case "device":
       return deviceLabel(value);
     case "browser":
       return value;
     case "country":
       return countryName(value);
+    default:
+      return value;
   }
 }
 
-function RowIcon({ dim, value }: { dim: Dim; value: string }): ReactNode {
+function rowIcon(dim: Dim, value: string): ReactNode {
   switch (dim) {
     case "device":
       return createElement(DEVICE_ICONS[value] ?? FiMonitor, { "aria-hidden": true });
@@ -109,9 +199,31 @@ function RowIcon({ dim, value }: { dim: Dim; value: string }): ReactNode {
           {countryFlag(value) || "🌐"}
         </span>
       );
+    case "source":
+      return <SourceIcon key={value} source={value} />;
     default:
       return null;
   }
+}
+
+/** A source's favicon, loaded from its own domain; a globe for tags and failed loads. */
+function SourceIcon({ source }: { source: string }) {
+  const domain = sourceDomain(source);
+  const [failed, setFailed] = useState(domain === null);
+  if (failed || domain === null) return <FaGlobe aria-hidden className="text-muted" />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- external favicon, any size
+    <img
+      src={`https://${domain}/favicon.ico`}
+      alt=""
+      className="size-4"
+      onError={() => setFailed(true)}
+      // The server-rendered <img> can fail before React hydrates and misses onError
+      ref={(img) => {
+        if (img?.complete && img.naturalWidth === 0) setFailed(true);
+      }}
+    />
+  );
 }
 
 const DEVICE_ICONS: Record<string, IconType> = {

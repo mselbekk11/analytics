@@ -9,12 +9,16 @@
  */
 
 import type * as ingest from "../ingest.js";
+import type * as lib_attribution from "../lib/attribution.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dates from "../lib/dates.js";
+import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
 import type * as lib_ranges from "../lib/ranges.js";
 import type * as lib_rollups from "../lib/rollups.js";
+import type * as lib_sources from "../lib/sources.js";
 import type * as me from "../me.js";
+import type * as migrations from "../migrations.js";
 import type * as sites from "../sites.js";
 import type * as stats from "../stats.js";
 
@@ -26,12 +30,16 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   ingest: typeof ingest;
+  "lib/attribution": typeof lib_attribution;
   "lib/auth": typeof lib_auth;
   "lib/dates": typeof lib_dates;
+  "lib/dims": typeof lib_dims;
   "lib/domain": typeof lib_domain;
   "lib/ranges": typeof lib_ranges;
   "lib/rollups": typeof lib_rollups;
+  "lib/sources": typeof lib_sources;
   me: typeof me;
+  migrations: typeof migrations;
   sites: typeof sites;
   stats: typeof stats;
 }>;

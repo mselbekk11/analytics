@@ -1,9 +1,16 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
+import {
+  attribute,
+  campaignValidator,
+  countCookielessVisit,
+  countSession,
+  type Campaign,
+} from "./lib/attribution";
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
-import { bumpDailyDim, bumpDailyStats } from "./lib/rollups";
+import { bumpDailyDim, bumpDailyStats, bumpSessionDim } from "./lib/rollups";
 
 // These are public because /api/collect calls them over HTTP, so every call must
 // carry INGEST_SECRET. Hits for unknown sites or foreign hostnames are dropped
@@ -51,6 +58,8 @@ export const pageview = mutation({
     visitorId: v.optional(v.string()),
     sessionId: v.optional(v.string()),
     cookieless: v.optional(v.boolean()), // the snippet has data-cookieless
+    // Tags from the landing page's URL; sent with the first pageview of a page load only
+    campaign: v.optional(campaignValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -71,6 +80,10 @@ export const pageview = mutation({
     const ids =
       visitorId !== undefined && sessionId !== undefined ? { visitorId, sessionId } : null;
     if (ids === null && !args.cookieless && legacyWindowOver(site, ts)) return null;
+    if (site.sourcesStartedAt === undefined) {
+      await ctx.db.patch("sites", site._id, { sourcesStartedAt: ts });
+    }
+    const campaign = cleanCampaign(args.campaign);
 
     await ctx.db.insert("pageviews", {
       siteId: site._id,
@@ -89,9 +102,11 @@ export const pageview = mutation({
     let countsVisitor = args.unique;
     let newSession = false;
     if (ids !== null) {
-      const visit = await trackVisit(ctx, site, { ...args, ...ids, ts, date });
+      const visit = await trackVisit(ctx, site, { ...args, ...ids, ts, date, campaign });
       countsVisitor = visit.firstToday;
       newSession = visit.newSession;
+    } else if (args.unique) {
+      await countCookielessVisit(ctx, site._id, date, attribute(args.referrer, campaign));
     }
 
     await bumpDailyStats(ctx, site._id, date, {
@@ -108,6 +123,17 @@ export const pageview = mutation({
   },
 });
 
+/** Trims each tag to 100 characters and drops empty ones. */
+function cleanCampaign(campaign: Campaign | undefined): Campaign | undefined {
+  if (campaign === undefined) return undefined;
+  const clean: Campaign = {};
+  for (const [field, value] of Object.entries(campaign) as [keyof Campaign, string | undefined][]) {
+    const trimmed = value?.trim().slice(0, 100);
+    if (trimmed) clean[field] = trimmed;
+  }
+  return clean;
+}
+
 /** Hits without ids after this come from a script cached for over a week; drop them. */
 function legacyWindowOver(site: Doc<"sites">, ts: number): boolean {
   return site.trackingStartedAt !== undefined && ts > site.trackingStartedAt + LEGACY_WINDOW_MS;
@@ -123,12 +149,14 @@ type Visit = {
   country: string;
   device: string;
   browser: string;
+  campaign: Campaign | undefined;
 };
 
 /**
  * Starts or extends the session and upserts the visitor. The caller adds the session
  * and its bounce to the day; a second pageview takes the bounce back off the day the
- * session started.
+ * session started. A new session is classified by source and counted on its source,
+ * entry and exit dims; each later pageview moves its exit page.
  */
 async function trackVisit(
   ctx: MutationCtx,
@@ -145,8 +173,9 @@ async function trackVisit(
       q.eq("siteId", site._id).eq("sessionId", hit.sessionId),
     )
     .unique();
+  const attribution = attribute(hit.referrer, hit.campaign);
   if (session === null) {
-    await ctx.db.insert("sessions", {
+    const id = await ctx.db.insert("sessions", {
       siteId: site._id,
       sessionId: hit.sessionId,
       visitorId: hit.visitorId,
@@ -159,11 +188,13 @@ async function trackVisit(
       entryPath: hit.path,
       exitPath: hit.path,
       referrer: hit.referrer,
+      ...attribution,
       country: hit.country,
       device: hit.device,
       browser: hit.browser,
       revenueMinor: 0,
     });
+    await countSession(ctx, (await ctx.db.get("sessions", id))!);
   } else {
     await ctx.db.patch("sessions", session._id, {
       pageviews: session.pageviews + 1,
@@ -172,6 +203,11 @@ async function trackVisit(
     });
     if (session.pageviews === 1 && session.goals === 0) {
       await bumpDailyStats(ctx, site._id, session.date, { bounces: -1 });
+    }
+    // Sessions from before 5b get their exit dim from the backfill instead
+    if (session.source !== undefined && session.exitPath !== hit.path) {
+      await bumpSessionDim(ctx, site._id, session.date, "exit", session.exitPath, { sessions: -1 });
+      await bumpSessionDim(ctx, site._id, session.date, "exit", hit.path, { sessions: 1 });
     }
   }
   const newSession = session === null;
@@ -190,6 +226,8 @@ async function trackVisit(
       lastSeen: hit.ts,
       lastSeenDate: hit.date,
       sessions: 1,
+      firstSource: attribution.source,
+      firstChannel: attribution.channel,
       revenueMinor: 0,
     });
     return { firstToday: true, newSession };

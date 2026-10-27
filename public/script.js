@@ -99,6 +99,24 @@
       }
     }
 
+    // Campaign tags from the URL (cut to 100 characters); nothing else of the query string is sent
+    function campaign() {
+      var tags = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "via"];
+      var pairs = (loc.search || "").substring(1).split("&");
+      var c = null;
+      for (var i = 0; i < pairs.length; i++) {
+        var eq = pairs[i].indexOf("=");
+        if (eq < 1) continue;
+        var key = pairs[i].substring(0, eq);
+        if (tags.indexOf(key) === -1) continue;
+        try {
+          var value = decodeURIComponent(pairs[i].substring(eq + 1).replace(/\+/g, " ")).substring(0, 100);
+          if (value) (c = c || {})[key] = value;
+        } catch (e) {}
+      }
+      return c;
+    }
+
     function navigationType() {
       try {
         var entry = w.performance.getEntriesByType("navigation")[0];
@@ -167,7 +185,7 @@
       pings = 0;
       resume();
 
-      send({
+      var data = {
         t: "pv",
         site: site,
         host: host,
@@ -176,7 +194,10 @@
         unique: unique,
         pvId: pvId,
         sw: w.screen ? w.screen.width : undefined
-      });
+      };
+      var tags = isFirst && campaign();
+      if (tags) data.c = tags;
+      send(data);
     }
 
     function wrapHistory(name) {

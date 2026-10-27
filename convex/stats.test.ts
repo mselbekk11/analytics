@@ -186,9 +186,9 @@ describe("stats.breakdown", () => {
       .withIdentity(OWNER)
       .query(api.stats.breakdown, { ...range, dim: "page" });
     expect(b.rows).toEqual([
-      { key: "/pricing", pageviews: 3, visitors: 1 },
-      { key: "/", pageviews: 2, visitors: 2 },
-      { key: "/blog", pageviews: 1, visitors: 0 },
+      { key: "/pricing", pageviews: 3, visitors: 1, sessions: 0 },
+      { key: "/", pageviews: 2, visitors: 2, sessions: 0 },
+      { key: "/blog", pageviews: 1, visitors: 0, sessions: 0 },
     ]);
     expect(b.totalPageviews).toBe(6);
     expect(b.totalVisitors).toBe(3);
@@ -224,6 +224,36 @@ describe("stats.breakdown", () => {
       .query(api.stats.breakdown, { ...range, dim: "device" });
     expect(b.rows[0]).toMatchObject({ key: "mobile", visitors: 2 });
     expect(b.totalVisitors).toBe(4);
+  });
+
+  test("entry and exit pages sort by sessions; channels by visitors", async () => {
+    const t = await setup();
+    const v = (visitorId: string, sessionId: string) => ({ visitorId, sessionId });
+    await visit(t, "2026-10-10T17:00:00Z", { ...v("v1", "s1"), referrer: "google.com" });
+    await visit(t, "2026-10-10T17:01:00Z", { ...v("v1", "s1"), path: "/pricing", unique: false });
+    await visit(t, "2026-10-11T17:00:00Z", { ...v("v2", "s2"), path: "/blog", referrer: "chatgpt.com" });
+    await visit(t, "2026-10-11T17:10:00Z", { ...v("v3", "s3"), path: "/blog", referrer: "perplexity.ai" });
+    const as = t.withIdentity(OWNER);
+
+    const entry = await as.query(api.stats.breakdown, { ...range, dim: "entry" });
+    expect(entry.rows.map((r) => [r.key, r.sessions])).toEqual([
+      ["/blog", 2],
+      ["/", 1],
+    ]);
+    expect(entry.totalSessions).toBe(3);
+
+    const exit = await as.query(api.stats.breakdown, { ...range, dim: "exit" });
+    // "/" moved to "/pricing" and keeps a row with 0 sessions, which is left out
+    expect(exit.rows.map((r) => [r.key, r.sessions])).toEqual([
+      ["/blog", 2],
+      ["/pricing", 1],
+    ]);
+
+    const channels = await as.query(api.stats.breakdown, { ...range, dim: "channel" });
+    expect(channels.rows.map((r) => [r.key, r.visitors, r.sessions])).toEqual([
+      ["AI", 2, 2],
+      ["Organic Search", 1, 1],
+    ]);
   });
 });
 

@@ -16,6 +16,17 @@ export type PageviewPayload = {
   sid?: string;
   /** Sent by the snippet's data-cookieless mode (or when cookies are blocked) */
   nc: boolean;
+  /** Campaign tags from the landing page's URL, first pageview of a page load only */
+  campaign?: Campaign;
+};
+
+export type Campaign = {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmTerm?: string;
+  utmContent?: string;
+  refTag?: string;
 };
 
 export type PingPayload = {
@@ -35,7 +46,9 @@ export type DurationPayload = {
 
 export type Payload = PageviewPayload | PingPayload | DurationPayload;
 
-export const MAX_BODY_BYTES = 2048;
+// Room for six 100-character campaign tags, even in non-Latin scripts
+export const MAX_BODY_BYTES = 4096;
+export const MAX_TAG_LENGTH = 100;
 export const MAX_DURATION_MS = 30 * 60 * 1000;
 export const MAX_PING_MS = 70 * 1000;
 
@@ -66,6 +79,8 @@ export function parsePayload(body: string): Payload | null {
     const sw = typeof d.sw === "number" && Number.isFinite(d.sw) ? d.sw : undefined;
     const ids = d.vid !== undefined || d.sid !== undefined;
     if (ids && !(isUuid(d.vid) && isUuid(d.sid))) return null;
+    const campaign = d.c === undefined ? undefined : parseCampaign(d.c);
+    if (campaign === null) return null;
     return {
       t: "pv",
       site: d.site,
@@ -77,6 +92,7 @@ export function parsePayload(body: string): Payload | null {
       sw,
       ...(ids ? { vid: d.vid as string, sid: d.sid as string } : {}),
       nc: d.nc === 1 || d.nc === true,
+      ...(campaign ? { campaign } : {}),
     };
   }
 
@@ -97,6 +113,37 @@ export function parsePayload(body: string): Payload | null {
   }
 
   return null;
+}
+
+// The script sends URL parameter names; `via` is another spelling of `ref`
+const TAG_FIELDS: [string, keyof Campaign][] = [
+  ["utm_source", "utmSource"],
+  ["utm_medium", "utmMedium"],
+  ["utm_campaign", "utmCampaign"],
+  ["utm_term", "utmTerm"],
+  ["utm_content", "utmContent"],
+  ["ref", "refTag"],
+  ["via", "refTag"],
+];
+
+/**
+ * The `c` object: known parameter names only, each a string of at most 100
+ * characters. Empty values are dropped; undefined if nothing is left, null if malformed.
+ */
+function parseCampaign(value: unknown): Campaign | undefined | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const c = value as Record<string, unknown>;
+  const known = new Set(TAG_FIELDS.map(([param]) => param));
+  if (Object.keys(c).some((k) => !known.has(k))) return null;
+  const campaign: Campaign = {};
+  for (const [param, field] of TAG_FIELDS) {
+    const tag = c[param];
+    if (tag === undefined) continue;
+    if (!str(tag, MAX_TAG_LENGTH)) return null;
+    const trimmed = tag.trim();
+    if (trimmed && campaign[field] === undefined) campaign[field] = trimmed;
+  }
+  return Object.keys(campaign).length > 0 ? campaign : undefined;
 }
 
 function isUuid(value: unknown): value is string {

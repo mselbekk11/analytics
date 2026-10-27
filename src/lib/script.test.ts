@@ -44,6 +44,7 @@ class CookieJar {
 function load(opts: {
   hostname?: string;
   pathname?: string;
+  search?: string;
   referrer?: string;
   navType?: string;
   site?: string;
@@ -60,6 +61,7 @@ function load(opts: {
   const location = {
     hostname: opts.hostname ?? "picai.so",
     pathname: opts.pathname ?? "/",
+    search: opts.search ?? "",
     protocol: "https:",
   };
   const jar = opts.jar ?? new CookieJar();
@@ -332,6 +334,35 @@ describe("engaged-time pings", () => {
     vi.setSystemTime(30 * 60_000 + 5_000);
     page.tick();
     expect(pings(page.sent).at(-1)).toMatchObject({ pvId: "id-4", ms: 5_000 });
+  });
+});
+
+describe("campaign tags", () => {
+  test("are sent with the first pageview, and nothing else of the query string", () => {
+    const { sent } = load({
+      search: "?utm_source=test&utm_campaign=phase5b&gclid=secret&email=a%40b.com&utm_medium=cpc",
+    });
+    expect(sent[0].c).toEqual({ utm_source: "test", utm_campaign: "phase5b", utm_medium: "cpc" });
+    expect(JSON.stringify(sent[0])).not.toMatch(/secret|a@b/);
+  });
+
+  test("decode the value, turn + into spaces and cut it to 100 characters", () => {
+    const { sent } = load({ search: `?utm_term=red+shoes%21&utm_content=${"x".repeat(150)}` });
+    expect(sent[0].c).toEqual({ utm_term: "red shoes!", utm_content: "x".repeat(100) });
+  });
+
+  test("include ref and via, and skip empty or malformed values", () => {
+    const { sent } = load({ search: "?ref=launch&via=friend&utm_source=&utm_medium=%E0%A4%A&=x" });
+    expect(sent[0].c).toEqual({ ref: "launch", via: "friend" });
+  });
+
+  test("are left out without tags, and on SPA route changes", () => {
+    const { sent, history, location } = load({ search: "?utm_source=test" });
+    location.search = "?utm_source=other";
+    history.pushState(null, "", "/next");
+    expect(sent.filter((s) => s.t === "pv").map((s) => s.c)).toEqual([{ utm_source: "test" }, undefined]);
+    expect(load({ search: "?page=2" }).sent[0].c).toBeUndefined();
+    expect(load().sent[0].c).toBeUndefined();
   });
 });
 

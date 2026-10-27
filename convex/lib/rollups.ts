@@ -1,7 +1,6 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-
-export type Dim = "page" | "referrer" | "device" | "browser" | "country";
+import type { Dim } from "./dims";
 
 type StatsDelta = {
   pageviews?: number;
@@ -70,5 +69,41 @@ export async function bumpDailyDim(
   await ctx.db.patch("dailyDims", row._id, {
     pageviews: row.pageviews + 1,
     visitors: row.visitors + visitors,
+  });
+}
+
+/**
+ * Adds to a session dim (source, channel, UTM, ref, entry, exit). These count
+ * sessions and visitors only; their `pageviews` stays 0.
+ */
+export async function bumpSessionDim(
+  ctx: MutationCtx,
+  siteId: Id<"sites">,
+  date: string,
+  dim: Dim,
+  key: string,
+  delta: { sessions?: number; visitors?: number },
+): Promise<void> {
+  const row = await ctx.db
+    .query("dailyDims")
+    .withIndex("by_site_date_dim_key", (q) =>
+      q.eq("siteId", siteId).eq("date", date).eq("dim", dim).eq("key", key),
+    )
+    .unique();
+  if (row === null) {
+    await ctx.db.insert("dailyDims", {
+      siteId,
+      date,
+      dim,
+      key,
+      pageviews: 0,
+      visitors: delta.visitors ?? 0,
+      sessions: delta.sessions ?? 0,
+    });
+    return;
+  }
+  await ctx.db.patch("dailyDims", row._id, {
+    visitors: row.visitors + (delta.visitors ?? 0),
+    sessions: (row.sessions ?? 0) + (delta.sessions ?? 0),
   });
 }

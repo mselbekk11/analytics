@@ -98,6 +98,28 @@ describe("parsePayload", () => {
     expect(parsePayload(JSON.stringify({ ...ping, vid: VID, sid: SID }))).toEqual(ping);
   });
 
+  test("reads campaign tags, trims them, drops empty ones and maps via to ref", () => {
+    const parsed = parsePayload(
+      JSON.stringify({
+        ...pv,
+        c: { utm_source: " test ", utm_campaign: "phase5b", utm_medium: "", via: "launch" },
+      }),
+    );
+    expect(parsed).toMatchObject({ campaign: { utmSource: "test", utmCampaign: "phase5b", refTag: "launch" } });
+    expect(parsed?.t === "pv" && parsed.campaign).toEqual({
+      utmSource: "test",
+      utmCampaign: "phase5b",
+      refTag: "launch",
+    });
+  });
+
+  test("prefers ref over via, and leaves out a campaign with nothing in it", () => {
+    const both = parsePayload(JSON.stringify({ ...pv, c: { ref: "a", via: "b" } }));
+    expect(both?.t === "pv" && both.campaign).toEqual({ refTag: "a" });
+    const empty = parsePayload(JSON.stringify({ ...pv, c: { utm_source: " " } }));
+    expect(empty?.t === "pv" && "campaign" in empty).toBe(false);
+  });
+
   test("drops a non-numeric screen width instead of rejecting", () => {
     expect(parsePayload(JSON.stringify({ ...pv, sw: "wide" }))?.t).toBe("pv");
   });
@@ -112,7 +134,11 @@ describe("parsePayload", () => {
     ["path too long", JSON.stringify({ ...pv, path: "/" + "a".repeat(500) })],
     ["ref too long", JSON.stringify({ ...pv, ref: "a".repeat(1001) })],
     ["unique not boolean", JSON.stringify({ ...pv, unique: "yes" })],
-    ["body over 2 KB", JSON.stringify({ ...pv, ref: "a".repeat(990), path: "/" + "b".repeat(499), host: "c".repeat(253), x: "d".repeat(400) })],
+    ["body over 4 KB", JSON.stringify({ ...pv, ref: "a".repeat(990), path: "/" + "b".repeat(499), host: "c".repeat(253), x: "d".repeat(2400) })],
+    ["campaign that is not an object", JSON.stringify({ ...pv, c: "utm_source=x" })],
+    ["campaign with an unknown parameter", JSON.stringify({ ...pv, c: { gclid: "abc" } })],
+    ["campaign tag over 100 characters", JSON.stringify({ ...pv, c: { utm_source: "a".repeat(101) } })],
+    ["campaign tag that is not a string", JSON.stringify({ ...pv, c: { utm_source: 5 } })],
     ["duration over 30 min", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: 1_800_001 })],
     ["negative duration", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: -1 })],
     ["fractional duration", JSON.stringify({ t: "dur", site: "picai.so", pvId: "abc", ms: 1.5 })],

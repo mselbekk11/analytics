@@ -21,6 +21,14 @@ type Hit = {
   visitorId?: string;
   sessionId?: string;
   cookieless?: boolean;
+  campaign?: {
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+    utmTerm?: string;
+    utmContent?: string;
+    refTag?: string;
+  };
 };
 
 function hit(overrides: Partial<Hit> = {}): Hit {
@@ -91,10 +99,12 @@ describe("ingest.pageview", () => {
     ]);
     expect(dailyDims.map((d) => [d.dim, d.key, d.pageviews, d.visitors]).sort()).toEqual([
       ["browser", "Chrome", 1, 1],
+      ["channel", "Organic Search", 0, 1],
       ["country", "US", 1, 1],
       ["device", "desktop", 1, 1],
       ["page", "/", 1, 1],
       ["referrer", "google.com", 1, 1],
+      ["source", "Google", 0, 1],
     ]);
   });
 
@@ -328,6 +338,121 @@ describe("ingest.pageview with visitor and session ids", () => {
     vi.setSystemTime(new Date("2026-10-15T17:00:00Z"));
     await t.mutation(api.ingest.pageview, phone("b", "s2"));
     expect((await tables(t)).sites[0].trackingStartedAt).toBe(started);
+  });
+});
+
+/** Session dims as [dim, key, sessions, visitors], sorted. */
+async function sessionDims(t: ReturnType<typeof convexTest>) {
+  const { dailyDims } = await tables(t);
+  const sessionLevel = ["source", "channel", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "entry", "exit"];
+  return dailyDims
+    .filter((d) => sessionLevel.includes(d.dim))
+    .map((d) => [d.dim, d.key, d.sessions, d.visitors])
+    .sort();
+}
+
+describe("sources, channels and campaigns", () => {
+  test("a new session is classified and counted on its source, tag, entry and exit dims", async () => {
+    const t = await setup();
+    await t.mutation(
+      api.ingest.pageview,
+      phone("a", "s1", {
+        referrer: "(direct)",
+        path: "/pricing",
+        campaign: { utmSource: "test", utmCampaign: "phase5b" },
+      }),
+    );
+
+    const { sessions, visitors, sites } = await tables(t);
+    expect(sessions[0]).toMatchObject({
+      source: "test",
+      channel: "Referral",
+      utmSource: "test",
+      utmCampaign: "phase5b",
+    });
+    expect(visitors[0]).toMatchObject({ firstSource: "test", firstChannel: "Referral" });
+    expect(sites[0].sourcesStartedAt).toBe(Date.now());
+    expect(await sessionDims(t)).toEqual([
+      ["channel", "Referral", 1, 1],
+      ["entry", "/pricing", 1, 0],
+      ["exit", "/pricing", 1, 0],
+      ["source", "test", 1, 1],
+      ["utm_campaign", "phase5b", 1, 1],
+      ["utm_source", "test", 1, 1],
+    ]);
+  });
+
+  test("a click from chatgpt.com is ChatGPT under AI", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { referrer: "chatgpt.com" }));
+    const { sessions } = await tables(t);
+    expect(sessions[0]).toMatchObject({ source: "ChatGPT", channel: "AI" });
+  });
+
+  test("trims campaign tags to 100 characters and ignores empty ones", async () => {
+    const t = await setup();
+    await t.mutation(
+      api.ingest.pageview,
+      phone("a", "s1", { campaign: { utmCampaign: `  ${"x".repeat(150)}`, utmTerm: " " } }),
+    );
+    const { sessions } = await tables(t);
+    expect(sessions[0].utmCampaign).toBe("x".repeat(100));
+    expect(sessions[0].utmTerm).toBeUndefined();
+  });
+
+  test("later pageviews move the exit page and keep the session's source", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(
+      api.ingest.pageview,
+      phone("b", "s1", { path: "/pricing", referrer: "(direct)", unique: false, campaign: { utmSource: "x" } }),
+    );
+    await t.mutation(api.ingest.pageview, phone("c", "s1", { path: "/signup", referrer: "(direct)", unique: false }));
+
+    expect(await sessionDims(t)).toEqual([
+      ["channel", "Organic Search", 1, 1],
+      ["entry", "/", 1, 0],
+      ["exit", "/", 0, 0],
+      ["exit", "/pricing", 0, 0],
+      ["exit", "/signup", 1, 0],
+      ["source", "Google", 1, 1],
+    ]);
+  });
+
+  test("a visitor counts once per source and day, however many sessions", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    vi.setSystemTime(new Date("2026-10-13T17:40:00Z"));
+    await t.mutation(api.ingest.pageview, phone("b", "s2"));
+    vi.setSystemTime(new Date("2026-10-13T18:20:00Z"));
+    await t.mutation(api.ingest.pageview, phone("c", "s3", { referrer: "chatgpt.com" }));
+    vi.setSystemTime(new Date("2026-10-14T17:00:00Z")); // next local day
+    await t.mutation(api.ingest.pageview, phone("d", "s4"));
+
+    const dims = (await sessionDims(t)).filter(([d]) => d === "source" || d === "channel");
+    expect(dims).toEqual([
+      ["channel", "AI", 1, 1],
+      ["channel", "Organic Search", 1, 1],
+      ["channel", "Organic Search", 2, 1],
+      ["source", "ChatGPT", 1, 1],
+      ["source", "Google", 1, 1],
+      ["source", "Google", 2, 1],
+    ]);
+  });
+
+  test("hits without ids count a visitor on source dims for unique visits only", async () => {
+    const t = await setup();
+    await t.mutation(
+      api.ingest.pageview,
+      hit({ pvId: "a", cookieless: true, referrer: "(direct)", campaign: { refTag: "launch" } }),
+    );
+    await t.mutation(api.ingest.pageview, hit({ pvId: "b", cookieless: true, unique: false }));
+
+    expect(await sessionDims(t)).toEqual([
+      ["channel", "Referral", 0, 1],
+      ["ref", "launch", 0, 1],
+      ["source", "launch", 0, 1],
+    ]);
   });
 });
 

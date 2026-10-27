@@ -12,7 +12,8 @@ Last updated: 2026-10-27. Read this together with [PLAN.md](PLAN.md) (Phases 0 t
 | 3: Websites list and settings | **Built, awaiting owner review.** `/websites`, settings and the `/` redirect work locally against Convex dev. Still to do by the owner: add the snippet to the other seven sites. |
 | 4: Side-by-side run, cancel SA | Not started. The snippet runs next to SA on advancedortholabsf.com since 2026-10-14. |
 | 5a: Visitors and sessions | **Live in production since 2026-10-27** (commit `73aa709`, Vercel deploy succeeded, `/script.js` serves the cookie version). Awaiting the owner's phone check from "Done when". |
-| 5b to 5h, 6 | Not started. 5a must be live in production first. |
+| 5b: Sources, channels and campaigns | **Built, awaiting owner review.** Checks clean and verified against Convex dev; not yet pushed, and the backfill has not run on production. |
+| 5c to 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -57,11 +58,15 @@ convex/
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.live, stats.online (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.duration (legacy) (public, guarded by INGEST_SECRET)
+  migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
   lib/domain.ts      normalizeDomain, hostMatchesDomain (shared with the collect route)
-  lib/rollups.ts     bumpDailyStats, bumpDailyDim upserts
+  lib/rollups.ts     bumpDailyStats, bumpDailyDim, bumpSessionDim upserts
+  lib/dims.ts        dimValidator (every dailyDims dim) and dimMetric (which count a list ranks by)
+  lib/sources.ts     source/channel classifier (adapted from minilytics, MIT), sourceDomain for favicons
+  lib/attribution.ts campaign validator, countSession / countCookielessVisit (session dims)
   *.test.ts          convex-test suites
 src/
   proxy.ts           clerkMiddleware; everything protected except /sign-in, /sign-up, /api/collect, /script.js
@@ -82,7 +87,7 @@ src/
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname
   lib/*.test.ts      unit tests, including script.test.ts, which runs public/script.js in a fake browser
-public/script.js     hand-written ES5 tracking script (2.28 KB gzipped after 5a; limit 3 KB)
+public/script.js     hand-written ES5 tracking script (2.59 KB gzipped after 5b; limit 3 KB)
 docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
 ```
 
@@ -90,6 +95,7 @@ Checks at the end of Phase 1: `npm run build`, `npx tsc --noEmit`, `npm run lint
 Checks at the end of Phase 2: the same four clean, `npm test` 128 tests passing.
 Checks at the end of Phase 3: the same four clean, `npm test` 134 tests passing; add, settings and delete clicked through locally.
 Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing; curl hits through local `/api/collect` into Convex dev gave 1 visitor, 2 sessions, 1 bounce and the ping's 42 s on the session.
+Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing. On Convex dev: the backfill filled source/channel for old days and 5a sessions; a curl hit with `utm_source=test&utm_campaign=phase5b` showed under Campaigns (and as source "test", channel Referral), and one from chatgpt.com as ChatGPT under AI, both seen on the local dashboard.
 
 ## Decisions and differences from PLAN.md
 
@@ -137,6 +143,19 @@ Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing
 - **`deleteSiteData`** now also deletes `sessions` and `visitors`.
 - **Settings copy** no longer says the snippet sets no cookies; it names the two cookies and `data-cookieless`.
 
+### Phase 5b (sources, channels and campaigns)
+
+- **Tags beat the referrer.** Precedence is `utm_source`, then `ref` (or `via`), then the referrer host, as PHASE5.md says. minilytics lets a known referrer win over an unknown tag; we don't (`?ref=launch` from Google is "launch").
+- **Source names:** known sources use their name ("Google", "ChatGPT", "X"); unknown referrers are their hostname; unknown tags are the tag as sent (case kept); no referrer and no tags is "Direct". Channels: Direct, Organic Search, Organic Social, AI, Referral, Email, Paid.
+- **Script:** the first pageview of a page load sends `c: { utm_source, …, ref, via }` with only those parameters present, each cut to 100 characters. The parser accepts only those keys (`via` maps to `refTag`, `ref` wins if both). `MAX_BODY_BYTES` went from 2 KB to 4 KB for room.
+- **Session dims** (`source`, `channel`, `utm_*`, `ref`, `entry`, `exit`) count `sessions` and `visitors` on the session's start day; their `pageviews` stays 0. A visitor counts once per key and day (checked against the visitor's earlier sessions that day), so lists of sources show visitors. Entry and Exit count sessions. Each pageview moves the session's exit row from the old path to the new one.
+- **Cookieless and old-script hits** count a visitor on source/channel/tag dims when `unique`, with no sessions and no entry/exit.
+- **Lists rank by `dimMetric`:** pageviews for Pages, sessions for Entry/Exit, visitors for everything else; keys with 0 of that are left out. `stats.breakdown` now also returns `sessions` and `totalSessions`.
+- **Dashboard:** the first column has tabs Channels | Sources | Campaigns | Referrers (Referrers is the old Referrals list). Campaigns has a small select for campaign, source, medium, term, content and ref/via. Pages has Pages | Entry | Exit. Sources show the source's own `/favicon.ico` (a globe for tags), like the header does. Tab choice is component state, kept across range changes.
+- **`sites.sourcesStartedAt`** is set by the first pageview the 5b code handles; it is the backfill's cut-off. `sites.sourcesBackfilled` stops the backfill running twice.
+- **Backfill** (`npx convex run migrations:backfillSources [--prod]`): days before visitor tracking come from the `referrer` dim rows (visitors per referrer → source and channel); 5a sessions get `source`/`channel` and are counted exactly as ingest counts new sessions (entry and exit included), and their visitors get `firstSource`; unique hits without ids between the tracking day and the cut-off are counted as ingest now does. A test replays the same traffic both ways and gets identical rows. `utm_*` and `ref` can't be recovered for old data.
+- **Hydration warning on the dashboard** comes from Clerk's `UserButton` in the header (was there before 5b), not from the lists.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -178,7 +197,16 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check Phase 5a on production, then 5b
+## Next: ship 5b
+
+1. Review the dashboard lists locally (`/sites/localhost`).
+2. Push to `main` (deploys Convex and Next.js), then run the backfill once on production: `npx convex run migrations:backfillSources --prod`.
+3. "Done when" on production: visit a tracked site with `?utm_source=test&utm_campaign=phase5b` (it shows under Campaigns), and click through to it from a chatgpt.com chat (it shows as ChatGPT under AI).
+4. Paste the updated text from `docs/PRIVACY.md` (it now mentions campaign tags).
+
+Then 5c.
+
+## Earlier: check Phase 5a on production
 
 5a was pushed to `main` on 2026-10-27 and is live. Owner:
 

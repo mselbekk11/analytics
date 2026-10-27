@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireSite } from "./lib/auth";
 import { localDate } from "./lib/dates";
+import { dimMetric, dimValidator } from "./lib/dims";
 import { eachDate, isValidRange, previousRange, type DateRange } from "./lib/ranges";
 
 // Dashboard reads. Every query checks ownership with requireSite, takes the date range
@@ -24,14 +25,6 @@ const MAX_SESSION_ROWS = 10_000;
 const HOUR_MS = 60 * 60 * 1000;
 
 const rangeArgs = { domain: v.string(), from: v.string(), to: v.string() };
-
-const dim = v.union(
-  v.literal("page"),
-  v.literal("referrer"),
-  v.literal("device"),
-  v.literal("browser"),
-  v.literal("country"),
-);
 
 const totals = v.object({
   visitors: v.number(),
@@ -203,19 +196,26 @@ export const timeseries = query({
 });
 
 /**
- * Pageviews and visitors per key of one dimension over the range, largest first.
- * Pages sort by pageviews; the other lists count visitors (unique visits, as SA
- * does), so keys that only ever had repeat pageviews are left out of them.
- * The totals cover every key, including any cut off by the row limit.
+ * Pageviews, visitors and sessions per key of one dimension over the range, largest
+ * first by the dim's metric (see dimMetric): pageviews for pages, sessions for entry
+ * and exit pages, visitors (unique visits, as SA does) for the rest. Keys with none
+ * of that metric are left out. The totals cover every key, including any cut off by
+ * the row limit.
  */
 export const breakdown = query({
-  args: { ...rangeArgs, dim },
+  args: { ...rangeArgs, dim: dimValidator },
   returns: v.object({
     rows: v.array(
-      v.object({ key: v.string(), pageviews: v.number(), visitors: v.number() }),
+      v.object({
+        key: v.string(),
+        pageviews: v.number(),
+        visitors: v.number(),
+        sessions: v.number(),
+      }),
     ),
     totalPageviews: v.number(),
     totalVisitors: v.number(),
+    totalSessions: v.number(),
   }),
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
@@ -232,33 +232,42 @@ export const breakdown = query({
       )
       .take(MAX_DIM_ROWS);
 
-    const byKey = new Map<string, { key: string; pageviews: number; visitors: number }>();
+    type Entry = { key: string; pageviews: number; visitors: number; sessions: number };
+    const byKey = new Map<string, Entry>();
     let totalPageviews = 0;
     let totalVisitors = 0;
+    let totalSessions = 0;
     for (const r of rows) {
+      const sessions = r.sessions ?? 0;
       totalPageviews += r.pageviews;
       totalVisitors += r.visitors;
+      totalSessions += sessions;
       const entry = byKey.get(r.key);
       if (entry === undefined) {
-        byKey.set(r.key, { key: r.key, pageviews: r.pageviews, visitors: r.visitors });
+        byKey.set(r.key, { key: r.key, pageviews: r.pageviews, visitors: r.visitors, sessions });
       } else {
         entry.pageviews += r.pageviews;
         entry.visitors += r.visitors;
+        entry.sessions += sessions;
       }
     }
 
-    const byPageviews = args.dim === "page";
+    const metric = dimMetric(args.dim);
+    const order: (keyof Omit<Entry, "key">)[] = [
+      metric,
+      ...(["pageviews", "visitors", "sessions"] as const).filter((m) => m !== metric),
+    ];
     const sorted = [...byKey.values()]
-      .filter((e) => byPageviews || e.visitors > 0)
-      .sort((a, b) =>
-        byPageviews
-          ? b.pageviews - a.pageviews || b.visitors - a.visitors || a.key.localeCompare(b.key)
-          : b.visitors - a.visitors || b.pageviews - a.pageviews || a.key.localeCompare(b.key),
-      );
+      .filter((e) => e[metric] > 0)
+      .sort((a, b) => {
+        for (const m of order) if (a[m] !== b[m]) return b[m] - a[m];
+        return a.key.localeCompare(b.key);
+      });
     return {
       rows: sorted.slice(0, MAX_BREAKDOWN_KEYS),
       totalPageviews,
       totalVisitors,
+      totalSessions,
     };
   },
 });

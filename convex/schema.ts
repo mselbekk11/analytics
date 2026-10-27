@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { dimValidator } from "./lib/dims";
 
 export default defineSchema({
   sites: defineTable({
@@ -9,6 +10,9 @@ export default defineSchema({
     createdAt: v.number(),
     // First hit with a visitor id (Phase 5a); before its day, visitors are SA-style unique visits
     trackingStartedAt: v.optional(v.number()),
+    // First pageview classified by source and channel (Phase 5b); the backfill covers hits before it
+    sourcesStartedAt: v.optional(v.number()),
+    sourcesBackfilled: v.optional(v.boolean()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),
@@ -46,20 +50,15 @@ export default defineSchema({
     sessionEngagedMs: v.optional(v.number()),
   }).index("by_site_date", ["siteId", "date"]),
 
-  // One row per site, day, dimension and value: the five lists
+  // One row per site, day, dimension and value: the lists (see lib/dims.ts)
   dailyDims: defineTable({
     siteId: v.id("sites"),
     date: v.string(),
-    dim: v.union(
-      v.literal("page"),
-      v.literal("referrer"),
-      v.literal("device"),
-      v.literal("browser"),
-      v.literal("country"),
-    ),
+    dim: dimValidator,
     key: v.string(),
     pageviews: v.number(),
     visitors: v.number(),
+    sessions: v.optional(v.number()), // session dims only, from 5b
   })
     .index("by_site_dim_date", ["siteId", "dim", "date"])
     .index("by_site_date_dim_key", ["siteId", "date", "dim", "key"]),
