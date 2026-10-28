@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-28 (5h built, awaiting review). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-28 (5h live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -18,7 +18,7 @@ Last updated: 2026-10-28 (5h built, awaiting review). Read this together with [P
 | 5e: Revenue | **Live in production since 2026-10-27** (commit `ff97cba`, Vercel deploy succeeded; `/script.js` sends the claim, `/api/payments` answers 401 without a key, `payments.*` and the `/stripe/` route are on Convex prod). Every site is still set to None, so nothing changes on the dashboards until one is switched to Stripe or API. Awaiting the owner's "Done when" check (a Stripe test-mode payment). |
 | 5f: Customer journeys and visitor profiles | **Live in production since 2026-10-28** (commit `28f1b96`, Vercel deploy succeeded; `visitors.customers` and `visitors.profile` are on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check (needs 5e's Stripe test payment). |
 | 5g: Click to filter | **Live in production since 2026-10-28** (commit `321236c`, Vercel deploy succeeded; `stats.filtered` is on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check. |
-| 5h: Live map | **Built, awaiting owner review** (not pushed). `/sites/[domain]/live` and `stats.liveFeed` work locally against Convex dev. No schema change or backfill. |
+| 5h: Live map | **Live in production since 2026-10-28** (commit `a1b7c72`, Vercel deploy succeeded; `/maplibre-gl-worker.js` is served and `stats.liveFeed` is on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check. |
 | 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -319,11 +319,11 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review 5h, push it, then Phase 6
+## Next: check 5h on production, then Phase 6
 
-Built and checked locally; not pushed yet. Owner:
+Pushed to `main` on 2026-10-28 (commit `a1b7c72`) and live. Owner:
 
-1. Review `/sites/localhost/live` locally (`npm run dev`; the dev `localhost` site has a test visitor in Oslo), then push to `main`.
+1. Check that the map's tiles draw on the Live tab (the automated check couldn't see them; see the 5h checks).
 2. "Done when" on production: open one of your sites on your phone; a named dot appears near you on its Live tab within 30 seconds.
 
 Then Phase 6 (open sign-ups).
