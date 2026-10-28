@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import { Authenticated } from "convex/react";
-import { FiActivity, FiSettings, FiUsers } from "react-icons/fi";
+import { FiActivity, FiMapPin, FiSettings, FiUsers } from "react-icons/fi";
 import SiteSwitcher from "./SiteSwitcher";
 
-export type SiteSection = "visitors" | "customers" | "settings";
+export type SiteSection = "visitors" | "live" | "customers" | "settings";
 
 const TABS: { section: SiteSection; label: string; icon: React.ReactNode }[] = [
   { section: "visitors", label: "Visitors", icon: <FiActivity aria-hidden /> },
+  { section: "live", label: "Live", icon: <FiMapPin aria-hidden /> },
   { section: "customers", label: "Customers", icon: <FiUsers aria-hidden /> },
   { section: "settings", label: "Settings", icon: <FiSettings aria-hidden /> },
 ];

@@ -73,6 +73,7 @@ describe("access control", () => {
       (c: typeof t) => c.query(api.stats.breakdown, { ...range, dim: "page" }),
       (c: typeof t) => c.query(api.stats.live, { domain: "picai.so", since: 0 }),
       (c: typeof t) => c.query(api.stats.online, { domain: "picai.so", since: 0 }),
+      (c: typeof t) => c.query(api.stats.liveFeed, { domain: "picai.so", since: 0, onlineSince: 0 }),
       (c: typeof t) => c.query(api.stats.goals, range),
     ];
     for (const call of calls) {
@@ -437,5 +438,112 @@ describe("stats.breakdown for outbound links", () => {
       ["https://x.com/acme", 1, 1],
     ]);
     expect(out.totalEvents).toBe(3);
+  });
+});
+
+describe("stats.liveFeed", () => {
+  /** A pageview with a position, as the collect route sends it from a phone. */
+  async function located(t: ReturnType<typeof convexTest>, iso: string, visitorId: string, sessionId: string, path = "/") {
+    vi.setSystemTime(new Date(iso));
+    const pvId = `pv-${++pvCounter}`;
+    await t.mutation(api.ingest.pageview, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      path,
+      referrer: "chatgpt.com",
+      unique: true,
+      device: "mobile",
+      browser: "Mobile Safari",
+      country: "US",
+      os: "iOS",
+      region: "CA",
+      city: "San Francisco",
+      lat: 37.8,
+      lon: -122.4,
+      pvId,
+      visitorId,
+      sessionId,
+    });
+    return pvId;
+  }
+  const feed = (t: ReturnType<typeof convexTest>, since: string, onlineSince: string) =>
+    t.withIdentity(OWNER).query(api.stats.liveFeed, {
+      domain: "picai.so",
+      since: Date.parse(since),
+      onlineSince: Date.parse(onlineSince),
+    });
+
+  test("one dot per online visitor, from their latest session", async () => {
+    const t = await setup();
+    await located(t, "2026-10-13T16:40:00Z", "v1", "s1"); // gone before onlineSince
+    await located(t, "2026-10-13T16:56:00Z", "v2", "s2", "/a");
+    await located(t, "2026-10-13T16:57:00Z", "v2", "s2", "/b");
+    await visit(t, "2026-10-13T16:58:00Z", { visitorId: "v3", sessionId: "s3" }); // no position
+    await visit(t, "2026-10-13T16:59:00Z"); // cookieless: no dot
+    const r = await feed(t, "2026-10-13T16:00:00Z", "2026-10-13T16:55:00Z");
+    expect(r.moreVisitors).toBe(false);
+    expect(r.visitors.map((v) => v.visitorId)).toEqual(["v3", "v2"]);
+    expect(r.visitors[1]).toMatchObject({
+      lat: 37.8,
+      lon: -122.4,
+      city: "San Francisco",
+      region: "CA",
+      os: "iOS",
+      source: "ChatGPT",
+      channel: "AI",
+      path: "/b",
+    });
+    expect(r.visitors[0]).toMatchObject({ lat: null, lon: null, city: null });
+  });
+
+  test("newest pageviews, goals and payments since `since`, with names", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-13T15:00:00Z", { visitorId: "v0", sessionId: "s0" }); // before since
+    const pv = await located(t, "2026-10-13T16:50:00Z", "v1", "s1", "/pricing");
+    await t.mutation(api.ingest.event, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: pv,
+      event: { type: "identify", name: "Ada" },
+    });
+    vi.setSystemTime(new Date("2026-10-13T16:51:00Z"));
+    await event(t, pv, { type: "goal", name: "signup" });
+    await event(t, pv, { type: "outbound", url: "https://github.com/" }); // not shown
+    await visit(t, "2026-10-13T16:52:00Z", { path: "/anon" }); // cookieless
+    await t.run(async (ctx) => {
+      const site = (await ctx.db.query("sites").first())!;
+      await ctx.db.insert("payments", {
+        siteId: site._id,
+        provider: "api",
+        providerId: "p1",
+        ts: Date.parse("2026-10-13T16:53:00Z"),
+        date: "2026-10-13",
+        kind: "payment",
+        amountMinor: 4900,
+        currency: "USD",
+        renewal: false,
+        visitorId: "v1",
+      });
+    });
+
+    // Payments only show on a site with revenue
+    let r = await feed(t, "2026-10-13T16:00:00Z", "2026-10-13T16:55:00Z");
+    expect(r.feed.map((row) => row.kind)).toEqual(["pageview", "goal", "pageview"]);
+    await t.run(async (ctx) => {
+      const site = (await ctx.db.query("sites").first())!;
+      await ctx.db.patch(site._id, { revenueSource: "api" });
+    });
+    r = await feed(t, "2026-10-13T16:00:00Z", "2026-10-13T16:55:00Z");
+    expect(r.feed.map((row) => [row.kind, row.path ?? row.amountMinor])).toEqual([
+      ["payment", 4900],
+      ["pageview", "/anon"],
+      ["goal", "/pricing"],
+      ["pageview", "/pricing"],
+    ]);
+    expect(r.feed[2]).toMatchObject({ goal: "signup", visitorId: "v1", name: "Ada", city: "San Francisco", country: "US" });
+    expect(r.feed[0]).toMatchObject({ name: "Ada", currency: "USD" });
+    expect(r.feed[1]).toMatchObject({ visitorId: null, name: null, country: "US", city: null });
   });
 });

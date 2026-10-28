@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
     "convex/_generated/**",
     // Minified from src/script/script.js by `npm run build:script`
     "public/script.js",
+    // Copied from maplibre-gl by `npm run build:map-worker`
+    "public/maplibre-gl-worker.js",
   ]),
 ]);
 

@@ -1,6 +1,7 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
+import { sessionSource } from "./lib/attribution";
 import { requireSite } from "./lib/auth";
 import { localDate } from "./lib/dates";
 import { DIM_COUNTS, dimValidator, rankEntries, type Dim, type DimEntry } from "./lib/dims";
@@ -420,5 +421,214 @@ export const online = query({
       )
       .take(MAX_LIVE_ROWS);
     return new Set(rows.map((r) => r.visitorId)).size;
+  },
+});
+
+// The live tab (5h): at most this many visitors on the map and rows in the feed
+const MAX_LIVE_FEED = 200;
+
+const liveVisitor = v.object({
+  visitorId: v.string(),
+  name: v.union(v.null(), v.string()),
+  email: v.union(v.null(), v.string()),
+  // Rounded to 1 decimal at ingest; null when Vercel gave no position
+  lat: v.union(v.null(), v.number()),
+  lon: v.union(v.null(), v.number()),
+  country: v.string(),
+  region: v.union(v.null(), v.string()),
+  city: v.union(v.null(), v.string()),
+  device: v.string(),
+  browser: v.string(),
+  os: v.union(v.null(), v.string()),
+  source: v.string(),
+  channel: v.string(),
+  path: v.string(), // the last page of their latest session
+  lastSeenAt: v.number(),
+});
+
+const liveRow = v.object({
+  kind: v.union(v.literal("pageview"), v.literal("goal"), v.literal("payment"), v.literal("refund")),
+  id: v.string(),
+  ts: v.number(),
+  visitorId: v.union(v.null(), v.string()),
+  name: v.union(v.null(), v.string()),
+  email: v.union(v.null(), v.string()),
+  path: v.union(v.null(), v.string()),
+  goal: v.union(v.null(), v.string()),
+  amountMinor: v.union(v.null(), v.number()),
+  currency: v.union(v.null(), v.string()),
+  country: v.union(v.null(), v.string()),
+  city: v.union(v.null(), v.string()),
+});
+
+/**
+ * The live tab: visitors online since `onlineSince` (one dot each, from their latest
+ * session) and the newest pageviews, goals and payments since `since`, with visitor
+ * names. Both times come from the page, like `live`. Payments only on sites with revenue.
+ */
+export const liveFeed = query({
+  args: { domain: v.string(), since: v.number(), onlineSince: v.number() },
+  returns: v.object({
+    visitors: v.array(liveVisitor),
+    moreVisitors: v.boolean(),
+    feed: v.array(liveRow),
+  }),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const siteId = site._id;
+
+    const visitorRows = new Map<string, Doc<"visitors"> | null>();
+    async function visitor(visitorId: string | undefined) {
+      if (visitorId === undefined) return null;
+      if (!visitorRows.has(visitorId)) {
+        const row = await ctx.db
+          .query("visitors")
+          .withIndex("by_site_visitor", (q) => q.eq("siteId", siteId).eq("visitorId", visitorId))
+          .unique();
+        visitorRows.set(visitorId, row);
+      }
+      return visitorRows.get(visitorId) ?? null;
+    }
+    const sessionRows = new Map<string, Doc<"sessions"> | null>();
+    async function session(sessionId: string | undefined) {
+      if (sessionId === undefined) return null;
+      if (!sessionRows.has(sessionId)) {
+        const row = await ctx.db
+          .query("sessions")
+          .withIndex("by_site_session", (q) => q.eq("siteId", siteId).eq("sessionId", sessionId))
+          .unique();
+        sessionRows.set(sessionId, row);
+      }
+      return sessionRows.get(sessionId) ?? null;
+    }
+
+    // Newest first, so each visitor's first row is their latest session
+    const online = await ctx.db
+      .query("sessions")
+      .withIndex("by_site_lastSeenAt", (q) =>
+        q.eq("siteId", siteId).gte("lastSeenAt", args.onlineSince),
+      )
+      .order("desc")
+      .take(MAX_LIVE_ROWS);
+    const latest = new Map<string, Doc<"sessions">>();
+    for (const s of online) {
+      sessionRows.set(s.sessionId, s);
+      if (!latest.has(s.visitorId)) latest.set(s.visitorId, s);
+    }
+    const visitors = [];
+    for (const s of [...latest.values()].slice(0, MAX_LIVE_FEED)) {
+      const row = await visitor(s.visitorId);
+      const { source, channel } = sessionSource(s);
+      visitors.push({
+        visitorId: s.visitorId,
+        name: row?.name ?? null,
+        email: row?.email ?? null,
+        lat: s.lat ?? null,
+        lon: s.lon ?? null,
+        country: s.country,
+        region: s.region ?? null,
+        city: s.city ?? null,
+        device: s.device,
+        browser: s.browser,
+        os: s.os ?? null,
+        source,
+        channel,
+        path: s.exitPath,
+        lastSeenAt: s.lastSeenAt,
+      });
+    }
+
+    const pageviews = await ctx.db
+      .query("pageviews")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+      .order("desc")
+      .take(MAX_LIVE_FEED);
+    // Outbound clicks, identify calls and claims share the table; goals are what's shown
+    const events = await ctx.db
+      .query("events")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+      .order("desc")
+      .take(MAX_LIVE_ROWS);
+    const goals = events.filter((e) => e.type === "goal");
+    const revenue = (site.revenueSource ?? "none") !== "none";
+    const payments = revenue
+      ? await ctx.db
+          .query("payments")
+          .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+          .order("desc")
+          .take(MAX_LIVE_FEED)
+      : [];
+
+    type Entry = { ts: number; build: () => Promise<Infer<typeof liveRow>> };
+    const entries: Entry[] = [];
+    const empty = { goal: null, amountMinor: null, currency: null };
+    // The visitor's name and where their session came from
+    const who = async (visitorId: string | undefined, sessionId: string | undefined) => {
+      const row = await visitor(visitorId);
+      const s = await session(sessionId);
+      return {
+        visitorId: visitorId ?? null,
+        name: row?.name ?? null,
+        email: row?.email ?? null,
+        country: s?.country ?? null,
+        city: s?.city ?? null,
+      };
+    };
+    for (const p of pageviews) {
+      entries.push({
+        ts: p.ts,
+        build: async () => ({
+          kind: "pageview",
+          id: p._id,
+          ts: p.ts,
+          path: p.path,
+          ...empty,
+          ...(await who(p.visitorId, p.sessionId)),
+          country: p.country,
+        }),
+      });
+    }
+    for (const e of goals) {
+      entries.push({
+        ts: e.ts,
+        build: async () => ({
+          kind: "goal",
+          id: e._id,
+          ts: e.ts,
+          path: e.path,
+          ...empty,
+          goal: e.name,
+          ...(await who(e.visitorId, e.sessionId)),
+        }),
+      });
+    }
+    for (const p of payments) {
+      entries.push({
+        ts: p.ts,
+        build: async () => {
+          const row = await visitor(p.visitorId);
+          return {
+            kind: p.kind,
+            id: p._id,
+            ts: p.ts,
+            visitorId: p.visitorId ?? null,
+            name: row?.name ?? null,
+            email: row?.email ?? p.email ?? null,
+            path: null,
+            goal: null,
+            amountMinor: p.amountMinor,
+            currency: p.currency,
+            // Where the visitor paid from isn't known; the credited session may be older
+            country: null,
+            city: null,
+          };
+        },
+      });
+    }
+    entries.sort((a, b) => b.ts - a.ts);
+    const feed = [];
+    for (const entry of entries.slice(0, MAX_LIVE_FEED)) feed.push(await entry.build());
+
+    return { visitors, moreVisitors: latest.size > MAX_LIVE_FEED, feed };
   },
 });

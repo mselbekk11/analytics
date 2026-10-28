@@ -45,3 +45,4 @@ next-env.d.ts
 
 # minified from src/script/script.js by `npm run build:script` (runs before dev and build)
 /public/script.js
+/public/maplibre-gl-worker.js

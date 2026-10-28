@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-28 (5g live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-28 (5h built, awaiting review). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -18,7 +18,8 @@ Last updated: 2026-10-28 (5g live). Read this together with [PLAN.md](PLAN.md) (
 | 5e: Revenue | **Live in production since 2026-10-27** (commit `ff97cba`, Vercel deploy succeeded; `/script.js` sends the claim, `/api/payments` answers 401 without a key, `payments.*` and the `/stripe/` route are on Convex prod). Every site is still set to None, so nothing changes on the dashboards until one is switched to Stripe or API. Awaiting the owner's "Done when" check (a Stripe test-mode payment). |
 | 5f: Customer journeys and visitor profiles | **Live in production since 2026-10-28** (commit `28f1b96`, Vercel deploy succeeded; `visitors.customers` and `visitors.profile` are on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check (needs 5e's Stripe test payment). |
 | 5g: Click to filter | **Live in production since 2026-10-28** (commit `321236c`, Vercel deploy succeeded; `stats.filtered` is on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check. |
-| 5h, 6 | Not started. |
+| 5h: Live map | **Built, awaiting owner review** (not pushed). `/sites/[domain]/live` and `stats.liveFeed` work locally against Convex dev. No schema change or backfill. |
+| 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -66,7 +67,7 @@ convex/
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
   visitors.ts        visitors.customers (paying or key-goal visitors), visitors.profile (journey timeline) (5f)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
-                     stats.online, stats.filtered (5g) (all behind requireSite)
+                     stats.online, stats.filtered (5g), stats.liveFeed (5h) (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
   payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
@@ -97,6 +98,7 @@ src/
   app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
   app/sites/[domain]/customers/page.tsx  customers list (Suspense > client Customers)
   app/sites/[domain]/visitors/[visitorId]/page.tsx  visitor profile (Suspense > client VisitorProfile)
+  app/sites/[domain]/live/page.tsx       live map and feed (Suspense > client Live)
   app/sign-in, sign-up   Clerk components inside <Suspense>
   app/api/collect/route.ts   ingest endpoint
   app/api/payments/route.ts  payments API (Bearer key, real status codes)
@@ -107,6 +109,7 @@ src/
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
   components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
+  components/live/        Live (online count + feed), LiveMap (MapLibre, one dot per visitor)
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
@@ -116,6 +119,8 @@ src/
   script/script.js   hand-written ES5 tracking script (the source; see 5d decisions)
 public/script.js     minified copy, built by `npm run build:script` before dev and build; git-ignored
                      (2.05 KB gzipped after 5e; limit 3 KB)
+public/maplibre-gl-worker.js  MapLibre's web worker, copied by `npm run build:map-worker` before dev and build;
+                     git-ignored
 docs/PRIVACY.md      privacy-policy text for the tracked sites (with cookies, and for data-cookieless)
 ```
 
@@ -128,6 +133,7 @@ Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing
 Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing. On Convex dev: curl hits stored a goal with props, an outbound click (query string dropped) and identify (email lower-cased on the visitor, `goals: 1` on the session); on `/test.html` in Chrome, `data-goal`, `analytics("goal")`, a stub-queued goal and goals fired before their pageview landed all showed in the Goals panel and Outbound links list.
 Checks at the end of Phase 5f: the same four clean, `npm test` 354 tests passing. On Convex dev in Chrome: `/sites/localhost/customers` listed the 5e test visitor (dev@example.com, first source Direct, credited source test, $64.00, 1h 7m to convert); clicking it opened the profile with both sessions, the second marked "credited $64.00" with campaign phase5e, and the two payments linked by checkout metadata and return page. No console errors.
 Checks at the end of Phase 5g: the same four clean, `npm test` 366 tests passing. On Convex dev in Chrome (`/sites/localhost?range=7d`): clicking AI under Channels set `?f=channel:AI` and changed every tile (9 → 1 visitor, $64 → $0), the chart and every list; removing the chip brought back the rollup view. Referral showed the $64 credited to it; adding `/landing` from Pages combined the two (`f=channel:Referral,page:/landing`). A 150-day range with a filter showed the 90-day notice. No console errors.
+Checks at the end of Phase 5h: the same four clean, `npm test` 368 tests passing. On Convex dev in Chrome (`/sites/localhost/live`): a curl hit with Vercel's geo headers for Oslo put one marker ("rose peacock", Oslo, ChatGPT, the page) on the map, the feed listed it with the older test goals and payments, and clicking the marker opened `/sites/localhost/visitors/<id>`. No console errors. The automation tab stayed in the background (`document.hidden`), so the tiles never painted there; the style, tile and worker requests all returned 200.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
@@ -260,6 +266,16 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **Referrer and outbound rows** no longer link from their label (the row is a filter button); a small ↗ icon next to them opens the site.
 - **Not tested at scale:** the `tooMany` path has no test (it needs 12,000 rows); the budget check is a few lines in `lib/filtered.ts`.
 
+### Phase 5h (live map)
+
+- **Live tab** in the site header (Visitors | Live | Customers | Settings) at `/sites/[domain]/live`: the "N online now" count, a MapLibre map (`maplibre-gl` 6.14, BSD-3) on OpenFreeMap's `dark` style (no key), and a feed beside it on wide screens, under it on phones.
+- **`stats.liveFeed`** takes two times from the page, both moved every 30 s like `stats.live`: `onlineSince` (5 minutes, the dashboard's "online now") for the dots, and `since` for the feed. Dots come from `sessions.by_site_lastSeenAt`, one per visitor from their latest session (position, city, device, source, last page). The feed merges the newest pageviews, goals and (on sites with revenue) payments and refunds through each table's `by_site_ts`, at most 200 rows, with names from the visitor rows and city from the session. Outbound clicks, identify and claims stay out of the feed.
+- **The feed goes back 24 hours**, not 5 minutes: on sites with a few hundred pageviews a month a 5-minute feed is nearly always empty. Payments show no place, because the credited session can be days old.
+- **Dots:** the visitor's emoji on their colour, with name, place, source and page as the tooltip; a click opens their profile, as do names in the feed (cookieless rows show "Anonymous" and don't link). Visitors in the same rounded cell are spread on a small circle. The map zooms to the first visitors once, then stays where it was moved. Visitors without a position count in the header and say they're not on the map.
+- **MapLibre's worker** is not emitted by Turbopack (maplibre-gl 6 finds it with `new URL(name, import.meta.url)`), so `npm run build:map-worker` copies `maplibre-gl-worker.mjs` to `public/maplibre-gl-worker.js` before dev and build, and `LiveMap` calls `setWorkerUrl`. The `.js` name keeps it outside the Clerk proxy's matcher. It is 0.5 MB (loaded only on the Live tab).
+- **Markers go on as soon as the map exists**, not on its `load` event, which waits for the first tiles.
+- **Cookieless sites** have no sessions, so their map stays empty (the page says so); the feed still lists their pageviews.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -303,7 +319,16 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5g on production, then 5h
+## Next: review 5h, push it, then Phase 6
+
+Built and checked locally; not pushed yet. Owner:
+
+1. Review `/sites/localhost/live` locally (`npm run dev`; the dev `localhost` site has a test visitor in Oslo), then push to `main`.
+2. "Done when" on production: open one of your sites on your phone; a named dot appears near you on its Live tab within 30 seconds.
+
+Then Phase 6 (open sign-ups).
+
+## Earlier: check 5g on production, then 5h
 
 Pushed to `main` on 2026-10-28 (commit `321236c`) and live. Owner:
 
