@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-27 (5e live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-27 (5f built, awaiting review). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -16,7 +16,8 @@ Last updated: 2026-10-27 (5e live). Read this together with [PLAN.md](PLAN.md) (
 | 5c: OS, region and city | **Live in production since 2026-10-27** (commit `e672a1a`, Vercel deploy succeeded). No backfill (nothing to recover). Awaiting the owner's "Done when" check on production. |
 | 5d: Goals, outbound clicks and identify | **Live in production since 2026-10-27** (commit `8b67da8`; `/script.js` serves the minified build, 1.95 KB gzipped; `ingest.event` and `stats.goals` on Convex prod). Awaiting the owner's "Done when" check on production. |
 | 5e: Revenue | **Live in production since 2026-10-27** (commit `ff97cba`, Vercel deploy succeeded; `/script.js` sends the claim, `/api/payments` answers 401 without a key, `payments.*` and the `/stripe/` route are on Convex prod). Every site is still set to None, so nothing changes on the dashboards until one is switched to Stripe or API. Awaiting the owner's "Done when" check (a Stripe test-mode payment). |
-| 5f to 5h, 6 | Not started. |
+| 5f: Customer journeys and visitor profiles | **Built, awaiting owner review.** Checked locally against Convex dev; not pushed. |
+| 5g, 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -62,6 +63,7 @@ convex/
                      sites.goalNames + sites.setKeyGoal (5d), sites.revenueSettings, setRevenue,
                      setStripeSecret, createApiKey (action) + internal storeApiKeyHash (5e),
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
+  visitors.ts        visitors.customers (paying or key-goal visitors), visitors.profile (journey timeline) (5f)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
                      stats.online (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
@@ -89,6 +91,8 @@ src/
   app/websites/page.tsx         card grid (client Websites)
   app/sites/[domain]/page.tsx   site dashboard (Suspense > client SiteDashboard)
   app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
+  app/sites/[domain]/customers/page.tsx  customers list (Suspense > client Customers)
+  app/sites/[domain]/visitors/[visitorId]/page.tsx  visitor profile (Suspense > client VisitorProfile)
   app/sign-in, sign-up   Clerk components inside <Suspense>
   app/api/collect/route.ts   ingest endpoint
   app/api/payments/route.ts  payments API (Bearer key, real status codes)
@@ -98,10 +102,12 @@ src/
                           RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, useNow
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
+  components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
   lib/payments.ts    bearerKey, parsePaymentBody
+  lib/names.ts       persona ("brown fox", emoji, colour) and displayName (adapted from minilytics, MIT)
   lib/*.test.ts      unit tests, including script.test.ts, which runs the minified script in a fake browser
   script/script.js   hand-written ES5 tracking script (the source; see 5d decisions)
 public/script.js     minified copy, built by `npm run build:script` before dev and build; git-ignored
@@ -116,6 +122,7 @@ Checks at the end of Phase 5a: the same four clean, `npm test` 182 tests passing
 Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing. On Convex dev: the backfill filled source/channel for old days and 5a sessions; a curl hit with `utm_source=test&utm_campaign=phase5b` showed under Campaigns (and as source "test", channel Referral), and one from chatgpt.com as ChatGPT under AI, both seen on the local dashboard.
 Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
 Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing. On Convex dev: curl hits stored a goal with props, an outbound click (query string dropped) and identify (email lower-cased on the visitor, `goals: 1` on the session); on `/test.html` in Chrome, `data-goal`, `analytics("goal")`, a stub-queued goal and goals fired before their pageview landed all showed in the Goals panel and Outbound links list.
+Checks at the end of Phase 5f: the same four clean, `npm test` 354 tests passing. On Convex dev in Chrome: `/sites/localhost/customers` listed the 5e test visitor (dev@example.com, first source Direct, credited source test, $64.00, 1h 7m to convert); clicking it opened the profile with both sessions, the second marked "credited $64.00" with campaign phase5e, and the two payments linked by checkout metadata and return page. No console errors.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
@@ -225,6 +232,17 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **`deleteSiteData`** also deletes `payments`, `checkouts` and `siteSecrets`.
 - **Dev data:** the dev `localhost` site is set to Stripe with a throwaway signing secret and holds two test payments (`cs_test_devmeta0001` $49, `cs_test_localclaim0001` $15).
 
+### Phase 5f (customer journeys and visitor profiles)
+
+- **Customers tab** in the site header (Visitors | Customers | Settings). The current tab is now a link too, so a profile can go back to the list.
+- **Who is a customer:** on a site with revenue, every visitor with `firstPaidAt` (a payment in the site's currency), read newest first through `visitors.by_site_firstPaid`. On a site without revenue, every visitor who completed the key goal, from `events.by_site_type_name` (newest 5,000 completions, each visitor at their first). A site with both shows revenue by default and a "Key goal" toggle (`?by=goal`). A site with neither gets a pointer to Settings. At most 500 customers, with "+" when there are more.
+- **Columns:** name, first source (`visitors.firstSource`), credited source (the session the first payment was credited to, or the session of the first key-goal completion), total paid (lifetime, net of refunds), first payment or conversion time, and time to convert (from `firstSeen`). Unattributed payments have no visitor, so they never appear here.
+- **Names:** `src/lib/names.ts`, adapted from minilytics (MIT, credited): FNV-1a hash of the visitor id → colour + animal and an emoji avatar. The identify() name wins, then the email (from identify() or a payment), then the animal name. Computed in the browser; nothing new is stored.
+- **Profile** (`visitors.profile`): header with name, email/user id, total paid, location, device, first source, first and last seen and session count (location and device from the latest session). The journey shows the latest 50 sessions oldest first, each with source, channel and campaign tags, and its pageviews (with engaged time), goals (key goal marked), outbound clicks, identify, checkout returns and payments, in time order. Up to 100 pageviews per session.
+- **Where a payment shows:** in the session that was open when it was made (the last one that started before it), labelled with how it was linked and which source it was credited to. The credited session gets a green "credited" badge with its revenue. Usually that is a different session from the one where the visitor paid.
+- **"Clicking a visitor anywhere":** for now that is the customers list. The live feed comes in 5h and will link to the same `/sites/[domain]/visitors/[visitorId]`.
+- **`SourceIcon`, `DEVICE_ICONS`, `browserIcon` and `osIcon`** are now exported from `Breakdowns.tsx` for the profile.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -268,7 +286,16 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5e on production, then 5f
+## Next: review 5f, ship it, then 5g
+
+Built and checked locally (not committed or pushed yet). Owner:
+
+1. Review `/sites/localhost/customers` and a profile locally, or on production after the push.
+2. "Done when" on production: after the Stripe test payment from 5e's check, the customer appears under Customers, and their profile shows the journey from the `?utm_source=test` visit to the payment.
+
+Then 5g.
+
+## Earlier: check 5e on production, then 5f
 
 Pushed to `main` on 2026-10-27 (commit `ff97cba`) and live. The production webhook URL for a site is `https://strong-robin-642.convex.site/stripe/<siteId>`; Settings → Revenue shows it. Owner:
 

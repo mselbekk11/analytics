@@ -146,3 +146,41 @@ export function currencyDigits(currency: string): number {
 export function formatMoney(minor: number, currency: string, whole = false): string {
   return moneyFormat(currency, whole).format(minor / 10 ** currencyDigits(currency));
 }
+
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+function dateTimeFormat(timeZone: string, withDate: boolean): Intl.DateTimeFormat {
+  const key = `${timeZone}${withDate ? ":date" : ""}`;
+  let f = dateTimeFormats.get(key);
+  if (f === undefined) {
+    f = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      ...(withDate ? { month: "short", day: "numeric", year: "numeric" } : {}),
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    dateTimeFormats.set(key, f);
+  }
+  return f;
+}
+
+/** A timestamp in the site's timezone: "Oct 27, 2026, 10:04 AM". */
+export function formatDateTime(ts: number, timeZone: string): string {
+  return dateTimeFormat(timeZone, true).format(ts);
+}
+
+/** A timestamp's time of day in the site's timezone: "10:04 AM". */
+export function formatTime(ts: number, timeZone: string): string {
+  return dateTimeFormat(timeZone, false).format(ts);
+}
+
+/** A longer span, two units at most: "<1m", "12m", "2h 5m", "3d 4h". */
+export function formatElapsed(ms: number): string {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`;
+}

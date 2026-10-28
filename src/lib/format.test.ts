@@ -6,10 +6,13 @@ import {
   currencyDigits,
   formatChange,
   formatDate,
+  formatDateTime,
   formatDuration,
+  formatElapsed,
   formatMoney,
   formatNumber,
   formatShare,
+  formatTime,
   outboundLabel,
   referrerLabel,
   regionLabel,
@@ -109,5 +112,29 @@ describe("formatMoney", () => {
   test("rounds to whole units for lists, and keeps the sign of refunds", () => {
     expect(formatMoney(123456, "USD", true)).toBe("$1,235");
     expect(formatMoney(-2500, "USD")).toBe("-$25.00");
+  });
+});
+
+describe("formatDateTime and formatTime", () => {
+  // 17:04Z is 10:04 in Los Angeles (UTC-7 in October)
+  const ts = Date.parse("2026-10-27T17:04:00Z");
+  test("use the site's timezone", () => {
+    expect(formatDateTime(ts, "America/Los_Angeles")).toBe("Oct 27, 2026, 10:04 AM");
+    expect(formatTime(ts, "America/Los_Angeles")).toBe("10:04 AM");
+    expect(formatTime(ts, "Europe/Oslo")).toBe("6:04 PM");
+  });
+});
+
+describe("formatElapsed", () => {
+  test.each([
+    [0, "<1m"],
+    [59_000, "<1m"],
+    [12 * 60_000, "12m"],
+    [125 * 60_000, "2h 5m"],
+    [3 * 3_600_000, "3h"],
+    [(3 * 24 + 4) * 3_600_000, "3d 4h"],
+    [2 * 24 * 3_600_000, "2d"],
+  ])("%d ms -> %s", (ms, label) => {
+    expect(formatElapsed(ms)).toBe(label);
   });
 });

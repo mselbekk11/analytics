@@ -278,7 +278,7 @@ function rowIcon(dim: Dim, value: string): ReactNode {
 }
 
 /** A source's favicon, loaded from its own domain; a globe for tags and failed loads. */
-function SourceIcon({ source }: { source: string }) {
+export function SourceIcon({ source }: { source: string }) {
   const domain = sourceDomain(source);
   const [failed, setFailed] = useState(domain === null);
   if (failed || domain === null) return <FaGlobe aria-hidden className="text-muted" />;
@@ -297,7 +297,7 @@ function SourceIcon({ source }: { source: string }) {
   );
 }
 
-const DEVICE_ICONS: Record<string, IconType> = {
+export const DEVICE_ICONS: Record<string, IconType> = {
   mobile: FiSmartphone,
   tablet: FiTablet,
   desktop: FiMonitor,
@@ -318,7 +318,7 @@ const BROWSER_ICONS: [RegExp, IconType][] = [
   [/chrom/i, SiGooglechrome],
 ];
 
-function browserIcon(name: string): IconType {
+export function browserIcon(name: string): IconType {
   return BROWSER_ICONS.find(([re]) => re.test(name))?.[1] ?? FaGlobe;
 }
 
@@ -332,6 +332,6 @@ const OS_ICONS: [RegExp, IconType][] = [
   [/linux|debian|fedora|arch|mint/i, FaLinux],
 ];
 
-function osIcon(name: string): IconType {
+export function osIcon(name: string): IconType {
   return OS_ICONS.find(([re]) => re.test(name))?.[1] ?? FaGlobe;
 }

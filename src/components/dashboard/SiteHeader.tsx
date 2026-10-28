@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import { Authenticated } from "convex/react";
-import { FiActivity, FiSettings } from "react-icons/fi";
+import { FiActivity, FiSettings, FiUsers } from "react-icons/fi";
 import SiteSwitcher from "./SiteSwitcher";
 
-export type SiteSection = "visitors" | "settings";
+export type SiteSection = "visitors" | "customers" | "settings";
 
 const TABS: { section: SiteSection; label: string; icon: React.ReactNode }[] = [
   { section: "visitors", label: "Visitors", icon: <FiActivity aria-hidden /> },
+  { section: "customers", label: "Customers", icon: <FiUsers aria-hidden /> },
   { section: "settings", label: "Settings", icon: <FiSettings aria-hidden /> },
 ];
 
@@ -19,7 +20,10 @@ export function sitePath(domain: string, section: SiteSection): string {
   return section === "visitors" ? base : `${base}/${section}`;
 }
 
-/** Header band for a site's pages: favicon, domain switcher, account and section tabs. */
+/**
+ * Header band for a site's pages: favicon, domain switcher, account and section tabs.
+ * The current tab is a link too, so a visitor profile (under Customers) can go back.
+ */
 export default function SiteHeader({ domain, section }: { domain: string; section: SiteSection }) {
   return (
     <header className="border-b border-line bg-panel/40">
@@ -34,24 +38,20 @@ export default function SiteHeader({ domain, section }: { domain: string; sectio
           <UserButton />
         </div>
         <nav className="flex gap-8 text-sm">
-          {TABS.map((t) =>
-            t.section === section ? (
-              <span
-                key={t.section}
-                className="flex items-center gap-2 border-b-2 border-strong pb-3 text-strong"
-              >
-                {t.icon} {t.label}
-              </span>
-            ) : (
-              <Link
-                key={t.section}
-                href={sitePath(domain, t.section)}
-                className="flex items-center gap-2 pb-3 text-muted hover:text-strong"
-              >
-                {t.icon} {t.label}
-              </Link>
-            ),
-          )}
+          {TABS.map((t) => (
+            <Link
+              key={t.section}
+              href={sitePath(domain, t.section)}
+              aria-current={t.section === section ? "page" : undefined}
+              className={
+                t.section === section
+                  ? "flex items-center gap-2 border-b-2 border-strong pb-3 text-strong"
+                  : "flex items-center gap-2 pb-3 text-muted hover:text-strong"
+              }
+            >
+              {t.icon} {t.label}
+            </Link>
+          ))}
           <Link href="/websites" className="pb-3 text-muted hover:text-strong">
             All sites
           </Link>

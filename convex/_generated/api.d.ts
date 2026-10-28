@@ -27,6 +27,7 @@ import type * as migrations from "../migrations.js";
 import type * as payments from "../payments.js";
 import type * as sites from "../sites.js";
 import type * as stats from "../stats.js";
+import type * as visitors from "../visitors.js";
 
 import type {
   ApiFromModules,
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   payments: typeof payments;
   sites: typeof sites;
   stats: typeof stats;
+  visitors: typeof visitors;
 }>;
 
 /**
