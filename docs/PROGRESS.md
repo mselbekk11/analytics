@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-28 (5f live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-28 (5g built, awaiting review). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -17,7 +17,8 @@ Last updated: 2026-10-28 (5f live). Read this together with [PLAN.md](PLAN.md) (
 | 5d: Goals, outbound clicks and identify | **Live in production since 2026-10-27** (commit `8b67da8`; `/script.js` serves the minified build, 1.95 KB gzipped; `ingest.event` and `stats.goals` on Convex prod). Awaiting the owner's "Done when" check on production. |
 | 5e: Revenue | **Live in production since 2026-10-27** (commit `ff97cba`, Vercel deploy succeeded; `/script.js` sends the claim, `/api/payments` answers 401 without a key, `payments.*` and the `/stripe/` route are on Convex prod). Every site is still set to None, so nothing changes on the dashboards until one is switched to Stripe or API. Awaiting the owner's "Done when" check (a Stripe test-mode payment). |
 | 5f: Customer journeys and visitor profiles | **Live in production since 2026-10-28** (commit `28f1b96`, Vercel deploy succeeded; `visitors.customers` and `visitors.profile` are on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check (needs 5e's Stripe test payment). |
-| 5g, 5h, 6 | Not started. |
+| 5g: Click to filter | **Built, awaiting owner review.** Checked locally against Convex dev; not pushed. |
+| 5h, 6 | Not started. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -65,7 +66,7 @@ convex/
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
   visitors.ts        visitors.customers (paying or key-goal visitors), visitors.profile (journey timeline) (5f)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
-                     stats.online (all behind requireSite)
+                     stats.online, stats.filtered (5g) (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
   payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
@@ -76,7 +77,10 @@ convex/
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
   lib/domain.ts      normalizeDomain, hostMatchesDomain (shared with the collect route)
   lib/rollups.ts     bumpDailyStats, bumpDailyDim, bumpSessionDim, bumpEventDim upserts
-  lib/dims.ts        dimValidator (every dailyDims dim) and dimMetric (which count a list ranks by)
+  lib/dims.ts        dimValidator (every dailyDims dim), dimMetric (which count a list ranks by), rankEntries
+  lib/filters.ts     click-to-filter: Filter validator, ?f= parse/format, toggleFilter (shared with the page)
+  lib/filtered.ts    the filtered view: one bounded read of sessions, pageviews, events, payments (5g)
+  lib/statsShapes.ts return validators of the stats queries, shared by the rollup and filtered views
   lib/sources.ts     source/channel classifier (adapted from minilytics, MIT), sourceDomain for favicons
   lib/attribution.ts campaign validator, countSession / countCookielessVisit (session dims)
   lib/geo.ts         regionKey / cityKey ("US/CA", "US/CA/San Francisco") and parseGeoKey
@@ -99,7 +103,7 @@ src/
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
   components/        ConvexClientProvider, AddWebsiteForm (+ Snippet), CopyButton, TimezoneSelect
   components/dashboard/   SiteHeader (favicon, switcher, Visitors/Settings tabs), SiteDashboard, SiteSwitcher,
-                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, useNow
+                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, FilterBar, useNow
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
   components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
@@ -123,6 +127,7 @@ Checks at the end of Phase 5b: the same four clean, `npm test` 219 tests passing
 Checks at the end of Phase 5c: the same four clean, `npm test` 239 tests passing. A curl hit through local `/api/collect` with Vercel's `x-vercel-ip-*` headers and an iPhone UA stored `iOS`, region `CA`, city `San Francisco` and 37.8 / -122.4 on the session, and `os`/`region`/`city` dim rows on Convex dev.
 Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing. On Convex dev: curl hits stored a goal with props, an outbound click (query string dropped) and identify (email lower-cased on the visitor, `goals: 1` on the session); on `/test.html` in Chrome, `data-goal`, `analytics("goal")`, a stub-queued goal and goals fired before their pageview landed all showed in the Goals panel and Outbound links list.
 Checks at the end of Phase 5f: the same four clean, `npm test` 354 tests passing. On Convex dev in Chrome: `/sites/localhost/customers` listed the 5e test visitor (dev@example.com, first source Direct, credited source test, $64.00, 1h 7m to convert); clicking it opened the profile with both sessions, the second marked "credited $64.00" with campaign phase5e, and the two payments linked by checkout metadata and return page. No console errors.
+Checks at the end of Phase 5g: the same four clean, `npm test` 366 tests passing. On Convex dev in Chrome (`/sites/localhost?range=7d`): clicking AI under Channels set `?f=channel:AI` and changed every tile (9 → 1 visitor, $64 → $0), the chart and every list; removing the chip brought back the rollup view. Referral showed the $64 credited to it; adding `/landing` from Pages combined the two (`f=channel:Referral,page:/landing`). A 150-day range with a filter showed the 90-day notice. No console errors.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
@@ -243,6 +248,18 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **"Clicking a visitor anywhere":** for now that is the customers list. The live feed comes in 5h and will link to the same `/sites/[domain]/visitors/[visitorId]`.
 - **`SourceIcon`, `DEVICE_ICONS`, `browserIcon` and `osIcon`** are now exported from `Breakdowns.tsx` for the profile.
 
+### Phase 5g (click to filter)
+
+- **A filter picks sessions.** Source, channel, campaign tags, referrer, entry and exit page, device, browser, OS, country, region and city match the session's own value (the same keys the lists use); a page filter matches sessions that viewed the page, a goal or outbound filter sessions that had it. Filters on different lists combine with AND. Clicking another row of a filtered list replaces its filter; clicking the active row (outlined) removes it. At most 3 lists; with 3, rows of other lists stop being clickable.
+- **What a filtered view counts:** the matching sessions on the day each started, and everything in them: visitors (distinct over the range, where the rollup lists sum per day), sessions, pageviews, bounces, session time and time on page. With a page filter, Pages lists every page those sessions viewed, not only the filtered one. Revenue is the payments credited to a matching session, on each payment's day, as in the rollups; a credited session that started before the range is read on its own (with its pageviews and events), so a ChatGPT visitor who pays a week later still counts under AI.
+- **`stats.filtered`** returns summary, timeseries, every list, goals and conversions in one query, in the rollup queries' shapes (validators now in `lib/statsShapes.ts`), so the components only choose where their data comes from. It reads `sessions`, `pageviews` and `events` through their time indexes (`by_site_started`, `by_site_ts`) for the range and the previous one (for the % changes), plus `payments` on sites with revenue, and joins them in memory. Rows without a session id (cookieless and old-script hits) are not in filtered views.
+- **Limits:** ranges of at most 90 days (`status: "range"`), and at most 12,000 documents read across the tables (`status: "tooMany"`); the dashboard shows a notice in place of the data for both. The busiest site reads ~7,500 for 90 days and its previous period.
+- **URL:** `?f=channel:AI,page:/pricing`, kept readable; a comma or `%` inside a value is escaped as `%2C`/`%25`. A hard load may come back with `:` as `%3A` (Next/Clerk re-encode it); both parse.
+- **Cookieless sites** (no `trackingStartedAt`) have no sessions, so their rows are not clickable and `?f=` is ignored. When the range starts before visitor tracking did, the dashboard says filtered numbers count from that day.
+- **Online now** stays unfiltered.
+- **Referrer and outbound rows** no longer link from their label (the row is a filter button); a small ↗ icon next to them opens the site.
+- **Not tested at scale:** the `tooMany` path has no test (it needs 12,000 rows); the budget check is a few lines in `lib/filtered.ts`.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -286,7 +303,17 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5f on production, then 5g
+## Next: review 5g, ship it, then 5h
+
+Built and checked locally (not committed or pushed yet). Owner:
+
+1. Review `/sites/localhost` locally: click rows in each list, combine filters, remove chips.
+2. Commit and push to `main`. No schema change, so nothing to backfill.
+3. "Done when" on production: filtering by `channel:AI` changes every tile, the chart and every list, and removing the chip brings back the rollup view.
+
+Then 5h.
+
+## Earlier: check 5f on production, then 5g
 
 Pushed to `main` on 2026-10-28 (commit `28f1b96`) and live. Owner:
 

@@ -28,8 +28,10 @@ import {
 } from "react-icons/si";
 import { api } from "../../../convex/_generated/api";
 import { dimMetric, type Dim } from "../../../convex/lib/dims";
+import { canFilter, type Filter } from "../../../convex/lib/filters";
 import { parseGeoKey } from "../../../convex/lib/geo";
 import type { DateRange } from "../../../convex/lib/ranges";
+import type { BreakdownResult, GoalsResult } from "../../../convex/lib/statsShapes";
 import { sourceDomain } from "../../../convex/lib/sources";
 import {
   cityLabel,
@@ -51,6 +53,19 @@ type Props = {
   range: DateRange;
   /** The site's currency when it takes payments; adds a revenue column to source and location lists */
   currency: string | null;
+  view: View;
+};
+
+/**
+ * Filters on the dashboard. With any set, the lists read `data` and `goals` (from
+ * stats.filtered, undefined while loading) instead of their rollup queries. `onSelect`
+ * turns a row into a filter; null where filtering is not possible (cookieless sites).
+ */
+export type View = {
+  filters: Filter[];
+  data: Record<string, BreakdownResult> | undefined;
+  goals: GoalsResult | undefined;
+  onSelect: ((dim: Dim, key: string) => void) | null;
 };
 
 type Tab = { dim: Dim; label: string };
@@ -103,30 +118,30 @@ const COUNT_DIMS = new Set<Dim>([
  * pages (Pages, Entry, Exit), devices (Devices, OS) + Browsers, and countries
  * (Countries, Regions, Cities). Goals and Outbound links sit below, two columns each.
  */
-export default function Breakdowns({ domain, range, currency }: Props) {
-  // Remount the lists when the range changes, so paging starts on page 1
-  const k = `${range.from}_${range.to}`;
+export default function Breakdowns({ domain, range, currency, view }: Props) {
+  // Remount the lists when the range or the filters change, so paging starts on page 1
+  const k = `${range.from}_${range.to}${view.filters.map((f) => `|${f.dim}:${f.value}`).join("")}`;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Tabbed {...{ domain, range, currency }} tabs={SOURCE_TABS} title="Sources" />
-      <Tabbed {...{ domain, range, currency }} tabs={PAGE_TABS} title="Pages" />
+      <Tabbed {...{ domain, range, currency, view }} tabs={SOURCE_TABS} title="Sources" />
+      <Tabbed {...{ domain, range, currency, view }} tabs={PAGE_TABS} title="Pages" />
       <div className="flex flex-col gap-4">
-        <Tabbed {...{ domain, range, currency }} tabs={DEVICE_TABS} title="Devices" />
-        <Breakdown key={`browser${k}`} {...{ domain, range, currency }} dim="browser" title="Browsers" />
+        <Tabbed {...{ domain, range, currency, view }} tabs={DEVICE_TABS} title="Devices" />
+        <Breakdown key={`browser${k}`} {...{ domain, range, currency, view }} dim="browser" title="Browsers" />
       </div>
-      <Tabbed {...{ domain, range, currency }} tabs={COUNTRY_TABS} title="Countries" />
+      <Tabbed {...{ domain, range, currency, view }} tabs={COUNTRY_TABS} title="Countries" />
       <div className="sm:col-span-2">
-        <GoalsPanel key={`goal${k}`} {...{ domain, range, currency }} />
+        <GoalsPanel key={`goal${k}`} {...{ domain, range, view }} />
       </div>
       <div className="sm:col-span-2">
-        <Breakdown key={`outbound${k}`} {...{ domain, range, currency }} dim="outbound" title="Outbound links" />
+        <Breakdown key={`outbound${k}`} {...{ domain, range, currency, view }} dim="outbound" title="Outbound links" />
       </div>
     </div>
   );
 }
 
 /** A list with tabs in its header; the tab is kept when the range changes. */
-function Tabbed({ domain, range, currency, tabs, title }: Props & { tabs: Tab[]; title: string }) {
+function Tabbed({ domain, range, currency, view, tabs, title }: Props & { tabs: Tab[]; title: string }) {
   const [tab, setTab] = useState(tabs[0].dim);
   const [campaignDim, setCampaignDim] = useState<Dim>("utm_campaign");
   const isCampaign = CAMPAIGN_DIMS.some((t) => t.dim === tab);
@@ -169,8 +184,8 @@ function Tabbed({ domain, range, currency, tabs, title }: Props & { tabs: Tab[];
 
   return (
     <Breakdown
-      key={`${dim}${range.from}_${range.to}`}
-      {...{ domain, range, currency, dim, header }}
+      key={`${dim}${range.from}_${range.to}${view.filters.map((f) => `|${f.dim}:${f.value}`).join("")}`}
+      {...{ domain, range, currency, view, dim, header }}
       title={tabs.find((t) => t.dim === tab)?.label ?? title}
     />
   );
@@ -180,11 +195,16 @@ function Breakdown({
   domain,
   range,
   currency,
+  view,
   dim,
   title,
   header,
 }: Props & { dim: Dim; title: string; header?: ReactNode }) {
-  const data = useQuery(api.stats.breakdown, { domain, dim, ...range });
+  const filtering = view.filters.length > 0;
+  const rollup = useQuery(api.stats.breakdown, filtering ? "skip" : { domain, dim, ...range });
+  const data = filtering ? view.data?.[dim] : rollup;
+  const active = view.filters.find((f) => f.dim === dim)?.value;
+  const select = view.onSelect && canFilter(view.filters, dim) ? view.onSelect : null;
 
   // Pages count pageviews, entry and exit pages count sessions, outbound links count
   // clicks, and the source lists count visitors (as SA does); the other lists show each
@@ -206,7 +226,10 @@ function Breakdown({
     return {
       key: r.key,
       label: <Label dim={dim} value={r.key} />,
+      href: rowHref(dim, r.key),
       icon: rowIcon(dim, r.key),
+      active: r.key === active,
+      ...(select ? { onSelect: () => select(dim, r.key) } : {}),
       value: variant === "count" ? formatNumber(r[metric]) : formatShare(share),
       share,
       ...(showRevenue && r.revenueMinor !== 0 ? { revenue: formatMoney(r.revenueMinor, currency, true) } : {}),
@@ -219,18 +242,7 @@ function Breakdown({
 function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
   switch (dim) {
     case "referrer":
-      return value === "(direct)" ? (
-        referrerLabel(value)
-      ) : (
-        <a
-          href={`https://${value}`}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="hover:text-accent"
-        >
-          {value}
-        </a>
-      );
+      return referrerLabel(value);
     case "device":
       return deviceLabel(value);
     case "browser":
@@ -242,14 +254,17 @@ function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
     case "city":
       return cityLabel(value);
     case "outbound":
-      return (
-        <a href={value} target="_blank" rel="noopener noreferrer nofollow" className="hover:text-accent">
-          {outboundLabel(value)}
-        </a>
-      );
+      return outboundLabel(value);
     default:
       return value;
   }
+}
+
+/** Referrers and outbound links open in a new tab. */
+function rowHref(dim: Dim, value: string): string | undefined {
+  if (dim === "referrer" && value !== "(direct)") return `https://${value}`;
+  if (dim === "outbound") return value;
+  return undefined;
 }
 
 function rowIcon(dim: Dim, value: string): ReactNode {

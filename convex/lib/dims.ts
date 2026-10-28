@@ -39,3 +39,30 @@ export function dimMetric(dim: Dim): "pageviews" | "sessions" | "visitors" | "ev
   if (dim === "goal" || dim === "outbound") return "events";
   return "visitors";
 }
+
+/** One key's counts in a list, summed over the range. */
+export type DimEntry = {
+  key: string;
+  pageviews: number;
+  visitors: number;
+  sessions: number;
+  events: number;
+  revenueMinor: number;
+};
+
+export const DIM_COUNTS = ["pageviews", "visitors", "sessions", "events", "revenueMinor"] as const;
+
+/**
+ * A list's rows, largest first by the dim's metric and then the other counts. Keys with
+ * none of that metric are left out, unless they have revenue ("Unattributed" has no visitors).
+ */
+export function rankEntries(dim: Dim, entries: DimEntry[]): DimEntry[] {
+  const metric = dimMetric(dim);
+  const order = [metric, ...DIM_COUNTS.filter((m) => m !== metric)];
+  return entries
+    .filter((e) => e[metric] > 0 || e.revenueMinor !== 0)
+    .sort((a, b) => {
+      for (const m of order) if (a[m] !== b[m]) return b[m] - a[m];
+      return a.key.localeCompare(b.key);
+    });
+}

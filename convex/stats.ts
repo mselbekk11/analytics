@@ -3,9 +3,18 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireSite } from "./lib/auth";
 import { localDate } from "./lib/dates";
-import { dimMetric, dimValidator, type Dim } from "./lib/dims";
-import { eachDate, isValidRange, previousRange, type DateRange } from "./lib/ranges";
+import { DIM_COUNTS, dimValidator, rankEntries, type Dim, type DimEntry } from "./lib/dims";
+import { filteredView } from "./lib/filtered";
+import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
+import { eachDate, isValidRange, previousRange, rangeDays, type DateRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
+import {
+  breakdownResult,
+  conversionsResult,
+  goalsResult,
+  seriesResult,
+  summaryResult,
+} from "./lib/statsShapes";
 
 // Dashboard reads. Every query checks ownership with requireSite, takes the date range
 // as "YYYY-MM-DD" strings in the site's timezone (the page computes them, because
@@ -26,18 +35,6 @@ const MAX_SESSION_ROWS = 10_000;
 const HOUR_MS = 60 * 60 * 1000;
 
 const rangeArgs = { domain: v.string(), from: v.string(), to: v.string() };
-
-const totals = v.object({
-  visitors: v.number(),
-  pageviews: v.number(),
-  timeOnPageMs: v.union(v.null(), v.number()),
-  sessions: v.number(),
-  bounceRate: v.union(v.null(), v.number()), // fraction of sessions
-  sessionTimeMs: v.union(v.null(), v.number()),
-  revenueMinor: v.number(), // net of refunds, in the site's currency
-  payments: v.number(),
-  refundsMinor: v.number(),
-});
 
 function checkRange(range: DateRange): void {
   if (!isValidRange(range)) {
@@ -146,12 +143,7 @@ function countVisitors(
  */
 export const summary = query({
   args: rangeArgs,
-  returns: v.object({
-    current: totals,
-    previous: totals,
-    comparable: v.boolean(),
-    visitorsApprox: v.boolean(),
-  }),
+  returns: summaryResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
@@ -191,14 +183,7 @@ export const summary = query({
 /** One point per day in the range, with days that had no traffic filled as zero. */
 export const timeseries = query({
   args: rangeArgs,
-  returns: v.array(
-    v.object({
-      date: v.string(),
-      pageviews: v.number(),
-      visitors: v.number(),
-      revenueMinor: v.number(),
-    }),
-  ),
+  returns: seriesResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
@@ -217,17 +202,6 @@ export const timeseries = query({
     });
   },
 });
-
-type DimEntry = {
-  key: string;
-  pageviews: number;
-  visitors: number;
-  sessions: number;
-  events: number;
-  revenueMinor: number;
-};
-
-const DIM_COUNTS = ["pageviews", "visitors", "sessions", "events", "revenueMinor"] as const;
 
 /** Sums one dimension's daily rows per key over the range, plus the totals over every row. */
 async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
@@ -268,40 +242,14 @@ async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }
  */
 export const breakdown = query({
   args: { ...rangeArgs, dim: dimValidator },
-  returns: v.object({
-    rows: v.array(
-      v.object({
-        key: v.string(),
-        pageviews: v.number(),
-        visitors: v.number(),
-        sessions: v.number(),
-        events: v.number(),
-        revenueMinor: v.number(),
-      }),
-    ),
-    totalPageviews: v.number(),
-    totalVisitors: v.number(),
-    totalSessions: v.number(),
-    totalEvents: v.number(),
-    totalRevenueMinor: v.number(),
-  }),
+  returns: breakdownResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
     checkRange(range);
 
     const { entries, total } = await sumDim(ctx, site._id, args.dim, range);
-    const metric = dimMetric(args.dim);
-    const order: (keyof Omit<DimEntry, "key">)[] = [
-      metric,
-      ...DIM_COUNTS.filter((m) => m !== metric),
-    ];
-    const sorted = entries
-      .filter((e) => e[metric] > 0 || e.revenueMinor !== 0)
-      .sort((a, b) => {
-        for (const m of order) if (a[m] !== b[m]) return b[m] - a[m];
-        return a.key.localeCompare(b.key);
-      });
+    const sorted = rankEntries(args.dim, entries);
     return {
       rows: sorted.slice(0, MAX_BREAKDOWN_KEYS),
       totalPageviews: total.pageviews,
@@ -322,11 +270,7 @@ export const breakdown = query({
  */
 export const goals = query({
   args: rangeArgs,
-  returns: v.object({
-    rows: v.array(v.object({ name: v.string(), completions: v.number(), visitors: v.number() })),
-    visitors: v.number(),
-    keyGoal: v.union(v.null(), v.string()),
-  }),
+  returns: goalsResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
@@ -364,12 +308,7 @@ const MAX_CONVERSION_ROWS = 10_000;
  */
 export const conversions = query({
   args: rangeArgs,
-  returns: v.object({
-    kind: v.union(v.null(), v.literal("revenue"), v.literal("goal")),
-    current: v.union(v.null(), v.number()),
-    previous: v.union(v.null(), v.number()),
-    otherCurrencyPayments: v.number(),
-  }),
+  returns: conversionsResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
@@ -414,6 +353,37 @@ export const conversions = query({
       previous: tooMany ? null : distinct(done, prev),
       otherCurrencyPayments: 0,
     };
+  },
+});
+
+/**
+ * The dashboard with up to MAX_FILTERS filters: summary, chart, every list, goals and
+ * conversions in the shapes the rollup queries return, worked out from the raw sessions
+ * (see lib/filtered.ts). Limited to MAX_FILTER_DAYS; `status` says when the range is
+ * longer, or when the rows would go past Convex's read limits.
+ */
+export const filtered = query({
+  args: { ...rangeArgs, filters: v.array(filterValidator) },
+  returns: v.union(
+    v.object({
+      status: v.literal("ok"),
+      summary: summaryResult,
+      timeseries: seriesResult,
+      breakdowns: v.record(v.string(), breakdownResult),
+      goals: goalsResult,
+      conversions: conversionsResult,
+    }),
+    v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
+  ),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const range = { from: args.from, to: args.to };
+    checkRange(range);
+    if (args.filters.length === 0 || args.filters.length > MAX_FILTERS) {
+      throw new ConvexError(`Between 1 and ${MAX_FILTERS} filters`);
+    }
+    if (rangeDays(range) > MAX_FILTER_DAYS) return { status: "range" as const };
+    return await filteredView(ctx, site, range, args.filters);
   },
 });
 

@@ -5,17 +5,24 @@ import { useState } from "react";
 import { useQuery } from "convex/react";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { api } from "../../../convex/_generated/api";
+import { canFilter } from "../../../convex/lib/filters";
 import type { DateRange } from "../../../convex/lib/ranges";
 import { formatNumber, formatShare } from "@/lib/format";
+import type { View } from "./Breakdowns";
 
 const PAGE_SIZE = 10;
 
 /**
  * Each goal's completions, visitors and conversion rate (the share of daily visitors who
  * completed it, see stats.goals). The site's key goal is marked and always listed.
+ * Clicking a goal filters the dashboard to the sessions that completed it.
  */
-export default function GoalsPanel({ domain, range }: { domain: string; range: DateRange }) {
-  const data = useQuery(api.stats.goals, { domain, ...range });
+export default function GoalsPanel({ domain, range, view }: { domain: string; range: DateRange; view: View }) {
+  const filtering = view.filters.length > 0;
+  const rollup = useQuery(api.stats.goals, filtering ? "skip" : { domain, ...range });
+  const data = filtering ? view.goals : rollup;
+  const active = view.filters.find((f) => f.dim === "goal")?.value;
+  const select = view.onSelect && canFilter(view.filters, "goal") ? view.onSelect : null;
   const [page, setPage] = useState(0);
   const rows = data?.rows;
   const pages = rows ? Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) : 1;
@@ -57,7 +64,19 @@ export default function GoalsPanel({ domain, range }: { domain: string; range: D
             {visible.map((row) => (
               <tr key={row.name} className="h-7">
                 <td className="max-w-0 truncate pr-3">
-                  <span className="text-strong">{row.name}</span>
+                  {select ? (
+                    <button
+                      type="button"
+                      onClick={() => select("goal", row.name)}
+                      aria-pressed={row.name === active}
+                      title={row.name === active ? "Remove this filter" : "Filter by this goal"}
+                      className={`-mx-1 rounded px-1 text-strong hover:bg-line/50 ${row.name === active ? "ring-1 ring-accent/60" : ""}`}
+                    >
+                      {row.name}
+                    </button>
+                  ) : (
+                    <span className="text-strong">{row.name}</span>
+                  )}
                   {row.name === data?.keyGoal && (
                     <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">
                       key goal
