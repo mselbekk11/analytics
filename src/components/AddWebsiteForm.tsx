@@ -6,6 +6,7 @@ import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "../../convex/_generated/api";
 import { embedSnippet } from "@/lib/snippet";
+import { Button } from "@/components/ui/button";
 import CopyButton from "./CopyButton";
 import TimezoneSelect from "./TimezoneSelect";
 
@@ -46,20 +47,16 @@ export default function AddWebsiteForm() {
             onChange={(e) => setDomain(e.target.value)}
             placeholder="example.com"
             required
-            className="rounded-md border border-line bg-panel px-3 py-2"
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Timezone</span>
           <TimezoneSelect value={timezone} onChange={setTimezone} />
         </label>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
+        <Button type="submit" disabled={pending} className="px-3">
           {pending ? "Adding…" : "Add website"}
-        </button>
+        </Button>
       </form>
       {error && <p className="text-sm text-down">{error}</p>}
       {added && (

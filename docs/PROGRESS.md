@@ -120,7 +120,7 @@ src/
                      Base UI, neutral, lucide)
   lib/utils.ts       shadcn's cn()
   components/dashboard/   SiteDashboard, RangePicker, StatRow, StatTile, TrafficChart, series, Breakdowns, StatsCard, FilterBar, RangeControls, useNow
-  components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
+  components/websites/    Websites (page header, Add website), SiteCard (monochrome sparkline card)
   components/settings/    SiteSettings
   components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
   components/live/        Live (online count + feed), LiveMap (MapLibre, one dot per visitor)
@@ -183,7 +183,7 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The header shows the site's own `/favicon.ico`**, loaded straight from the site, with the first letter as a fallback.
 - **Time-on-page % change** compares the two averages; it shows "–" when either period has no duration beacons.
 - **`sites.listWithStats` takes `now`** from the page (snapped to the minute) and works out each site's 30-day window in that site's own timezone, today included.
-- **`/websites` sorts by pageviews by default**; the "sort by" link toggles to name. Filter and sort are plain component state, not in the URL. The 30-day total is shown in the accent blue (SA uses red), matching the dashboard's counts.
+- **`/websites` uses the design v2 styling** (after Phase 10). It has a page header like the dashboard's ("Websites", "Last 30 days", an outline "Add website" button), and the filter box and "sort by" toggle were removed at the owner's request. Sites are always sorted by 30-day pageviews, then by name. Each card has the favicon, domain and gear on top, the 30-day pageview total in the tiles' number style, and a monochrome Visitors/Pageviews sparkline that uses the dashboard chart's colours and gradients. The add form's input, timezone select and submit button now use the shadcn styling, which also changes the timezone select on Settings.
 - **Cards:** the whole card opens the dashboard, the gear (top right) opens settings. Long domains are shortened in the middle, as SA does. Sparklines use the dashboard's blue/pink series.
 - **Settings is a tab in the site header** (Visitors | Settings | All sites), and the site switcher stays on the same tab. "All sites" now goes to `/websites`.
 - **Deleting a site** needs the domain typed to confirm (no browser `confirm()`). The `sites` row is deleted at once, so ingest and the dashboard stop seeing it; `deleteSiteData` then removes pageviews, dailyDims and dailyStats 1,000 rows per table per run and reschedules itself until done. Re-adding the same domain later starts fresh.

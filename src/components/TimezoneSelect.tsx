@@ -15,7 +15,7 @@ export default function TimezoneSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-line bg-panel px-3 py-2"
+      className="h-8 rounded-lg border border-input bg-transparent px-2 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
     >
       {!zones.includes(value) && <option value={value}>{value}</option>}
       {zones.map((tz) => (
