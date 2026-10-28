@@ -2,12 +2,41 @@
 // dashboard's range picker, so keep it dependency-free. Dates are calendar days in
 // the site's timezone (see localDate), so the arithmetic here is plain UTC day maths.
 
-export const PRESETS = ["7d", "30d", "90d"] as const;
+export const PRESETS = ["today", "yesterday", "24h", "7d", "30d", "90d", "6m", "12m"] as const;
 export type Preset = (typeof PRESETS)[number];
-export const DEFAULT_PRESET: Preset = "30d";
+export const DEFAULT_PRESET: Preset = "7d";
 export const MAX_RANGE_DAYS = 365;
 
 export type DateRange = { from: string; to: string };
+
+/** Hour ranges chart one point per hour; everything else one point per day. */
+export type Granularity = "hour" | "day";
+
+/** Presets that end today, by length in days. 6m and 12m are fixed lengths, not calendar months. */
+const PRESET_DAYS: Record<Exclude<Preset, "today" | "yesterday" | "24h">, number> = {
+  "7d": 7,
+  "30d": 30,
+  "90d": 90,
+  "6m": 183,
+  "12m": 365,
+};
+
+/** Custom ranges are day ranges; only today, yesterday and 24h are hourly. */
+export function presetGranularity(preset: Preset | null): Granularity {
+  return preset === "today" || preset === "yesterday" || preset === "24h" ? "hour" : "day";
+}
+
+/** "Last 7 days" and so on, as the dashboard names them. */
+export const PRESET_LABELS: Record<Preset, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  "24h": "Last 24 hours",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  "90d": "Last 90 days",
+  "6m": "Last 6 months",
+  "12m": "Last 12 months",
+};
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,14 +83,28 @@ export function isValidRange(range: DateRange): boolean {
   return rangeDays(range) <= MAX_RANGE_DAYS;
 }
 
-/** "30d" ending today (today included) -> { from: today - 29, to: today }. */
+/**
+ * The calendar days a preset covers: "30d" ending today (today included) is
+ * { from: today - 29, to: today }. Today and yesterday are one day each, and the
+ * rolling 24h covers yesterday and today (its exact hours come from the client's clock).
+ */
 export function presetRange(preset: Preset, today: string): DateRange {
-  const n = Number.parseInt(preset, 10);
-  return { from: addDays(today, -(n - 1)), to: today };
+  switch (preset) {
+    case "today":
+      return { from: today, to: today };
+    case "yesterday": {
+      const yesterday = addDays(today, -1);
+      return { from: yesterday, to: yesterday };
+    }
+    case "24h":
+      return { from: addDays(today, -1), to: today };
+    default:
+      return { from: addDays(today, -(PRESET_DAYS[preset] - 1)), to: today };
+  }
 }
 
 /**
- * Parses the `?range=` URL value: a preset ("30d") or a custom span
+ * Parses the `?range=` URL value: a preset ("7d", "today", "6m") or a custom span
  * ("2026-09-01_2026-09-30"). Anything else, including a span longer than
  * MAX_RANGE_DAYS, falls back to the default preset.
  */

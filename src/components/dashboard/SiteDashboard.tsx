@@ -14,35 +14,48 @@ import {
   type Filter,
 } from "../../../convex/lib/filters";
 import {
+  DEFAULT_PRESET,
   formatRangeParam,
   parseRangeParam,
   percentChange,
+  PRESET_LABELS,
   PRESETS,
+  presetGranularity,
   presetRange,
   type DateRange,
   type Preset,
 } from "../../../convex/lib/ranges";
-import { formatDate, formatDuration, formatMoney, formatNumber, formatShare } from "@/lib/format";
+import {
+  formatDate,
+  formatDuration,
+  formatMoney,
+  formatNumber,
+  formatRangeLabel,
+  formatShare,
+} from "@/lib/format";
 import Breakdowns from "./Breakdowns";
 import FilterBar from "./FilterBar";
-import RangePicker from "./RangePicker";
-import SiteHeader from "./SiteHeader";
+import RangeControls from "./RangeControls";
+import TopBar from "@/components/TopBar";
 import StatTile from "./StatTile";
 import TrafficChart from "./TrafficChart";
 import { useNow } from "./useNow";
 
 const LIVE_WINDOW_MS = 5 * 60 * 1000;
 const LIVE_REFRESH_MS = 30 * 1000;
+// Today, Yesterday and 24h need the hourly data source (design v2 Phase 10). Until then
+// they show disabled, and their URLs open the default range.
+const HOURLY_RANGES = false;
 
 export default function SiteDashboard() {
   const params = useParams<{ domain: string }>();
   const domain = decodeURIComponent(params.domain);
   return (
     <div className="flex flex-1 flex-col">
-      <SiteHeader domain={domain} section="visitors" />
+      <TopBar site={{ domain, section: "analytics" }} />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
-          <p className="text-sm text-muted">Connecting…</p>
+          <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
         <Authenticated>
           <Site domain={domain} />
@@ -54,10 +67,10 @@ export default function SiteDashboard() {
 
 function Site({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
-  if (site === undefined) return <p className="text-sm text-muted">Loading…</p>;
+  if (site === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (site === null) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         No site called <span className="font-mono">{domain}</span> in your account.{" "}
         <Link href="/websites" className="underline">
           Back to your sites
@@ -100,7 +113,11 @@ function Dashboard({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const { range, preset } = parseRangeParam(searchParams.get("range"), today);
+  const parsed = parseRangeParam(searchParams.get("range"), today);
+  const { range, preset } =
+    !HOURLY_RANGES && presetGranularity(parsed.preset) === "hour"
+      ? { range: presetRange(DEFAULT_PRESET, today), preset: DEFAULT_PRESET }
+      : parsed;
   // Filters pick sessions, so they need visitor ids; cookieless sites ignore ?f=
   const filters = tracking ? parseFiltersParam(searchParams.get("f")) : [];
   const filtering = filters.length > 0;
@@ -165,23 +182,34 @@ function Dashboard({
 
   return (
     <div className="flex flex-col gap-10">
-      {filtering && (
-        <div className="-mb-4 flex flex-col gap-2">
-          <FilterBar
-            filters={filters}
-            onRemove={(dim) => setFilters(filters.filter((f) => f.dim !== dim))}
-            onClear={() => setFilters([])}
-          />
-          {trackingStart !== null && trackingStart > range.from && !blocked && (
-            <p className="text-xs text-muted">
-              Filtered numbers count visits from {formatDate(trackingStart, true)}, when visitor tracking started.
+      <header className="-mb-2 flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-3xl font-semibold tracking-tight">Analytics</h1>
+            <p className="text-sm text-muted-foreground">
+              {preset !== null ? PRESET_LABELS[preset] : formatRangeLabel(range)}
             </p>
-          )}
+          </div>
+          <RangeControls range={range} preset={preset} today={today} hourly={HOURLY_RANGES} onChange={setRange} />
         </div>
-      )}
+        {filtering && (
+          <div className="flex flex-col gap-2">
+            <FilterBar
+              filters={filters}
+              onRemove={(dim) => setFilters(filters.filter((f) => f.dim !== dim))}
+              onClear={() => setFilters([])}
+            />
+            {trackingStart !== null && trackingStart > range.from && !blocked && (
+              <p className="text-xs text-muted-foreground">
+                Filtered numbers count visits from {formatDate(trackingStart, true)}, when visitor tracking started.
+              </p>
+            )}
+          </div>
+        )}
+      </header>
       <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
         {blocked ? (
-          <p className="max-w-md text-sm text-muted">
+          <p className="w-full rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
             {filtered.status === "range"
               ? `Filters work on ranges of up to ${MAX_FILTER_DAYS} days. Pick a shorter range, or remove the filters to see the whole period.`
               : "There are too many visits in this range to filter. Pick a shorter range, or remove the filters."}
@@ -274,11 +302,10 @@ function Dashboard({
             )}
           </div>
         )}
-        <RangePicker range={range} preset={preset} today={today} onChange={setRange} />
       </div>
 
       {!blocked && conversions !== undefined && conversions.otherCurrencyPayments > 0 && (
-        <p className="-mt-6 text-sm text-muted">
+        <p className="-mt-6 text-sm text-muted-foreground">
           {formatNumber(conversions.otherCurrencyPayments)}{" "}
           {conversions.otherCurrencyPayments === 1 ? "payment" : "payments"} in this period{" "}
           {conversions.otherCurrencyPayments === 1 ? "is" : "are"} in a currency other than {currency} and{" "}
@@ -309,9 +336,10 @@ function LiveLabel({ text }: { text: string }) {
   );
 }
 
-/** A range that matches a preset ending today goes back to the preset's short name. */
+/** A custom range that matches a day preset ending today goes back to the preset's short name. */
 function toParam(range: DateRange, today: string): string {
   const preset = PRESETS.find((p) => {
+    if (presetGranularity(p) === "hour") return false;
     const r = presetRange(p, today);
     return r.from === range.from && r.to === range.to;
   });

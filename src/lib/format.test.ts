@@ -11,6 +11,7 @@ import {
   formatElapsed,
   formatMoney,
   formatNumber,
+  formatRangeLabel,
   formatShare,
   formatTime,
   outboundLabel,
@@ -136,5 +137,11 @@ describe("formatElapsed", () => {
     [2 * 24 * 3_600_000, "2d"],
   ])("%d ms -> %s", (ms, label) => {
     expect(formatElapsed(ms)).toBe(label);
+  });
+
+  test("custom ranges read day first, with the year once unless it changes", () => {
+    expect(formatRangeLabel({ from: "2026-10-01", to: "2026-10-14" })).toBe("1 Oct – 14 Oct 2026");
+    expect(formatRangeLabel({ from: "2025-12-28", to: "2026-01-03" })).toBe("28 Dec 2025 – 3 Jan 2026");
+    expect(formatRangeLabel({ from: "2026-10-14", to: "2026-10-14" })).toBe("14 Oct 2026");
   });
 });

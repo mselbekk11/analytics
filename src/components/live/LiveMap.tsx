@@ -2,14 +2,16 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import { visitorPath } from "@/components/customers/Customers";
 import { displayName, persona } from "@/lib/names";
 import type { LiveData } from "./Live";
 
-// Free vector tiles, no key needed (https://openfreemap.org)
-const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+// Free vector tiles, no key needed (https://openfreemap.org): positron on the light theme
+const styleUrl = (theme: string | undefined) =>
+  `https://tiles.openfreemap.org/styles/${theme === "light" ? "positron" : "dark"}`;
 // MapLibre's web worker, copied into public/ by `npm run build:map-worker`: the bundler
 // doesn't emit the file maplibre-gl looks for next to itself
 const WORKER_URL = "/maplibre-gl-worker.js";
@@ -23,6 +25,10 @@ type Placed = Visitor & { lat: number; lon: number };
 /** A MapLibre map with one dot per visitor online now; a dot opens the visitor's profile. */
 export default function LiveMap({ domain, visitors }: { domain: string; visitors: Visitor[] }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const style = styleUrl(resolvedTheme);
+  // The style the map was created with or last switched to
+  const styleRef = useRef(style);
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const markers = useRef(new Map<string, Marker>());
@@ -40,7 +46,7 @@ export default function LiveMap({ domain, visitors }: { domain: string; visitors
         setWorkerUrl(WORKER_URL);
         map.current = new Map({
           container: container.current,
-          style: STYLE_URL,
+          style: styleRef.current,
           center: [0, 20],
           zoom: 0.8,
           attributionControl: { compact: true },
@@ -57,6 +63,14 @@ export default function LiveMap({ domain, visitors }: { domain: string; visitors
       map.current = null;
     };
   }, []);
+
+  // Dots are DOM markers, so they stay put when the style changes
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || m === null || styleRef.current === style) return;
+    styleRef.current = style;
+    m.setStyle(style);
+  }, [ready, style]);
 
   useEffect(() => {
     const m = map.current;
@@ -99,7 +113,7 @@ export default function LiveMap({ domain, visitors }: { domain: string; visitors
   }, [ready, visitors, domain, router]);
 
   if (failed) {
-    return <p className="p-4 text-sm text-muted">The map could not load.</p>;
+    return <p className="p-4 text-sm text-muted-foreground">The map could not load.</p>;
   }
   return <div ref={container} className="size-full" />;
 }

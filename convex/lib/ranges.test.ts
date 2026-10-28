@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   addDays,
+  DEFAULT_PRESET,
   eachDate,
   formatRangeParam,
   isDate,
@@ -8,6 +9,8 @@ import {
   nextRange,
   parseRangeParam,
   percentChange,
+  PRESETS,
+  presetGranularity,
   presetRange,
   previousRange,
   rangeDays,
@@ -101,15 +104,63 @@ describe("parseRangeParam", () => {
     expect(parseRangeParam(formatRangeParam(range), today)).toEqual({ range, preset: null });
   });
 
-  test.each([null, "", "14d", "2026-09-30_2026-09-01", "2024-01-01_2026-01-01", "garbage"])(
-    "falls back to 30d for %j",
+  test.each([null, "", "14d", "1h", "2026-09-30_2026-09-01", "2024-01-01_2026-01-01", "garbage"])(
+    "falls back to 7d for %j",
     (param) => {
       expect(parseRangeParam(param, today)).toEqual({
-        range: { from: "2026-09-15", to: today },
-        preset: "30d",
+        range: { from: "2026-10-08", to: today },
+        preset: "7d",
       });
     },
   );
+
+  test("old bookmarks keep working", () => {
+    expect(parseRangeParam("30d", today)).toEqual({ range: { from: "2026-09-15", to: today }, preset: "30d" });
+    expect(parseRangeParam("90d", today)).toEqual({ range: { from: "2026-07-17", to: today }, preset: "90d" });
+    expect(parseRangeParam("2026-09-01_2026-09-30", today)).toEqual({
+      range: { from: "2026-09-01", to: "2026-09-30" },
+      preset: null,
+    });
+  });
+
+  test.each(PRESETS.map((p) => [p]))("reads %s and gives it back by name", (p) => {
+    expect(parseRangeParam(p, today)).toEqual({ range: presetRange(p, today), preset: p });
+  });
+});
+
+describe("presets", () => {
+  const today = "2026-10-14";
+
+  test("the default is the last 7 days", () => {
+    expect(DEFAULT_PRESET).toBe("7d");
+  });
+
+  test("today and yesterday are one day each, and 24h covers both", () => {
+    expect(presetRange("today", today)).toEqual({ from: today, to: today });
+    expect(presetRange("yesterday", today)).toEqual({ from: "2026-10-13", to: "2026-10-13" });
+    expect(presetRange("yesterday", "2026-01-01")).toEqual({ from: "2025-12-31", to: "2025-12-31" });
+    expect(presetRange("24h", today)).toEqual({ from: "2026-10-13", to: today });
+  });
+
+  test("6m is 183 days and 12m is 365 days, both ending today", () => {
+    expect(presetRange("6m", today)).toEqual({ from: "2026-04-15", to: today });
+    expect(rangeDays(presetRange("6m", today))).toBe(183);
+    expect(presetRange("12m", today)).toEqual({ from: "2025-10-15", to: today });
+    expect(rangeDays(presetRange("12m", today))).toBe(365);
+    expect(isValidRange(presetRange("12m", today))).toBe(true);
+  });
+
+  test("the previous period of today is yesterday", () => {
+    expect(previousRange(presetRange("today", today))).toEqual(presetRange("yesterday", today));
+  });
+
+  test("today, yesterday and 24h are hourly; everything else, custom included, is daily", () => {
+    expect(presetGranularity("today")).toBe("hour");
+    expect(presetGranularity("yesterday")).toBe("hour");
+    expect(presetGranularity("24h")).toBe("hour");
+    for (const p of ["7d", "30d", "90d", "6m", "12m"] as const) expect(presetGranularity(p)).toBe("day");
+    expect(presetGranularity(null)).toBe("day");
+  });
 });
 
 describe("percentChange", () => {

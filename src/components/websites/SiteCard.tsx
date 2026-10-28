@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FiSettings } from "react-icons/fi";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, YAxis } from "recharts";
 import { formatNumber, truncateMiddle } from "@/lib/format";
-import { sitePath } from "@/components/dashboard/SiteHeader";
+import { sitePath } from "@/components/TopBar";
 
 type Day = { date: string; pageviews: number; visitors: number };
 
@@ -29,7 +29,7 @@ export default function SiteCard({
   days: Day[];
 }) {
   return (
-    <div className="group relative flex flex-col rounded-lg border border-line bg-panel/40 transition-colors hover:border-zinc-600">
+    <div className="group relative flex flex-col rounded-lg border border-line bg-panel/40 transition-colors hover:border-ring">
       <div className="h-32 px-3 pt-3" aria-hidden>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={days} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
@@ -41,7 +41,7 @@ export default function SiteCard({
                 </linearGradient>
               ))}
             </defs>
-            <CartesianGrid stroke="#27272a" />
+            <CartesianGrid stroke="var(--border)" />
             {/* Keeps a flat line at the bottom for a site with no traffic yet */}
             <YAxis hide domain={[0, (max: number) => Math.max(max, 1)]} />
             {SERIES.map((s) => (
@@ -60,14 +60,14 @@ export default function SiteCard({
       </div>
       <div className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-4">
         <Link
-          href={sitePath(domain, "visitors")}
+          href={sitePath(domain, "analytics")}
           title={domain}
           className="min-w-0 text-xl text-strong after:absolute after:inset-0 after:rounded-lg"
         >
           {truncateMiddle(domain, 22)}
         </Link>
         <span
-          className="text-xl text-accent tabular-nums"
+          className="text-xl text-link tabular-nums"
           title="Pageviews in the last 30 days"
         >
           {formatNumber(pageviews)}
@@ -76,7 +76,7 @@ export default function SiteCard({
       <Link
         href={sitePath(domain, "settings")}
         aria-label={`${domain} settings`}
-        className="absolute top-2 right-2 z-10 rounded p-1.5 text-muted opacity-60 hover:bg-line hover:text-strong hover:opacity-100 group-hover:opacity-100"
+        className="absolute top-2 right-2 z-10 rounded p-1.5 text-muted-foreground opacity-60 hover:bg-line hover:text-strong hover:opacity-100 group-hover:opacity-100"
       >
         <FiSettings aria-hidden />
       </Link>

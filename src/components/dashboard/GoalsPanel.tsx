@@ -39,7 +39,7 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
           ))}
         </ul>
       ) : visible.length === 0 ? (
-        <p className="py-2 text-sm text-muted">
+        <p className="py-2 text-sm text-muted-foreground">
           No goals completed in this period.{" "}
           <Link href={`/sites/${encodeURIComponent(domain)}/settings#goals`} className="underline hover:text-strong">
             Set up goals
@@ -48,7 +48,7 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-muted">
+            <tr className="text-left text-xs text-muted-foreground">
               <th className="pb-1 font-normal">Goal</th>
               <th className="pb-1 text-right font-normal">Completions</th>
               <th className="pb-1 text-right font-normal">Visitors</th>
@@ -70,7 +70,7 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
                       onClick={() => select("goal", row.name)}
                       aria-pressed={row.name === active}
                       title={row.name === active ? "Remove this filter" : "Filter by this goal"}
-                      className={`-mx-1 rounded px-1 text-strong hover:bg-line/50 ${row.name === active ? "ring-1 ring-accent/60" : ""}`}
+                      className={`-mx-1 rounded px-1 text-strong hover:bg-line/50 ${row.name === active ? "ring-1 ring-link/60" : ""}`}
                     >
                       {row.name}
                     </button>
@@ -78,12 +78,12 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
                     <span className="text-strong">{row.name}</span>
                   )}
                   {row.name === data?.keyGoal && (
-                    <span className="ml-2 rounded bg-accent/15 px-1.5 py-0.5 text-xs text-accent">
+                    <span className="ml-2 rounded bg-link/15 px-1.5 py-0.5 text-xs text-link">
                       key goal
                     </span>
                   )}
                 </td>
-                <td className="w-24 text-right font-medium text-accent tabular-nums">
+                <td className="w-24 text-right font-medium text-link tabular-nums">
                   {formatNumber(row.completions)}
                 </td>
                 <td className="w-20 text-right tabular-nums">{formatNumber(row.visitors)}</td>
@@ -101,7 +101,7 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
             type="button"
             onClick={() => setPage(current - 1)}
             disabled={current === 0}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label="Previous Goals page"
           >
             <FiChevronLeft />
@@ -111,7 +111,7 @@ export default function GoalsPanel({ domain, range, view }: { domain: string; ra
             type="button"
             onClick={() => setPage(current + 1)}
             disabled={current === pages - 1}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label="Next Goals page"
           >
             <FiChevronRight />

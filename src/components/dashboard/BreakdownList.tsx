@@ -52,7 +52,7 @@ export default function BreakdownList({ title, header, variant, rows }: Props) {
           ))}
         </ul>
       ) : visible.length === 0 ? (
-        <p className="py-2 text-sm text-muted">No data for this period</p>
+        <p className="py-2 text-sm text-muted-foreground">No data for this period</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {visible.map((row) =>
@@ -66,7 +66,7 @@ export default function BreakdownList({ title, header, variant, rows }: Props) {
             type="button"
             onClick={() => setPage(current - 1)}
             disabled={current === 0}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label={`Previous ${title} page`}
           >
             <FiChevronLeft />
@@ -76,7 +76,7 @@ export default function BreakdownList({ title, header, variant, rows }: Props) {
             type="button"
             onClick={() => setPage(current + 1)}
             disabled={current === pages - 1}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label={`Next ${title} page`}
           >
             <FiChevronRight />
@@ -91,7 +91,7 @@ function CountRow({ row }: { row: BreakdownRow }) {
   return (
     <li className="flex h-7 items-center gap-3">
       <Selectable row={row} className="gap-3">
-        <span className="w-10 shrink-0 font-medium text-accent tabular-nums text-sm">{row.value}</span>
+        <span className="w-10 shrink-0 font-medium text-link tabular-nums text-sm">{row.value}</span>
         {row.icon && <span className="flex size-4 shrink-0 items-center justify-center">{row.icon}</span>}
         <span className="min-w-0 truncate text-sm">{row.label}</span>
       </Selectable>
@@ -104,7 +104,7 @@ function CountRow({ row }: { row: BreakdownRow }) {
 function ShareRow({ row }: { row: BreakdownRow }) {
   return (
     <li className="flex h-7 items-center gap-3">
-      <span className="flex w-7 shrink-0 justify-center text-lg text-muted">{row.icon}</span>
+      <span className="flex w-7 shrink-0 justify-center text-lg text-muted-foreground">{row.icon}</span>
       <Selectable row={row} className="relative h-full">
         <div
           className="absolute inset-y-0 left-0 rounded bg-bar/60"
@@ -130,7 +130,7 @@ function Selectable({ row, className, children }: { row: BreakdownRow; className
       onClick={row.onSelect}
       aria-pressed={row.active}
       title={row.active ? "Remove this filter" : "Filter by this"}
-      className={`${base} -mx-1 px-1 text-left hover:bg-line/50 ${row.active ? "ring-1 ring-accent/60" : ""}`}
+      className={`${base} -mx-1 px-1 text-left hover:bg-line/50 ${row.active ? "ring-1 ring-link/60" : ""}`}
     >
       {children}
     </button>
@@ -145,7 +145,7 @@ function External({ row }: { row: BreakdownRow }) {
       target="_blank"
       rel="noopener noreferrer nofollow"
       aria-label="Open in a new tab"
-      className="shrink-0 text-muted hover:text-accent"
+      className="shrink-0 text-muted-foreground hover:text-link"
     >
       <FiExternalLink aria-hidden className="size-3.5" />
     </a>

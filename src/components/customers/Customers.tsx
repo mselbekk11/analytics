@@ -7,7 +7,7 @@ import { Authenticated, AuthLoading, useQuery } from "convex/react";
 import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import { api } from "../../../convex/_generated/api";
 import { SourceIcon } from "@/components/dashboard/Breakdowns";
-import SiteHeader from "@/components/dashboard/SiteHeader";
+import TopBar from "@/components/TopBar";
 import { countryFlag, formatDateTime, formatElapsed, formatMoney, formatNumber } from "@/lib/format";
 import { displayName } from "@/lib/names";
 import VisitorAvatar from "./VisitorAvatar";
@@ -29,10 +29,10 @@ export default function Customers() {
   const domain = decodeURIComponent(params.domain);
   return (
     <div className="flex flex-1 flex-col">
-      <SiteHeader domain={domain} section="customers" />
+      <TopBar site={{ domain, section: "customers" }} />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
-          <p className="text-sm text-muted">Connecting…</p>
+          <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
         <Authenticated>
           <Site domain={domain} />
@@ -44,10 +44,10 @@ export default function Customers() {
 
 function Site({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
-  if (site === undefined) return <p className="text-sm text-muted">Loading…</p>;
+  if (site === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (site === null) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         No site called <span className="font-mono">{domain}</span> in your account.{" "}
         <Link href="/websites" className="underline">
           Back to your sites
@@ -88,7 +88,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
   }
   if (data.kind === null) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         Customers are visitors who paid, or who completed the site&apos;s key goal. Connect Stripe or the
         payments API, or pick a key goal, in{" "}
         <Link href={`/sites/${encodeURIComponent(domain)}/settings`} className="underline hover:text-strong">
@@ -123,7 +123,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
                 type="button"
                 onClick={() => setKind(k)}
                 aria-pressed={k === data.kind}
-                className={`rounded px-3 py-1 ${k === data.kind ? "bg-line text-strong" : "text-muted hover:text-strong"}`}
+                className={`rounded px-3 py-1 ${k === data.kind ? "bg-line text-strong" : "text-muted-foreground hover:text-strong"}`}
               >
                 {label(k)}
               </button>
@@ -133,7 +133,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
       </div>
 
       {data.rows.length === 0 ? (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-muted-foreground">
           {revenue
             ? "No payments linked to a visitor yet."
             : `No visitor has completed the key goal "${data.keyGoal}" yet.`}
@@ -142,7 +142,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
         <section className="overflow-x-auto rounded-lg border border-line bg-panel/40">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
+              <tr className="border-b border-line text-left text-xs text-muted-foreground">
                 <th className="px-4 py-2 font-normal">Customer</th>
                 <th className="hidden px-4 py-2 font-normal md:table-cell">First source</th>
                 <th className="px-4 py-2 font-normal" title={revenue ? "Source of the session the first payment was credited to" : "Source of the session the key goal was first completed in"}>
@@ -184,7 +184,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
                         {formatMoney(c.revenueMinor, data.currency)}
                       </td>
                     )}
-                    <td className="hidden px-4 py-2 whitespace-nowrap text-muted sm:table-cell">
+                    <td className="hidden px-4 py-2 whitespace-nowrap text-muted-foreground sm:table-cell">
                       {formatDateTime(c.convertedAt, timezone)}
                     </td>
                     <td className="hidden px-4 py-2 text-right tabular-nums sm:table-cell">
@@ -204,7 +204,7 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
             type="button"
             onClick={() => setPage(current - 1)}
             disabled={current === 0}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label="Previous page"
           >
             <FiChevronLeft />
@@ -214,26 +214,26 @@ function CustomerList({ domain, timezone }: { domain: string; timezone: string }
             type="button"
             onClick={() => setPage(current + 1)}
             disabled={current === pages - 1}
-            className="rounded bg-line p-1.5 text-muted hover:text-strong disabled:opacity-30"
+            className="rounded bg-line p-1.5 text-muted-foreground hover:text-strong disabled:opacity-30"
             aria-label="Next page"
           >
             <FiChevronRight />
           </button>
         </footer>
       )}
-      {data.more && <p className="text-xs text-muted">Showing the newest {formatNumber(data.rows.length)}.</p>}
+      {data.more && <p className="text-xs text-muted-foreground">Showing the newest {formatNumber(data.rows.length)}.</p>}
     </div>
   );
 }
 
 /** A source with its favicon and channel; "–" before sources were tracked. */
 export function Source({ source, channel }: { source: string | null; channel: string | null }) {
-  if (source === null) return <span className="text-muted">–</span>;
+  if (source === null) return <span className="text-muted-foreground">–</span>;
   return (
     <span className="flex min-w-0 items-center gap-2">
       <SourceIcon key={source} source={source} />
       <span className="truncate">{source}</span>
-      {channel && channel !== source && <span className="hidden text-xs text-muted lg:inline">{channel}</span>}
+      {channel && channel !== source && <span className="hidden text-xs text-muted-foreground lg:inline">{channel}</span>}
     </span>
   );
 }

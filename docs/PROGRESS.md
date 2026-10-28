@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-28 (5h live). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-28 (design v2, Phases 1 to 3 built). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -20,6 +20,9 @@ Last updated: 2026-10-28 (5h live). Read this together with [PLAN.md](PLAN.md) (
 | 5g: Click to filter | **Live in production since 2026-10-28** (commit `321236c`, Vercel deploy succeeded; `stats.filtered` is on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check. |
 | 5h: Live map | **Live in production since 2026-10-28** (commit `a1b7c72`, Vercel deploy succeeded; `/maplibre-gl-worker.js` is served and `stats.liveFeed` is on Convex prod). No schema change or backfill. Awaiting the owner's "Done when" check. |
 | 6 | Not started. |
+| Design v2, Phase 1: shadcn foundation and theme | **Pushed, awaiting owner review.** shadcn/ui, light and dark tokens, next-themes with a temporary toggle, theme-aware live map. |
+| Design v2, Phase 2: sticky top bar | **Pushed, awaiting owner review.** One sticky `TopBar` on every signed-in page: logo, site switcher menu, "N online", theme toggle, user button, and Analytics / Live / Customers / Settings tabs. |
+| Design v2, Phase 3: page header and day ranges | **Pushed, awaiting owner review.** "Analytics" header with the range in words, Today \| 24h \| 7d \| 30d, a menu with every preset and a two-month Custom range calendar, a disabled Filter button, filter chips as badges. Default range is now 7d. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -91,9 +94,9 @@ convex/
   *.test.ts          convex-test suites
 src/
   proxy.ts           clerkMiddleware; everything protected except /sign-in, /sign-up, /api/collect, /script.js
-  app/layout.tsx     ClerkProvider (outer) > ConvexClientProvider
+  app/layout.tsx     ThemeProvider (outer) > ClerkProvider > ConvexClientProvider
   app/page.tsx       redirects to /websites (the proxy sends signed-out visitors to /sign-in first)
-  app/websites/page.tsx         card grid (client Websites)
+  app/websites/page.tsx         card grid (Suspense > client Websites; ?add=1 opens the add form)
   app/sites/[domain]/page.tsx   site dashboard (Suspense > client SiteDashboard)
   app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
   app/sites/[domain]/customers/page.tsx  customers list (Suspense > client Customers)
@@ -103,9 +106,13 @@ src/
   app/api/collect/route.ts   ingest endpoint
   app/api/payments/route.ts  payments API (Bearer key, real status codes)
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
-  components/        ConvexClientProvider, AddWebsiteForm (+ Snippet), CopyButton, TimezoneSelect
-  components/dashboard/   SiteHeader (favicon, switcher, Visitors/Settings tabs), SiteDashboard, SiteSwitcher,
-                          RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, FilterBar, useNow
+  components/        ConvexClientProvider, ThemeProvider (next-themes), ThemeToggle, AddWebsiteForm (+ Snippet),
+                     CopyButton, TimezoneSelect, TopBar (sticky bar + tabs, sitePath, SiteSection),
+                     SiteSwitcher (shadcn Dropdown Menu), SiteFavicon
+  components/ui/     shadcn/ui components, added with `npx shadcn@latest add` (components.json: base-nova,
+                     Base UI, neutral, lucide)
+  lib/utils.ts       shadcn's cn()
+  components/dashboard/   SiteDashboard, RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, FilterBar, useNow
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
   components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
@@ -134,6 +141,9 @@ Checks at the end of Phase 5d: the same four clean, `npm test` 288 tests passing
 Checks at the end of Phase 5f: the same four clean, `npm test` 354 tests passing. On Convex dev in Chrome: `/sites/localhost/customers` listed the 5e test visitor (dev@example.com, first source Direct, credited source test, $64.00, 1h 7m to convert); clicking it opened the profile with both sessions, the second marked "credited $64.00" with campaign phase5e, and the two payments linked by checkout metadata and return page. No console errors.
 Checks at the end of Phase 5g: the same four clean, `npm test` 366 tests passing. On Convex dev in Chrome (`/sites/localhost?range=7d`): clicking AI under Channels set `?f=channel:AI` and changed every tile (9 → 1 visitor, $64 → $0), the chart and every list; removing the chip brought back the rollup view. Referral showed the $64 credited to it; adding `/landing` from Pages combined the two (`f=channel:Referral,page:/landing`). A 150-day range with a filter showed the 90-day notice. No console errors.
 Checks at the end of Phase 5h: the same four clean, `npm test` 368 tests passing. On Convex dev in Chrome (`/sites/localhost/live`): a curl hit with Vercel's geo headers for Oslo put one marker ("rose peacock", Oslo, ChatGPT, the page) on the map, the feed listed it with the older test goals and payments, and clicking the marker opened `/sites/localhost/visitors/<id>`. No console errors. The automation tab stayed in the background (`document.hidden`), so the tiles never painted there; the style, tile and worker requests all returned 200.
+Checks at the end of design v2 Phase 1: the same four clean, `npm test` 368 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/websites`, the dashboard, settings, customers, a visitor profile and Live all read correctly in light and dark; the toggle switched the theme, which survived a full reload and showed no console errors; the theme script is the first thing in `<body>` of the server HTML (no flash); Clerk's user menu matched both themes; the live map loaded `positron` in light mode and switched to `dark` live when toggled. The signed-in owner can't see the sign-in page (Clerk redirects), so sign-in was not looked at.
+Checks at the end of design v2 Phase 2: the same four clean, `npm test` 368 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: the bar stayed on top while the dashboard scrolled; "0 online" matched the old "online now" tile on `localhost` and was missing on the cookieless `advancedortholabsf.com`; the switcher menu listed both sites with a check on the current one; switching from `localhost/settings?range=30d` opened `advancedortholabsf.com/settings?range=30d`; "Add site" opened `/websites?add=1` with the form open; `/websites` shows "All sites" in the switcher and no tabs; a visitor profile kept Customers active; light and dark both read well. In a 375px iframe the bar is one 56px row plus the tabs, the domain truncates and the page doesn't scroll sideways. No console errors.
+Checks at the end of design v2 Phase 3: the same four clean, `npm test` 384 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/sites/localhost` with no `?range=` opened on Last 7 days with 7d lit; clicking 30d set `?range=30d` and lit only 30d; the menu listed every preset with a check on the current one and Today, Yesterday and Last 24 hours greyed out; Custom range… opened the two-month calendar under the menu, 14 Sep – 3 Oct applied as `?range=2026-09-14_2026-10-03` with "14 Sep – 3 Oct 2026" under the title and no segment lit; `?range=today` opened Last 7 days; `?range=12m` with two filters showed both badges and the 90-day notice in its bordered block, and removing a badge updated `?f=`; the Filter tooltip showed "Coming soon"; light and dark both read well. Not yet looked at on a phone.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
@@ -276,6 +286,33 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **Markers go on as soon as the map exists**, not on its `load` event, which waits for the first tiles.
 - **Cookieless sites** have no sessions, so their map stays empty (the page says so); the feed still lists their pageviews.
 
+### Design v2, Phase 1 (shadcn foundation and theme)
+
+- **shadcn/ui** initialised with `npx shadcn@latest init --defaults` (style `base-nova`, which uses Base UI rather than Radix, so custom triggers use `render`, not `asChild`; neutral base colour; lucide icons). It adds `shadcn` itself as a dependency (for `shadcn/tailwind.css`), `cn` (shadcn's replacement for clsx + tailwind-merge), `class-variance-authority`, `tw-animate-css` and `@base-ui/react`.
+- **Tokens:** shadcn's neutral light set on `:root` and dark set on `.dark` in `globals.css`. `--chart-1` is the foreground and `--chart-2..5` are greys in both themes (for the monochrome chart in Phase 5).
+- **Old colour names:** `panel`, `bar`, `up` and `down` are now per-theme variables, and `line` and `strong` point at `--border` and `--foreground`. **`muted` and `accent` could not stay as aliases**, because shadcn uses both names for background colours (its components use `bg-muted` and `bg-accent`). So every `text-muted` became `text-muted-foreground` (99 uses), and the old blue `accent` became **`link`** (`text-link`, `bg-link/15` and so on). The light `link`, `up` and `down` are darker shades so they stay readable on white. Buttons that hard-coded `text-zinc-900` on `bg-strong` now use `bg-primary text-primary-foreground`. The chart grid, axes and tooltip use `var(--border)`, `var(--muted-foreground)` and `var(--popover)`. The blue, pink and green series colours stay until Phase 5.
+- **Theme:** `next-themes` with the class strategy, following the system until the owner picks one (stored in `localStorage` as `theme`). Its inline script sets the class before the page paints. `suppressHydrationWarning` is on `<html>`. The toggle (sun in dark, moon in light) sits next to the user button in the top bar.
+- **Clerk follows the theme without an `appearance` theme**, because next-themes sets `color-scheme` on `<html>` and Clerk's default theme reads it. The plan said `@clerk/themes`. That package is now `@clerk/ui/themes`, and its `shadcn` theme froze the page as soon as the owner was signed in (renderer unresponsive, plus a React #418 hydration error). It also pulled `@clerk/shared` 4.40 → 4.43. Both were removed, and the lockfile keeps Clerk's earlier versions.
+- **Live map:** OpenFreeMap `positron` in light mode and `dark` in dark mode. `LiveMap` calls `setStyle` when the theme changes, and the markers (DOM elements) stay put.
+
+### Design v2, Phase 2 (sticky top bar)
+
+- **`TopBar`** (`src/components/TopBar.tsx`) replaces `SiteHeader` and the websites list's own header. It takes `site={{ domain, section }}` on a site's pages and nothing on `/websites` (switcher shows "All sites", no tabs, no online count). It's `sticky top-0` with a translucent, blurred background, so content scrolls under it. The bar's row is 56px; the tabs sit on its bottom border (`-mb-px`) and scroll sideways on narrow screens. The content width stays `max-w-5xl` to line up with the pages; the example is a little wider, which can change when the dashboard content is rebuilt.
+- **The section `visitors` is now `analytics`** (`sitePath(domain, "analytics")` is still `/sites/[domain]`). Tabs no longer have icons and "All sites" left the tab row (it's in the switcher and the logo).
+- **Switching sites keeps the section and `?range=` only.** `?f=` filters are dropped, because they name pages, goals and sources of the old site.
+- **"N online"** uses the same 5-minute window and 30-second refresh as before (`stats.online`), and needs `sites.get` to know whether the site has visitor ids; both queries are shared with the page's own subscriptions. The dashboard's "online now" tile stays until the stat row is replaced in Phase 4.
+- **The add form on `/websites` follows `?add=1`** (the button toggles the parameter with `router.replace`), so "Add site" opens it from anywhere, including from `/websites` itself. The page now renders inside `<Suspense>` because it reads the URL.
+- **Menu items navigate with `router.push` in `onClick`**, not links, so middle-click doesn't open a new tab from the switcher. `Menu.LinkItem` exists in Base UI 1.9 if that's wanted later.
+
+### Design v2, Phase 3 (page header and day ranges)
+
+- **Presets** are `today`, `yesterday`, `24h`, `7d`, `30d`, `90d`, `6m` (183 days) and `12m` (365 days), plus the custom `YYYY-MM-DD_YYYY-MM-DD`. `DEFAULT_PRESET` is `7d`. `presetGranularity` says `hour` for today, yesterday and 24h (custom ranges are `day`), and `PRESET_LABELS` holds the names ("Last 7 days"). `presetRange("24h")` is yesterday and today, the calendar days the window touches; its exact hours come with Phase 10.
+- **Hour presets are switched off by `HOURLY_RANGES = false`** in `SiteDashboard`: they show disabled in the segmented control and the menu, and a `?range=today` (or `yesterday`, `24h`) URL opens Last 7 days without rewriting the URL. Phase 10 flips the flag.
+- **`RangeControls`** replaces `RangePicker` (the ‹ › arrows are gone). The segmented control is a shadcn Toggle Group; clicking the lit segment again does nothing. Custom range… opens a Popover anchored under the menu button (`PopoverContent` gained an `anchor` prop) with a two-month range Calendar (`react-day-picker` 10, added by the shadcn CLI with `date-fns`); days after the site's today are disabled, and Apply needs a span of at most 365 days. A custom range equal to a day preset ending today is written back as the preset's name.
+- **The range in words** under the title is the preset's label, or `formatRangeLabel` for custom ranges: day first as the PRD shows ("1 Oct – 14 Oct 2026"), unlike the rest of the app's "Oct 1".
+- **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
+- **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -293,6 +330,8 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **Next.js 16.4.0 has a known security vulnerability.** `npm run build` and `npm run dev` each stopped once (2026-10-27) with a "SecurityFatalError" upgrade notice and passed on retry. Not upgraded yet; see Open items.
 - **Edit the script in `src/script/script.js`**, not `public/script.js` (generated and git-ignored). A running `next dev` keeps serving the old copy until you run `npm run build:script` or restart dev.
 - **Clicks from the Claude in Chrome extension don't reach the page's click listeners** (0 events on a test listener), so test `data-goal` and outbound links by clicking yourself or with `element.click()` in the console.
+- **Don't pass Clerk's `shadcn` theme (`@clerk/ui/themes`) to `ClerkProvider`**: with Clerk 7.9 and React 19.3 it froze every signed-in page (see the design v2 Phase 1 decisions).
+- **A running `next dev` can hang after new packages are installed** (pages never finish loading). Restart it, and delete `.next` if that isn't enough.
 - **Read `convex/_generated/ai/guidelines.md`** before writing Convex code, and the Next.js docs in `node_modules/next/dist/docs/` (AGENTS.md).
 
 ## How to test locally
@@ -319,7 +358,16 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: check 5h on production, then Phase 6
+## Next: review design v2 Phases 1 to 3, then Phase 4
+
+All three pushed to `main` on 2026-10-28 and deployed. Owner:
+
+1. Restart `npm run dev` if it was running before the new packages were installed (Phase 3 added `react-day-picker` and `date-fns`), then check each page in both themes, the switcher menu, "N online", the bar, and the new range header (segments, menu, Custom range…) on your phone too.
+2. `public/design-v2/` is git-ignored (anything in `public/` is served by the live site), so the screenshots stay local.
+
+Then Phase 4 (joined stat tiles).
+
+## Earlier: check 5h on production, then Phase 6
 
 Pushed to `main` on 2026-10-28 (commit `a1b7c72`) and live. Owner:
 

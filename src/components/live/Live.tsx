@@ -7,7 +7,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import { visitorPath } from "@/components/customers/Customers";
 import VisitorAvatar from "@/components/customers/VisitorAvatar";
-import SiteHeader from "@/components/dashboard/SiteHeader";
+import TopBar from "@/components/TopBar";
 import { useNow } from "@/components/dashboard/useNow";
 import { countryFlag, countryName, formatMoney, formatNumber, formatTime } from "@/lib/format";
 import { displayName } from "@/lib/names";
@@ -28,10 +28,10 @@ export default function Live() {
   const domain = decodeURIComponent(params.domain);
   return (
     <div className="flex flex-1 flex-col">
-      <SiteHeader domain={domain} section="live" />
+      <TopBar site={{ domain, section: "live" }} />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
-          <p className="text-sm text-muted">Connecting…</p>
+          <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
         <Authenticated>
           <Site domain={domain} />
@@ -43,10 +43,10 @@ export default function Live() {
 
 function Site({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
-  if (site === undefined) return <p className="text-sm text-muted">Loading…</p>;
+  if (site === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (site === null) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         No site called <span className="font-mono">{domain}</span> in your account.{" "}
         <Link href="/websites" className="underline">
           Back to your sites
@@ -77,13 +77,13 @@ function LiveView({ domain, timezone, tracking }: { domain: string; timezone: st
             : `${formatNumber(visitors.length)}${data.moreVisitors ? "+" : ""} online now`}
         </h1>
         {unplaced > 0 && (
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted-foreground">
             {formatNumber(unplaced)} without a location {unplaced === 1 ? "is" : "are"} not on the map
           </p>
         )}
       </div>
       {!tracking && (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-muted-foreground">
           This site has no visitor ids yet (cookieless, or no hit from the current script), so the map
           stays empty. The feed still shows its pageviews.
         </p>
@@ -101,7 +101,7 @@ function LiveView({ domain, timezone, tracking }: { domain: string; timezone: st
 function Feed({ domain, timezone, rows }: { domain: string; timezone: string; rows: FeedRow[] | undefined }) {
   return (
     <section className="flex max-h-[28rem] flex-col rounded-lg border border-line bg-panel/40">
-      <h2 className="border-b border-line px-4 py-2 text-xs text-muted">Last 24 hours</h2>
+      <h2 className="border-b border-line px-4 py-2 text-xs text-muted-foreground">Last 24 hours</h2>
       {rows === undefined ? (
         <ul className="flex flex-col gap-2 p-4">
           {Array.from({ length: 6 }, (_, i) => (
@@ -109,7 +109,7 @@ function Feed({ domain, timezone, rows }: { domain: string; timezone: string; ro
           ))}
         </ul>
       ) : rows.length === 0 ? (
-        <p className="p-4 text-sm text-muted">Nothing yet. New pageviews show here as they happen.</p>
+        <p className="p-4 text-sm text-muted-foreground">Nothing yet. New pageviews show here as they happen.</p>
       ) : (
         <ul className="flex flex-col overflow-y-auto">
           {rows.map((row) => (
@@ -127,7 +127,7 @@ function FeedItem({ domain, timezone, row }: { domain: string; timezone: string;
   return (
     <li className="flex items-start gap-3 border-b border-line/60 px-4 py-2 text-sm last:border-b-0">
       {row.visitorId === null ? (
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-line text-muted" aria-hidden>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-line text-muted-foreground" aria-hidden>
           ?
         </span>
       ) : (
@@ -142,13 +142,13 @@ function FeedItem({ domain, timezone, row }: { domain: string; timezone: string;
               {name}
             </Link>
           )}
-          <time className="shrink-0 text-xs text-muted">{formatTime(row.ts, timezone)}</time>
+          <time className="shrink-0 text-xs text-muted-foreground">{formatTime(row.ts, timezone)}</time>
         </div>
-        <span className="truncate text-muted">
+        <span className="truncate text-muted-foreground">
           <Action row={row} />
         </span>
         {place !== null && (
-          <span className="truncate text-xs text-muted">
+          <span className="truncate text-xs text-muted-foreground">
             {row.country !== null && `${countryFlag(row.country)} `}
             {place}
           </span>
@@ -169,7 +169,7 @@ function Action({ row }: { row: FeedRow }) {
     case "goal":
       return (
         <>
-          completed <span className="text-accent">{row.goal}</span>
+          completed <span className="text-link">{row.goal}</span>
         </>
       );
     case "payment":

@@ -40,7 +40,7 @@ export default function AddWebsiteForm() {
     <div className="flex flex-col gap-4">
       <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1 text-sm">
-          <span className="text-muted">Domain</span>
+          <span className="text-muted-foreground">Domain</span>
           <input
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
@@ -50,13 +50,13 @@ export default function AddWebsiteForm() {
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Timezone</span>
+          <span className="text-muted-foreground">Timezone</span>
           <TimezoneSelect value={timezone} onChange={setTimezone} />
         </label>
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-strong px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           {pending ? "Adding…" : "Add website"}
         </button>

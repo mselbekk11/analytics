@@ -38,6 +38,19 @@ export function formatDate(date: string, withYear = false): string {
   return withYear ? `${label}, ${y}` : label;
 }
 
+/**
+ * A custom range in words, day first: "1 Oct – 14 Oct 2026", "28 Dec 2025 – 3 Jan 2026",
+ * or "14 Oct 2026" for one day. The year shows once unless the range crosses one.
+ */
+export function formatRangeLabel({ from, to }: { from: string; to: string }): string {
+  const day = (date: string, withYear: boolean) => {
+    const [y, m, d] = date.split("-");
+    return `${Number(d)} ${MONTHS[Number(m) - 1]}${withYear ? ` ${y}` : ""}`;
+  };
+  if (from === to) return day(to, true);
+  return `${day(from, from.slice(0, 4) !== to.slice(0, 4))} – ${day(to, true)}`;
+}
+
 let regionNames: Intl.DisplayNames | null = null;
 
 /** "US" -> "United States". Unknown or missing codes come back as given. */

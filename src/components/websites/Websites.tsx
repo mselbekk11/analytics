@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { UserButton } from "@clerk/nextjs";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Authenticated, AuthLoading, useQuery } from "convex/react";
-import { FiBarChart2, FiPlus, FiX } from "react-icons/fi";
+import { FiPlus, FiX } from "react-icons/fi";
 import { api } from "../../../convex/_generated/api";
 import AddWebsiteForm from "@/components/AddWebsiteForm";
+import TopBar from "@/components/TopBar";
 import { useNow } from "@/components/dashboard/useNow";
 import SiteCard from "./SiteCard";
 
@@ -19,17 +19,10 @@ type Sort = "pageviews" | "name";
 export default function Websites() {
   return (
     <div className="flex flex-1 flex-col">
-      <header className="border-b border-line bg-panel/40">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-6 sm:px-6">
-          <Link href="/websites" className="flex items-center gap-2 text-xl text-strong">
-            <FiBarChart2 aria-hidden className="text-accent" /> Analytics
-          </Link>
-          <UserButton />
-        </div>
-      </header>
+      <TopBar />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
-          <p className="text-sm text-muted">Connecting…</p>
+          <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
         <Authenticated>
           <SiteGrid />
@@ -44,7 +37,18 @@ function SiteGrid() {
   const sites = useQuery(api.sites.listWithStats, { now });
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<Sort>("pageviews");
-  const [adding, setAdding] = useState(false);
+  // The add form is open while the URL has ?add=1, so the switcher's "Add site" opens it
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const adding = searchParams.get("add") === "1";
+  function setAdding(open: boolean) {
+    const params = new URLSearchParams(searchParams);
+    if (open) params.set("add", "1");
+    else params.delete("add");
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
 
   if (sites === undefined) {
     return (
@@ -61,7 +65,7 @@ function SiteGrid() {
       <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel/40 p-6">
         <div>
           <h1 className="text-lg text-strong">Add your first website</h1>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-muted-foreground">
             Its timezone sets where each day starts and ends in the stats.
           </p>
         </div>
@@ -91,12 +95,12 @@ function SiteGrid() {
           className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm sm:w-56"
         />
         <div className="ml-auto flex items-center gap-4">
-          <span className="text-xs text-muted">
+          <span className="text-xs text-muted-foreground">
             sort by{" "}
             <button
               type="button"
               onClick={() => setSort(sort === "name" ? "pageviews" : "name")}
-              className="text-accent underline underline-offset-2"
+              className="text-link underline underline-offset-2"
               title="Change sort order"
             >
               {sort}
@@ -106,7 +110,7 @@ function SiteGrid() {
             type="button"
             onClick={() => setAdding(!adding)}
             aria-expanded={adding}
-            className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-sm font-medium text-zinc-950"
+            className="flex items-center gap-1.5 rounded-full bg-link px-4 py-2 text-sm font-medium text-background"
           >
             {adding ? <FiX aria-hidden /> : <FiPlus aria-hidden />}
             Add website
@@ -121,7 +125,7 @@ function SiteGrid() {
       )}
 
       {shown.length === 0 ? (
-        <p className="text-sm text-muted">No websites match “{filter}”.</p>
+        <p className="text-sm text-muted-foreground">No websites match “{filter}”.</p>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((s) => (

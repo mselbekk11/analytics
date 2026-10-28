@@ -25,7 +25,7 @@ export default function StatTile({
 }: Props) {
   return (
     <div className="flex flex-col gap-1" title={title}>
-      <span className="text-sm text-muted">{label}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-2">
         {value === undefined ? (
           <div className="h-10 w-20 animate-pulse rounded bg-panel" />
@@ -34,7 +34,7 @@ export default function StatTile({
         )}
         {value !== undefined && incomparable && (
           <span
-            className="rounded bg-panel px-1.5 py-0.5 text-xs text-muted"
+            className="rounded bg-panel px-1.5 py-0.5 text-xs text-muted-foreground"
             title="Not comparable: visitor tracking started during the previous period"
           >
             –
@@ -56,7 +56,7 @@ function ChangeBadge({ change, lowerIsBetter }: { change: number; lowerIsBetter?
       ? "bg-up/15 text-up"
       : good < 0
         ? "bg-down/15 text-down"
-        : "bg-panel text-muted";
+        : "bg-panel text-muted-foreground";
   return (
     <span
       className={`rounded px-1.5 py-0.5 text-xs tabular-nums ${tone}`}

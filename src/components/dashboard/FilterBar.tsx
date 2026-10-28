@@ -1,8 +1,9 @@
 "use client";
 
-import { FiFilter, FiX } from "react-icons/fi";
+import { XIcon } from "lucide-react";
 import type { Dim } from "../../../convex/lib/dims";
 import type { Filter } from "../../../convex/lib/filters";
+import { Badge } from "@/components/ui/badge";
 import { cityLabel, countryName, deviceLabel, outboundLabel, referrerLabel, regionLabel } from "@/lib/format";
 
 const DIM_LABELS: Record<Dim, string> = {
@@ -47,7 +48,7 @@ function valueLabel({ dim, value }: Filter): string {
   }
 }
 
-/** The active filters as chips, each with a remove button, and "Clear" for all of them. */
+/** The active filters as small badges, each with a remove button, and "Clear" for all of them. */
 export default function FilterBar({
   filters,
   onRemove,
@@ -58,28 +59,24 @@ export default function FilterBar({
   onClear: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <FiFilter aria-hidden className="text-muted" />
+    <div className="flex flex-wrap items-center gap-1.5">
       {filters.map((f) => (
-        <span
-          key={f.dim}
-          className="flex max-w-full items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-0.5 pr-1 pl-3"
-        >
-          <span className="text-muted">{DIM_LABELS[f.dim]}:</span>
-          <span className="truncate text-strong">{valueLabel(f)}</span>
+        <Badge key={f.dim} variant="outline" className="h-6 max-w-full gap-1 pr-0.5 pl-2.5 font-normal">
+          <span className="text-muted-foreground">{DIM_LABELS[f.dim]}:</span>
+          <span className="truncate">{valueLabel(f)}</span>
           <button
             type="button"
             onClick={() => onRemove(f.dim)}
             aria-label={`Remove filter ${DIM_LABELS[f.dim]}: ${valueLabel(f)}`}
-            className="rounded-full p-1 text-muted hover:bg-line hover:text-strong"
+            className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <FiX aria-hidden className="size-3.5" />
+            <XIcon aria-hidden className="size-3" />
           </button>
-        </span>
+        </Badge>
       ))}
       {filters.length > 1 && (
-        <button type="button" onClick={onClear} className="px-1 text-muted hover:text-strong">
-          Clear
+        <button type="button" onClick={onClear} className="px-1 text-xs text-muted-foreground hover:text-foreground">
+          Clear all
         </button>
       )}
     </div>

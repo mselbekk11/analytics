@@ -158,7 +158,7 @@ function Tabbed({ domain, range, currency, view, tabs, title }: Props & { tabs: 
             aria-selected={t.dim === tab}
             onClick={() => setTab(t.dim)}
             className={
-              t.dim === tab ? "font-medium text-strong" : "font-medium text-muted hover:text-strong"
+              t.dim === tab ? "font-medium text-strong" : "font-medium text-muted-foreground hover:text-strong"
             }
           >
             {t.label}
@@ -170,7 +170,7 @@ function Tabbed({ domain, range, currency, view, tabs, title }: Props & { tabs: 
           value={campaignDim}
           onChange={(e) => setCampaignDim(e.target.value as Dim)}
           aria-label="Campaign tag"
-          className="ml-auto rounded border border-line bg-panel px-1.5 py-0.5 text-xs text-muted"
+          className="ml-auto rounded border border-line bg-panel px-1.5 py-0.5 text-xs text-muted-foreground"
         >
           {CAMPAIGN_DIMS.map((t) => (
             <option key={t.dim} value={t.dim}>
@@ -296,7 +296,7 @@ function rowIcon(dim: Dim, value: string): ReactNode {
 export function SourceIcon({ source }: { source: string }) {
   const domain = sourceDomain(source);
   const [failed, setFailed] = useState(domain === null);
-  if (failed || domain === null) return <FaGlobe aria-hidden className="text-muted" />;
+  if (failed || domain === null) return <FaGlobe aria-hidden className="text-muted-foreground" />;
   return (
     // eslint-disable-next-line @next/next/no-img-element -- external favicon, any size
     <img

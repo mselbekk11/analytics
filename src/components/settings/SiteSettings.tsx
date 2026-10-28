@@ -11,17 +11,17 @@ import { Snippet } from "@/components/AddWebsiteForm";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import { appOrigin, embedSnippet } from "@/lib/snippet";
-import SiteHeader from "@/components/dashboard/SiteHeader";
+import TopBar from "@/components/TopBar";
 
 export default function SiteSettings() {
   const params = useParams<{ domain: string }>();
   const domain = decodeURIComponent(params.domain);
   return (
     <div className="flex flex-1 flex-col">
-      <SiteHeader domain={domain} section="settings" />
+      <TopBar site={{ domain, section: "settings" }} />
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         <AuthLoading>
-          <p className="text-sm text-muted">Connecting…</p>
+          <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
         <Authenticated>
           <Settings domain={domain} />
@@ -36,11 +36,11 @@ function Settings({ domain }: { domain: string }) {
   // Set once the site is deleted, so the page does not flash "not found" while leaving
   const [removed, setRemoved] = useState(false);
 
-  if (removed) return <p className="text-sm text-muted">Deleted. Going back to your sites…</p>;
-  if (site === undefined) return <p className="text-sm text-muted">Loading…</p>;
+  if (removed) return <p className="text-sm text-muted-foreground">Deleted. Going back to your sites…</p>;
+  if (site === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (site === null) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         No site called <span className="font-mono">{domain}</span> in your account.{" "}
         <Link href="/websites" className="underline">
           Back to your sites
@@ -97,7 +97,7 @@ function Section({
     >
       <div className="flex flex-col gap-1">
         <h2 className={tone === "danger" ? "text-down" : "text-strong"}>{title}</h2>
-        <p className="text-sm text-muted">{description}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
       {children}
     </section>
@@ -194,7 +194,7 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
         <pre className="overflow-x-auto font-mono text-xs leading-5">{GOALS_SNIPPET}</pre>
       </div>
       <form onSubmit={save} className="flex flex-col gap-2 text-sm">
-        <label htmlFor="key-goal" className="text-muted">
+        <label htmlFor="key-goal" className="text-muted-foreground">
           Key goal: what counts as a conversion on this site, until it has revenue. Pick a
           recorded goal or type a name; leave empty for none.
         </label>
@@ -220,14 +220,14 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
           <button
             type="submit"
             disabled={pending || value.trim() === (keyGoal ?? "")}
-            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
           >
             {pending ? "Saving…" : "Save"}
           </button>
           {status && <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>}
         </div>
         {names !== undefined && names.length === 0 && (
-          <p className="text-muted">No goals recorded yet; they appear here after their first completion.</p>
+          <p className="text-muted-foreground">No goals recorded yet; they appear here after their first completion.</p>
         )}
       </form>
     </Section>
@@ -353,7 +353,7 @@ function RevenueForm({ domain, settings }: { domain: string; settings: RevenueSe
             <label
               key={value}
               className={`cursor-pointer rounded-md border px-3 py-1.5 ${
-                source === value ? "border-accent text-strong" : "border-line text-muted hover:text-strong"
+                source === value ? "border-link text-strong" : "border-line text-muted-foreground hover:text-strong"
               }`}
             >
               <input
@@ -372,7 +372,7 @@ function RevenueForm({ domain, settings }: { domain: string; settings: RevenueSe
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label htmlFor="currency" className="text-muted">
+          <label htmlFor="currency" className="text-muted-foreground">
             Currency
           </label>
           <select
@@ -393,7 +393,7 @@ function RevenueForm({ domain, settings }: { domain: string; settings: RevenueSe
           <button
             type="submit"
             disabled={pending || !changed}
-            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
           >
             {pending ? "Saving…" : "Save"}
           </button>
@@ -453,7 +453,7 @@ function StripeSetup({ domain, settings }: { domain: string; settings: RevenueSe
   return (
     <div className="flex flex-col gap-5 border-t border-line pt-4">
       <Step n={1} title="Add a webhook endpoint in Stripe">
-        <p className="text-muted">
+        <p className="text-muted-foreground">
           In Stripe, open Developers → Webhooks → Add destination, choose your account&apos;s events,
           paste this URL and select the events below. Do it in test mode first to try it.
         </p>
@@ -487,21 +487,21 @@ function StripeSetup({ domain, settings }: { domain: string; settings: RevenueSe
           <button
             type="submit"
             disabled={pending || !secret.trim()}
-            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
           >
             {pending ? "Saving…" : "Save"}
           </button>
           {status ? (
             <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>
           ) : (
-            <span className={settings.hasWebhookSecret ? "text-up" : "text-muted"}>
+            <span className={settings.hasWebhookSecret ? "text-up" : "text-muted-foreground"}>
               {settings.hasWebhookSecret ? "Secret saved" : "Not set: payments are not recorded yet"}
             </span>
           )}
         </form>
       </Step>
       <Step n={3} title="Pass the visitor into checkout">
-        <p className="text-muted">
+        <p className="text-muted-foreground">
           Put the ids from <code className="font-mono">analytics(&quot;attribution&quot;)</code> into the
           Checkout Session&apos;s metadata. Without them, payments are still linked from the success page (
           <code className="font-mono">?session_id=&#123;CHECKOUT_SESSION_ID&#125;</code>), an earlier payment of
@@ -538,7 +538,7 @@ function ApiSetup({ domain, settings }: { domain: string; settings: RevenueSetti
   return (
     <div className="flex flex-col gap-5 border-t border-line pt-4">
       <Step n={1} title="Create an API key">
-        <p className="text-muted">
+        <p className="text-muted-foreground">
           The key is shown once; only its hash is stored. A new key replaces the old one at once.
           Keep it on your server.
         </p>
@@ -547,7 +547,7 @@ function ApiSetup({ domain, settings }: { domain: string; settings: RevenueSetti
             type="button"
             onClick={create}
             disabled={pending}
-            className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
           >
             {pending ? "Creating…" : settings.hasApiKey || key ? "Replace key" : "Create key"}
           </button>
@@ -610,7 +610,7 @@ function TimezoneSection({ domain, timezone }: { domain: string; timezone: strin
         <button
           type="submit"
           disabled={pending || value === timezone}
-          className="rounded-md bg-strong px-4 py-2 font-medium text-zinc-900 disabled:opacity-40"
+          className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
         >
           {pending ? "Saving…" : "Save"}
         </button>
@@ -649,7 +649,7 @@ function DeleteSection({ domain, onDeleted }: { domain: string; onDeleted: () =>
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-3 text-sm sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1">
-          <span className="text-muted">
+          <span className="text-muted-foreground">
             Type <span className="font-mono text-strong">{domain}</span> to confirm
           </span>
           <input
@@ -663,7 +663,7 @@ function DeleteSection({ domain, onDeleted }: { domain: string; onDeleted: () =>
         <button
           type="submit"
           disabled={pending || confirm.trim().toLowerCase() !== domain}
-          className="rounded-md bg-down px-4 py-2 font-medium text-zinc-950 disabled:opacity-40"
+          className="rounded-md bg-down px-4 py-2 font-medium text-background disabled:opacity-40"
         >
           {pending ? "Deleting…" : "Delete website"}
         </button>

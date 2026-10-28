@@ -63,11 +63,11 @@ export default function TrafficChart({ data, trackingStart, currency }: Props) {
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid stroke="#27272a" vertical={false} />
+              <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="date"
                 tickFormatter={(d: string) => formatDate(d)}
-                stroke="#71717a"
+                stroke="var(--muted-foreground)"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
@@ -76,15 +76,16 @@ export default function TrafficChart({ data, trackingStart, currency }: Props) {
               <YAxis
                 yAxisId="count"
                 allowDecimals={false}
-                stroke="#71717a"
+                stroke="var(--muted-foreground)"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
               />
               <Tooltip
                 contentStyle={{
-                  background: "#18181b",
-                  border: "1px solid #3f3f46",
+                  background: "var(--popover)",
+                  color: "var(--popover-foreground)",
+                  border: "1px solid var(--border)",
                   borderRadius: 6,
                   fontSize: 13,
                 }}
@@ -117,12 +118,12 @@ export default function TrafficChart({ data, trackingStart, currency }: Props) {
                 <ReferenceLine
                   yAxisId="count"
                   x={trackingStart}
-                  stroke="#71717a"
+                  stroke="var(--muted-foreground)"
                   strokeDasharray="3 3"
                   label={{
                     value: "visitor tracking on",
                     position: "insideTopLeft",
-                    fill: "#a1a1aa",
+                    fill: "var(--muted-foreground)",
                     fontSize: 11,
                   }}
                 />
@@ -154,7 +155,7 @@ export default function TrafficChart({ data, trackingStart, currency }: Props) {
               className="size-4"
               style={{ accentColor: s.color }}
             />
-            <span className={shown[s.key] ? "text-strong" : "text-muted"}>{s.label}</span>
+            <span className={shown[s.key] ? "text-strong" : "text-muted-foreground"}>{s.label}</span>
           </label>
         ))}
       </div>
