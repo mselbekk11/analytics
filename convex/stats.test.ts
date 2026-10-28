@@ -175,12 +175,80 @@ describe("stats.timeseries", () => {
     await visit(t, "2026-10-12T18:00:00Z", { unique: false });
     await visit(t, "2026-10-20T17:00:00Z"); // after the range
 
+    // No visitor ids, key goal or revenue: the rates have nothing to divide by
+    const none = { goal: 0, bounceRate: null, sessionTimeMs: null, timeOnPageMs: null, conversionRate: null };
     expect(await t.withIdentity(OWNER).query(api.stats.timeseries, range)).toEqual([
-      { date: "2026-10-10", pageviews: 1, visitors: 1, revenueMinor: 0 },
-      { date: "2026-10-11", pageviews: 0, visitors: 0, revenueMinor: 0 },
-      { date: "2026-10-12", pageviews: 2, visitors: 1, revenueMinor: 0 },
-      { date: "2026-10-13", pageviews: 0, visitors: 0, revenueMinor: 0 },
+      { date: "2026-10-10", pageviews: 1, visitors: 1, revenueMinor: 0, ...none },
+      { date: "2026-10-11", pageviews: 0, visitors: 0, revenueMinor: 0, ...none },
+      { date: "2026-10-12", pageviews: 2, visitors: 1, revenueMinor: 0, ...none },
+      { date: "2026-10-13", pageviews: 0, visitors: 0, revenueMinor: 0, ...none },
     ]);
+  });
+
+  test("adds the key goal's completions and each day's rates", async () => {
+    const t = await setup();
+    await t.withIdentity(OWNER).mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: "signup" });
+    // Oct 11: v1 signs up and stays 40s; v2 bounces
+    const a = await visit(t, "2026-10-11T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    await event(t, a, { type: "goal", name: "signup" });
+    await event(t, a, { type: "goal", name: "newsletter" });
+    await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: a, ms: 40_000 });
+    await visit(t, "2026-10-11T18:00:00Z", { visitorId: "v2", sessionId: "s2" });
+    // Oct 12: v1 again, two pages, no goal
+    await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s3" });
+    await visit(t, "2026-10-12T17:01:00Z", { visitorId: "v1", sessionId: "s3", path: "/x" });
+
+    const series = await t.withIdentity(OWNER).query(api.stats.timeseries, range);
+    expect(series.find((d) => d.date === "2026-10-11")).toEqual({
+      date: "2026-10-11",
+      pageviews: 2,
+      visitors: 2,
+      revenueMinor: 0,
+      goal: 1,
+      bounceRate: 0.5,
+      sessionTimeMs: 20_000,
+      timeOnPageMs: 40_000,
+      conversionRate: 0.5,
+    });
+    expect(series.find((d) => d.date === "2026-10-12")).toMatchObject({
+      goal: 0,
+      bounceRate: 0,
+      sessionTimeMs: 0,
+      timeOnPageMs: null,
+      conversionRate: 0,
+    });
+    expect(series.find((d) => d.date === "2026-10-13")).toMatchObject({ goal: 0, conversionRate: null });
+  });
+
+  test("on a site with revenue, converts paying visitors on the payment's day", async () => {
+    const t = await setup();
+    const owner = t.withIdentity(OWNER);
+    await owner.mutation(api.sites.setRevenue, { domain: "picai.so", revenueSource: "api", currency: "USD" });
+    // The key goal is ignored once the site has revenue
+    await owner.mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: "signup" });
+    const key = await owner.action(api.sites.createApiKey, { domain: "picai.so" });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+    const keyHash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const pay = async (iso: string, id: string, visitorId: string, currency = "USD") => {
+      vi.setSystemTime(new Date(iso));
+      await t.mutation(api.payments.recordApi, {
+        secret: SECRET,
+        keyHash,
+        payment: { id, amountMinor: 1000, currency, visitorId },
+      });
+    };
+    const a = await visit(t, "2026-10-12T17:00:00Z", { visitorId: "v1", sessionId: "s1" });
+    await event(t, a, { type: "goal", name: "signup" });
+    await visit(t, "2026-10-12T18:00:00Z", { visitorId: "v2", sessionId: "s2" });
+    await visit(t, "2026-10-12T19:00:00Z", { visitorId: "v3", sessionId: "s3" });
+    await visit(t, "2026-10-12T20:00:00Z", { visitorId: "v4", sessionId: "s4" });
+    // v1 pays twice (one paying visitor), v2 pays in another currency (left out)
+    await pay("2026-10-12T19:00:00Z", "o1", "v1");
+    await pay("2026-10-12T19:30:00Z", "o2", "v1");
+    await pay("2026-10-12T20:00:00Z", "o3", "v2", "EUR");
+
+    const day = (await owner.query(api.stats.timeseries, range)).find((d) => d.date === "2026-10-12");
+    expect(day).toMatchObject({ visitors: 4, revenueMinor: 2000, goal: 1, conversionRate: 0.25 });
   });
 });
 
@@ -266,6 +334,34 @@ describe("stats.breakdown", () => {
       ["AI", 2, 2],
       ["Organic Search", 1, 1],
     ]);
+  });
+});
+
+describe("stats.breakdown with a channel", () => {
+  test("AI keeps only the sources the classifier puts in AI, with totals over them", async () => {
+    const t = await setup();
+    await visit(t, "2026-10-10T17:00:00Z", { referrer: "google.com" });
+    await visit(t, "2026-10-10T17:00:00Z", { referrer: "chatgpt.com" });
+    await visit(t, "2026-10-11T17:00:00Z", { referrer: "chatgpt.com" });
+    await visit(t, "2026-10-11T17:00:00Z", { referrer: "perplexity.ai" });
+    await visit(t, "2026-10-12T17:00:00Z", { referrer: "news.ycombinator.com" });
+    const as = t.withIdentity(OWNER);
+
+    const all = await as.query(api.stats.breakdown, { ...range, dim: "source" });
+    expect(all.rows.map((r) => r.key)).toEqual(["ChatGPT", "Google", "Hacker News", "Perplexity"]);
+    const ai = await as.query(api.stats.breakdown, { ...range, dim: "source", channel: "AI" });
+    expect(ai.rows.map((r) => [r.key, r.visitors])).toEqual([
+      ["ChatGPT", 2],
+      ["Perplexity", 1],
+    ]);
+    expect(ai.totalVisitors).toBe(3);
+  });
+
+  test("only applies to sources", async () => {
+    const t = await setup();
+    await expect(
+      t.withIdentity(OWNER).query(api.stats.breakdown, { ...range, dim: "page", channel: "AI" }),
+    ).rejects.toThrow(/only applies to sources/);
   });
 });
 
@@ -405,7 +501,27 @@ describe("stats.goals", () => {
       ],
       visitors: 3,
       keyGoal: null,
+      keyGoalPrevious: null,
     });
+  });
+
+  test("counts the key goal's completions in the period before", async () => {
+    const t = await setup();
+    await t.withIdentity(OWNER).mutation(api.sites.setKeyGoal, { domain: "picai.so", keyGoal: "signup" });
+    // The range is Oct 10-13, so the period before is Oct 6-9
+    const a1 = await visit(t, "2026-10-08T17:00:00Z", { visitorId: "a", sessionId: "a1" });
+    await event(t, a1, { type: "goal", name: "signup" });
+    await event(t, a1, { type: "goal", name: "newsletter" });
+    const a2 = await visit(t, "2026-10-08T17:05:00Z", { visitorId: "a", sessionId: "a1", path: "/x" });
+    await event(t, a2, { type: "goal", name: "signup" });
+    const b = await visit(t, "2026-10-05T17:00:00Z", { visitorId: "b", sessionId: "b1" }); // before both
+    await event(t, b, { type: "goal", name: "signup" });
+    const c = await visit(t, "2026-10-12T17:00:00Z", { visitorId: "c", sessionId: "c1" });
+    await event(t, c, { type: "goal", name: "signup" });
+
+    const goals = await t.withIdentity(OWNER).query(api.stats.goals, range);
+    expect(goals.rows).toEqual([{ name: "signup", completions: 1, visitors: 1 }]);
+    expect(goals.keyGoalPrevious).toBe(2);
   });
 
   test("always lists the key goal, even with no completions", async () => {

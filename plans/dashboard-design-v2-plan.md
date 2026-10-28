@@ -87,12 +87,12 @@ Replace the old stat row with the example's joined tiles, one bordered block att
 
 ### Acceptance criteria
 
-- [ ] A revenue site with a key goal shows all 7 tiles, a site with neither shows Visitors, Pageviews, Bounce rate and Visit duration, and a cookieless site shows its reduced set
-- [ ] % changes are green for good and red for bad (bounce rate up is red), and "–" shows where the periods aren't comparable
-- [ ] "≈" still shows on the Visitors fallback
-- [ ] The tooltips show the moved numbers
-- [ ] Filtered views update every tile
-- [ ] It matches the example's spacing and type in both themes
+- [x] A revenue site with a key goal shows all 7 tiles, a site with neither shows Visitors, Pageviews, Bounce rate and Visit duration, and a cookieless site shows its reduced set (7 tiles checked with a temporary key goal on the dev `localhost`; "neither" checked in code, no such dev site)
+- [x] % changes are green for good and red for bad (bounce rate up is red), and "–" shows where the periods aren't comparable
+- [ ] "≈" still shows on the Visitors fallback (kept in code; no dev site has enough sessions to see it)
+- [x] The tooltips show the moved numbers
+- [x] Filtered views update every tile
+- [x] It matches the example's spacing and type in both themes (16px side padding with 6–7 tiles, as the page is narrower than the example)
 
 ---
 
@@ -106,12 +106,12 @@ Rebuild the chart on shadcn Chart in monochrome. Visitors is a foreground line w
 
 ### Acceptance criteria
 
-- [ ] The default view matches the example's first screenshot (series and styling) on a revenue site with a key goal
-- [ ] Clicking tiles adds and removes series, the last one can't be switched off, and the choice survives a reload
-- [ ] With every series on, it looks like the example's "all on" screenshot
-- [ ] The tooltip lists each visible series with correct values
-- [ ] The chart is correct in both themes and under filters
-- [ ] convex-test covers the key-goal and per-day rate fields in the timeseries
+- [ ] The default view matches the example's first screenshot (series and styling) on a revenue site with a key goal (checked on the dev `localhost`, which has revenue but no key goal; the goal bars are covered by tests, not seen)
+- [x] Clicking tiles adds and removes series, the last one can't be switched off, and the choice survives a reload
+- [x] With every series on, it looks like the example's "all on" screenshot (six series; no key goal on dev)
+- [x] The tooltip lists each visible series with correct values
+- [x] The chart is correct in both themes and under filters
+- [x] convex-test covers the key-goal and per-day rate fields in the timeseries
 
 ---
 
@@ -132,11 +132,11 @@ Rows have the new bar style with icon or flag, label and a right-aligned number,
 
 ### Acceptance criteria
 
-- [ ] Every list that existed before is reachable from a tab or a More ▾ item
-- [ ] View all and Show less work, and N matches the row count
-- [ ] Clicking a row filters the whole page as before, and with 3 filters the other rows can't be clicked
-- [ ] Empty tabs keep the card's height, and loading shows skeleton rows
-- [ ] It matches the example in both themes and stacks on phones
+- [x] Every list that existed before is reachable from a tab or a More ▾ item (Goals stay in their old panel below the grid until Phase 8)
+- [x] View all and Show less work, and N matches the row count
+- [x] Clicking a row filters the whole page as before, and with 3 filters the other rows can't be clicked (the 3-filter rule is the unchanged `canFilter`; not clicked through)
+- [x] Empty tabs keep the card's height, and loading shows skeleton rows
+- [ ] It matches the example in both themes and stacks on phones (both themes checked in Chrome; phones not yet looked at)
 
 ---
 
@@ -150,9 +150,9 @@ Add the AI tab to the Sources card. It shows the `source` breakdown limited to t
 
 ### Acceptance criteria
 
-- [ ] The AI tab lists only AI sources (for example ChatGPT from the 5b test hit) and filters on click
-- [ ] ⇅ switches numbers and order between visitors and revenue on revenue sites, and is missing on others
-- [ ] convex-test covers the channel limit in the rollup and filtered paths
+- [x] The AI tab lists only AI sources (for example ChatGPT from the 5b test hit) and filters on click
+- [x] ⇅ switches numbers and order between visitors and revenue on revenue sites, and is missing on others
+- [x] convex-test covers the channel limit in the rollup and filtered paths
 
 ---
 
@@ -166,10 +166,10 @@ Fill the grid's bottom row. The Events card lists goals by completions, with a b
 
 ### Acceptance criteria
 
-- [ ] Goals from the dev `localhost` site show with correct counts, and the key goal is marked
-- [ ] Clicking a goal filters the page
-- [ ] The Funnels placeholder sits beside Events and matches its height
-- [ ] The old Goals panel is gone
+- [x] Goals from the dev `localhost` site show with correct counts, and the key goal is marked (checked with a temporary key goal on the dev `localhost`, cleared afterwards)
+- [x] Clicking a goal filters the page
+- [x] The Funnels placeholder sits beside Events and matches its height
+- [x] The old Goals panel is gone
 
 ---
 
@@ -183,10 +183,10 @@ Add a Map tab to the Countries card. It's a small SVG world map (110m country ou
 
 ### Acceptance criteria
 
-- [ ] The map shades the same countries the Countries tab lists, with consistent values
-- [ ] The tooltip and click to filter work
-- [ ] The map code isn't in the dashboard's first load (it loads when the tab opens)
-- [ ] It reads well in both themes
+- [x] The map shades the same countries the Countries tab lists, with consistent values (countries too small for the 110m outlines, such as Singapore, are only in the list)
+- [x] The tooltip and click to filter work
+- [x] The map code isn't in the dashboard's first load (it loads when the tab opens)
+- [x] It reads well in both themes
 
 ---
 
@@ -200,9 +200,9 @@ Add the hourly data source. It reads raw sessions, pageviews, events and payment
 
 ### Acceptance criteria
 
-- [ ] Today, Yesterday and 24h show hourly charts, and the tiles and cards are counted for exactly that window
-- [ ] % changes compare against the previous window of equal length
-- [ ] Hours are correct in a non-UTC site timezone
-- [ ] Filters combine with hourly ranges
-- [ ] convex-test covers bucketing, the timezone, the previous window, cookieless pageviews, filters and the budget notice
-- [ ] The build, tsc, lint and tests pass, and `docs/PROGRESS.md` is updated to replace the "Layout from Simple Analytics" decision with this design
+- [x] Today, Yesterday and 24h show hourly charts, and the tiles and cards are counted for exactly that window (Today and 24h end at the end of the current hour)
+- [x] % changes compare against the previous window of equal length
+- [x] Hours are correct in a non-UTC site timezone
+- [x] Filters combine with hourly ranges
+- [x] convex-test covers bucketing, the timezone, the previous window, cookieless pageviews, filters and the budget notice
+- [x] The build, tsc, lint and tests pass, and `docs/PROGRESS.md` is updated to replace the "Layout from Simple Analytics" decision with this design

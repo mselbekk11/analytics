@@ -163,8 +163,18 @@ describe("channel:AI", () => {
       pageviews: 2,
       visitors: 1,
       revenueMinor: 0,
+      goal: 1,
+      bounceRate: 0,
+      sessionTimeMs: 80_000,
+      timeOnPageMs: 40_000,
+      conversionRate: 0,
     });
-    expect(r.timeseries.find((d) => d.date === "2026-10-13")?.revenueMinor).toBe(4900);
+    // A paid the next day, with no matching visit that day to divide by
+    expect(r.timeseries.find((d) => d.date === "2026-10-13")).toMatchObject({
+      revenueMinor: 4900,
+      visitors: 0,
+      conversionRate: null,
+    });
     expect(r.timeseries).toHaveLength(7);
 
     expect(r.breakdowns.channel.rows).toEqual([
@@ -180,7 +190,7 @@ describe("channel:AI", () => {
     expect(r.breakdowns.country.rows.map((x) => x.key)).toEqual(["US"]);
     expect(r.breakdowns.device.rows.map((x) => x.key)).toEqual(["mobile"]);
     expect(r.breakdowns.outbound.rows).toEqual([]);
-    expect(r.goals).toEqual({ rows: [{ name: "signup", completions: 1, visitors: 1 }], visitors: 1, keyGoal: "signup" });
+    expect(r.goals).toEqual({ rows: [{ name: "signup", completions: 1, visitors: 1 }], visitors: 1, keyGoal: "signup", keyGoalPrevious: 0 });
     expect(r.conversions).toEqual({ kind: "revenue", current: 1, previous: 0, otherCurrencyPayments: 0 });
   });
 
@@ -195,6 +205,43 @@ describe("channel:AI", () => {
     }
     expect(mobile.summary.current.bounceRate).toBe(0.5); // A did not bounce, C did
   });
+});
+
+test("counts the key goal's completions in the period before, from matching sessions only", async () => {
+  const { t, owner } = await seed();
+  // Oct 7-13 is the range, so Oct 1 is in the period before
+  await visit(t, "2026-10-01T17:00:00Z", { vid: VID_B, sid: "4b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f74", pvId: "d1" });
+  await event(t, "2026-10-01T17:00:10Z", "d1", { type: "goal", name: "signup" });
+  await visit(t, "2026-10-01T17:01:00Z", { vid: VID_B, sid: "4b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f74", pvId: "d2", path: "/x" });
+  await event(t, "2026-10-01T17:01:10Z", "d2", { type: "goal", name: "signup" });
+  await visit(t, "2026-10-01T18:00:00Z", { vid: VID_C, sid: "5b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f75", pvId: "e1", device: "desktop" });
+  await event(t, "2026-10-01T18:00:10Z", "e1", { type: "goal", name: "signup" });
+
+  expect((await ok(owner, [{ dim: "device", value: "mobile" }])).goals.keyGoalPrevious).toBe(2);
+  expect((await ok(owner, [{ dim: "device", value: "desktop" }])).goals.keyGoalPrevious).toBe(1);
+});
+
+test("the chart's rates and key goal count only matching sessions", async () => {
+  const { owner } = await seed();
+  const us = await ok(owner, [{ dim: "country", value: "US" }]);
+  // Oct 12: A (signed up, two pages); B is in Germany
+  expect(us.timeseries.find((d) => d.date === "2026-10-12")).toMatchObject({
+    visitors: 1,
+    goal: 1,
+    bounceRate: 0,
+    conversionRate: 0,
+  });
+  // Oct 13: C bounced; A's payment lands on its own day, credited to A's US session
+  expect(us.timeseries.find((d) => d.date === "2026-10-13")).toMatchObject({
+    visitors: 1,
+    revenueMinor: 4900,
+    goal: 0,
+    bounceRate: 1,
+    conversionRate: 1,
+  });
+  const de = await ok(owner, [{ dim: "country", value: "DE" }]);
+  expect(de.timeseries.find((d) => d.date === "2026-10-12")).toMatchObject({ visitors: 1, goal: 0, bounceRate: 1 });
+  expect(de.timeseries.find((d) => d.date === "2026-10-13")).toMatchObject({ revenueMinor: 0, conversionRate: null });
 });
 
 test("page, goal and outbound filters pick the sessions that had them", async () => {
@@ -230,6 +277,20 @@ test("filters combine, and a view with no sessions has no rates", async () => {
   expect(none.summary.current).toMatchObject({ visitors: 0, sessions: 0, bounceRate: null, sessionTimeMs: null });
   expect(none.breakdowns.page.rows).toEqual([]);
   expect(none.conversions.current).toBe(0);
+});
+
+test("the AI list keeps only AI sources, with their revenue and totals", async () => {
+  const { owner } = await seed();
+  // Every session is mobile but B's, so ChatGPT (A) and Google (C) both match
+  const r = await ok(owner, [{ dim: "device", value: "mobile" }]);
+  expect(r.breakdowns.source.rows.map((x) => x.key)).toEqual(["ChatGPT", "Google"]);
+  expect(r.breakdowns["source:AI"].rows).toEqual([
+    { key: "ChatGPT", pageviews: 2, visitors: 1, sessions: 1, events: 0, revenueMinor: 4900 },
+  ]);
+  expect(r.breakdowns["source:AI"]).toMatchObject({ totalVisitors: 1, totalSessions: 1, totalRevenueMinor: 4900 });
+
+  const search = await ok(owner, [{ dim: "channel", value: "Organic Search" }]);
+  expect(search.breakdowns["source:AI"].rows).toEqual([]);
 });
 
 test("a payment credited to a session before the range still counts under that session's keys", async () => {

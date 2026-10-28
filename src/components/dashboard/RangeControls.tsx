@@ -8,7 +8,6 @@ import {
   MAX_RANGE_DAYS,
   PRESET_LABELS,
   PRESETS,
-  presetGranularity,
   rangeDays,
   type DateRange,
   type Preset,
@@ -41,16 +40,13 @@ type Props = {
   preset: Preset | null;
   /** The site's local date, the last day a custom range can end on */
   today: string;
-  /** False until hourly data exists: Today, Yesterday and 24h show but can't be picked */
-  hourly: boolean;
   onChange: (next: Preset | DateRange) => void;
 };
 
 /** Segmented Today | 24h | 7d | 30d, the full range menu with Custom range…, and the (not yet working) Filter button. */
-export default function RangeControls({ range, preset, today, hourly, onChange }: Props) {
+export default function RangeControls({ range, preset, today, onChange }: Props) {
   const [customOpen, setCustomOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
-  const available = (p: Preset) => hourly || presetGranularity(p) === "day";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +67,6 @@ export default function RangeControls({ range, preset, today, hourly, onChange }
           <ToggleGroupItem
             key={s.preset}
             value={s.preset}
-            disabled={!available(s.preset)}
             className="rounded-md! px-3 text-muted-foreground data-pressed:text-foreground"
           >
             {s.label}
@@ -88,7 +83,7 @@ export default function RangeControls({ range, preset, today, hourly, onChange }
           <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuGroup>
               {PRESETS.map((p) => (
-                <DropdownMenuItem key={p} disabled={!available(p)} onClick={() => onChange(p)} className="py-1.5">
+                <DropdownMenuItem key={p} onClick={() => onChange(p)} className="py-1.5">
                   {PRESET_LABELS[p]}
                   {p === preset && <CheckIcon aria-label="Current range" className="ml-auto" />}
                 </DropdownMenuItem>

@@ -14,10 +14,8 @@ import {
   type Filter,
 } from "../../../convex/lib/filters";
 import {
-  DEFAULT_PRESET,
   formatRangeParam,
   parseRangeParam,
-  percentChange,
   PRESET_LABELS,
   PRESETS,
   presetGranularity,
@@ -27,25 +25,24 @@ import {
 } from "../../../convex/lib/ranges";
 import {
   formatDate,
-  formatDuration,
-  formatMoney,
   formatNumber,
   formatRangeLabel,
-  formatShare,
+  goalLabel,
 } from "@/lib/format";
 import Breakdowns from "./Breakdowns";
 import FilterBar from "./FilterBar";
 import RangeControls from "./RangeControls";
 import TopBar from "@/components/TopBar";
-import StatTile from "./StatTile";
+import { useChartSeries, type SeriesKey } from "./series";
+import StatRow from "./StatRow";
 import TrafficChart from "./TrafficChart";
 import { useNow } from "./useNow";
 
-const LIVE_WINDOW_MS = 5 * 60 * 1000;
 const LIVE_REFRESH_MS = 30 * 1000;
-// Today, Yesterday and 24h need the hourly data source (design v2 Phase 10). Until then
-// they show disabled, and their URLs open the default range.
-const HOURLY_RANGES = false;
+// Hour ranges pass the clock to stats.hourly snapped to this, so the query's arguments
+// stay the same between steps. Local hours start on a 15-minute grid in every timezone,
+// so a 5-minute step never lands in the wrong hour; the window moves on within 5 minutes.
+const HOURLY_STEP_MS = 5 * 60 * 1000;
 
 export default function SiteDashboard() {
   const params = useParams<{ domain: string }>();
@@ -53,7 +50,7 @@ export default function SiteDashboard() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar site={{ domain, section: "analytics" }} />
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
+      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 pt-10 pb-20 sm:px-6 lg:px-8">
         <AuthLoading>
           <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>
@@ -104,6 +101,7 @@ function Dashboard({
   keyGoal: string | null;
 }) {
   const now = useNow(LIVE_REFRESH_MS);
+  const hourNow = useNow(HOURLY_STEP_MS);
   const today = localDate(now, timezone);
   // Sites with visitor ids get session tiles and "online now"; cookieless sites keep
   // the Phase 2 row
@@ -113,11 +111,8 @@ function Dashboard({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const parsed = parseRangeParam(searchParams.get("range"), today);
-  const { range, preset } =
-    !HOURLY_RANGES && presetGranularity(parsed.preset) === "hour"
-      ? { range: presetRange(DEFAULT_PRESET, today), preset: DEFAULT_PRESET }
-      : parsed;
+  const { range, preset } = parseRangeParam(searchParams.get("range"), today);
+  const hourly = preset === "today" || preset === "yesterday" || preset === "24h" ? preset : null;
   // Filters pick sessions, so they need visitor ids; cookieless sites ignore ?f=
   const filters = tracking ? parseFiltersParam(searchParams.get("f")) : [];
   const filtering = filters.length > 0;
@@ -135,50 +130,54 @@ function Dashboard({
   const setFilters = (next: Filter[]) => navigate({ filters: next });
   const selectRow = tracking ? (dim: Dim, key: string) => setFilters(toggleFilter(filters, dim, key)) : null;
 
-  // With filters, one query returns everything the rollup queries would, from raw sessions
-  const filtered = useQuery(api.stats.filtered, filtering ? { domain, ...range, filters } : "skip");
-  const view = filtered?.status === "ok" ? filtered : undefined;
-  const blocked = filtered !== undefined && filtered.status !== "ok";
-  const rollupSummary = useQuery(api.stats.summary, filtering ? "skip" : { domain, ...range });
-  const rollupSeries = useQuery(api.stats.timeseries, filtering ? "skip" : { domain, ...range });
-  const summary = filtering ? view?.summary : rollupSummary;
-  const series = filtering ? view?.timeseries : rollupSeries;
-  const since = now - LIVE_WINDOW_MS;
-  const live = useQuery(api.stats.live, tracking ? "skip" : { domain, since });
-  const online = useQuery(api.stats.online, tracking ? { domain, since } : "skip");
+  // Hour ranges, and day ranges with filters, read raw rows: one query returns everything
+  // the rollup queries would, in the same shapes
+  const hourlyView = useQuery(
+    api.stats.hourly,
+    hourly !== null ? { domain, period: hourly, now: hourNow, filters } : "skip",
+  );
+  const filtered = useQuery(
+    api.stats.filtered,
+    hourly === null && filtering ? { domain, ...range, filters } : "skip",
+  );
+  const raw = hourly !== null || filtering;
+  const result = hourly !== null ? hourlyView : filtered;
+  const view = result?.status === "ok" ? result : undefined;
+  const blocked = result !== undefined && result.status !== "ok" ? result.status : null;
+  const rollupSummary = useQuery(api.stats.summary, raw ? "skip" : { domain, ...range });
+  const rollupSeries = useQuery(api.stats.timeseries, raw ? "skip" : { domain, ...range });
+  const summary = raw ? view?.summary : rollupSummary;
+  const series = raw ? view?.timeseries : rollupSeries;
   // Paying visitors on a site with revenue, otherwise visitors who completed the key goal
   const rollupConversions = useQuery(
     api.stats.conversions,
-    !filtering && (currency !== null || keyGoal !== null) ? { domain, ...range } : "skip",
+    !raw && (currency !== null || keyGoal !== null) ? { domain, ...range } : "skip",
   );
-  const conversions = filtering ? view?.conversions : rollupConversions;
+  const conversions = raw ? view?.conversions : rollupConversions;
+  // The key goal's tile; the same query the goals list makes, so it is shared
+  const rollupGoals = useQuery(api.stats.goals, !raw && keyGoal !== null ? { domain, ...range } : "skip");
+  const goals = raw ? view?.goals : rollupGoals;
 
-  const cur = summary?.current;
-  const prev = summary?.previous;
-  const incomparable = summary?.comparable === false;
-  const change = (pick: (t: NonNullable<typeof cur>) => number | null) => {
-    if (!cur || !prev) return null;
-    const a = pick(cur);
-    const b = pick(prev);
-    return a === null || b === null ? null : percentChange(a, b);
+  // The tiles this site shows, and so the series the chart can draw
+  const available: SeriesKey[] = [
+    "visitors",
+    "pageviews",
+    ...(currency !== null ? (["revenue"] as const) : []),
+    ...(currency !== null || keyGoal !== null ? (["conversionRate"] as const) : []),
+    ...(keyGoal !== null ? (["goal"] as const) : []),
+    ...(tracking ? (["bounceRate"] as const) : []),
+    "visitDuration",
+  ];
+  const { shown, toggle } = useChartSeries(available);
+  const labels: Record<SeriesKey, string> = {
+    visitors: "Visitors",
+    pageviews: "Pageviews",
+    revenue: "Revenue",
+    conversionRate: "Conv. rate",
+    goal: keyGoal === null ? "Key goal" : goalLabel(keyGoal),
+    bounceRate: "Bounce rate",
+    visitDuration: "Visit duration",
   };
-  const rate = (converted: number | null | undefined, t: typeof cur) =>
-    converted == null || !t || t.visitors === 0 ? null : Math.min(1, converted / t.visitors);
-  const curRate = rate(conversions?.current, cur);
-  const prevRate = rate(conversions?.previous, prev);
-  const conversionTile = conversions?.kind != null && (
-    <StatTile
-      label="conversion rate"
-      value={cur && (curRate === null ? "–" : formatShare(curRate))}
-      change={curRate === null || prevRate === null ? null : percentChange(curRate, prevRate)}
-      incomparable={incomparable}
-      title={
-        conversions.kind === "revenue"
-          ? "Visitors who paid ÷ visitors"
-          : `Visitors who completed the key goal "${keyGoal}" ÷ visitors`
-      }
-    />
-  );
 
   return (
     <div className="flex flex-col gap-10">
@@ -190,7 +189,7 @@ function Dashboard({
               {preset !== null ? PRESET_LABELS[preset] : formatRangeLabel(range)}
             </p>
           </div>
-          <RangeControls range={range} preset={preset} today={today} hourly={HOURLY_RANGES} onChange={setRange} />
+          <RangeControls range={range} preset={preset} today={today} onChange={setRange} />
         </div>
         {filtering && (
           <div className="flex flex-col gap-2">
@@ -199,7 +198,7 @@ function Dashboard({
               onRemove={(dim) => setFilters(filters.filter((f) => f.dim !== dim))}
               onClear={() => setFilters([])}
             />
-            {trackingStart !== null && trackingStart > range.from && !blocked && (
+            {trackingStart !== null && trackingStart > range.from && blocked === null && (
               <p className="text-xs text-muted-foreground">
                 Filtered numbers count visits from {formatDate(trackingStart, true)}, when visitor tracking started.
               </p>
@@ -207,132 +206,56 @@ function Dashboard({
           </div>
         )}
       </header>
-      <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
-        {blocked ? (
-          <p className="w-full rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            {filtered.status === "range"
-              ? `Filters work on ranges of up to ${MAX_FILTER_DAYS} days. Pick a shorter range, or remove the filters to see the whole period.`
+      {blocked !== null && (
+        <p className="w-full rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          {blocked === "range"
+            ? `Filters work on ranges of up to ${MAX_FILTER_DAYS} days. Pick a shorter range, or remove the filters to see the whole period.`
+            : hourly !== null
+              ? "There are too many visits in this period to count by the hour. Pick a day range such as Last 7 days."
               : "There are too many visits in this range to filter. Pick a shorter range, or remove the filters."}
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-x-10 gap-y-6">
-            <StatTile
-              label="visitors"
-              value={cur && (summary.visitorsApprox ? "≈" : "") + formatNumber(cur.visitors)}
-              change={change((t) => t.visitors)}
-              incomparable={incomparable}
-              title={
-                summary?.visitorsApprox
-                  ? "Too many sessions to count distinct visitors: this is the sum of daily visitors"
-                  : undefined
-              }
-            />
-            {tracking && (
-              <StatTile
-                label="sessions"
-                value={cur && formatNumber(cur.sessions)}
-                change={change((t) => t.sessions)}
-                incomparable={incomparable}
-              />
-            )}
-            <StatTile
-              label="pageviews"
-              value={cur && formatNumber(cur.pageviews)}
-              change={change((t) => t.pageviews)}
-            />
-            {tracking && (
-              <StatTile
-                label="bounce rate"
-                value={cur && (cur.bounceRate === null ? "–" : formatShare(cur.bounceRate))}
-                change={change((t) => t.bounceRate)}
-                incomparable={incomparable}
-                lowerIsBetter
-                title="Sessions with one pageview and no goal"
-              />
-            )}
-            {tracking && (
-              <StatTile
-                label="session time"
-                value={cur && (cur.sessionTimeMs === null ? "–" : formatDuration(cur.sessionTimeMs))}
-                change={change((t) => t.sessionTimeMs)}
-                incomparable={incomparable}
-                title="Average visible-tab time per session"
-              />
-            )}
-            {currency !== null && (
-              <StatTile
-                label="revenue"
-                value={cur && formatMoney(cur.revenueMinor, currency)}
-                change={change((t) => t.revenueMinor)}
-                title={
-                  cur && cur.refundsMinor > 0
-                    ? `Net of ${formatMoney(cur.refundsMinor, currency)} in refunds; ${formatNumber(cur.payments)} payments`
-                    : cur && `${formatNumber(cur.payments)} payments`
-                }
-              />
-            )}
-            {conversionTile}
-            {currency !== null && (
-              <StatTile
-                label="revenue / visitor"
-                value={
-                  cur && (cur.visitors === 0 ? "–" : formatMoney(Math.round(cur.revenueMinor / cur.visitors), currency))
-                }
-                change={change((t) => (t.visitors === 0 ? null : t.revenueMinor / t.visitors))}
-                incomparable={incomparable}
-              />
-            )}
-            <StatTile
-              label="time on page"
-              value={cur && (cur.timeOnPageMs === null ? "–" : formatDuration(cur.timeOnPageMs))}
-              change={change((t) => t.timeOnPageMs)}
-            />
-            {tracking ? (
-              <StatTile
-                label={<LiveLabel text="online now" />}
-                value={online === undefined ? undefined : formatNumber(online)}
-                title="Visitors with a pageview or ping in the last 5 minutes"
-              />
-            ) : (
-              <StatTile
-                label={<LiveLabel text="live pageviews" />}
-                value={live === undefined ? undefined : formatNumber(live)}
-                title="Pageviews in the last 5 minutes"
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {!blocked && conversions !== undefined && conversions.otherCurrencyPayments > 0 && (
-        <p className="-mt-6 text-sm text-muted-foreground">
-          {formatNumber(conversions.otherCurrencyPayments)}{" "}
-          {conversions.otherCurrencyPayments === 1 ? "payment" : "payments"} in this period{" "}
-          {conversions.otherCurrencyPayments === 1 ? "is" : "are"} in a currency other than {currency} and{" "}
-          left out of the totals.
         </p>
       )}
-      {!blocked && (
+      {blocked === null && (
         <>
-          <TrafficChart data={series} trackingStart={trackingStart} currency={currency} />
+          <div className="overflow-hidden rounded-lg border border-border">
+            <StatRow
+              summary={summary}
+              conversions={conversions}
+              goals={goals}
+              currency={currency}
+              keyGoal={keyGoal}
+              tracking={tracking}
+              on={shown}
+              onToggle={toggle}
+            />
+            <div className="border-t border-border px-4 pt-8 pb-4 sm:px-6">
+              <TrafficChart
+                data={series}
+                shown={shown}
+                labels={labels}
+                trackingStart={trackingStart}
+                currency={currency}
+                tracking={tracking}
+              />
+            </div>
+          </div>
+          {conversions !== undefined && conversions.otherCurrencyPayments > 0 && (
+            <p className="-mt-6 text-sm text-muted-foreground">
+              {formatNumber(conversions.otherCurrencyPayments)}{" "}
+              {conversions.otherCurrencyPayments === 1 ? "payment" : "payments"} in this period{" "}
+              {conversions.otherCurrencyPayments === 1 ? "is" : "are"} in a currency other than {currency} and{" "}
+              left out of the totals.
+            </p>
+          )}
           <Breakdowns
             domain={domain}
             range={range}
             currency={currency}
-            view={{ filters, data: view?.breakdowns, goals: view?.goals, onSelect: selectRow }}
+            view={{ filters, raw, data: view?.breakdowns, goals: view?.goals, onSelect: selectRow }}
           />
         </>
       )}
     </div>
-  );
-}
-
-function LiveLabel({ text }: { text: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="size-2 animate-pulse rounded-full bg-down" />
-      {text}
-    </span>
   );
 }
 

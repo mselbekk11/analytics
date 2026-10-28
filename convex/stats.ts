@@ -3,12 +3,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
 import { requireSite } from "./lib/auth";
-import { localDate } from "./lib/dates";
-import { DIM_COUNTS, dimValidator, rankEntries, type Dim, type DimEntry } from "./lib/dims";
-import { filteredView } from "./lib/filtered";
+import { hourWindow as hourBounds, localDate } from "./lib/dates";
+import { DIM_COUNTS, dimValidator, listChannelValidator, rankEntries, type Dim, type DimEntry } from "./lib/dims";
+import { dayWindow, filteredView, hourWindow } from "./lib/filtered";
 import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
 import { eachDate, isValidRange, previousRange, rangeDays, type DateRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
+import { inChannel, type Channel } from "./lib/sources";
 import {
   breakdownResult,
   conversionsResult,
@@ -33,6 +34,8 @@ const MAX_LIVE_ROWS = 1_000;
 // Distinct visitors are counted from session rows. A year of the busiest site is a few
 // thousand; past this the tile falls back to summing daily visitors.
 const MAX_SESSION_ROWS = 10_000;
+// Payments and goal events read for the conversion count, over two ranges
+const MAX_CONVERSION_ROWS = 10_000;
 const HOUR_MS = 60 * 60 * 1000;
 
 const rangeArgs = { domain: v.string(), from: v.string(), to: v.string() };
@@ -181,7 +184,11 @@ export const summary = query({
   },
 });
 
-/** One point per day in the range, with days that had no traffic filled as zero. */
+/**
+ * One point per day in the range, with days that had no traffic filled as zero: the
+ * counts, the key goal's completions, and the day's bounce rate, visit duration and
+ * conversion rate for the chart's extra series.
+ */
 export const timeseries = query({
   args: rangeArgs,
   returns: seriesResult,
@@ -192,17 +199,77 @@ export const timeseries = query({
 
     const byDate = new Map<string, Doc<"dailyStats">>();
     for (const r of await readDailyStats(ctx, site._id, range)) byDate.set(r.date, r);
+
+    const keyGoal = site.keyGoal ?? null;
+    const goalByDate = new Map<string, { events: number; visitors: number }>();
+    if (keyGoal !== null) {
+      const rows = await ctx.db
+        .query("dailyDims")
+        .withIndex("by_site_dim_date", (q) =>
+          q.eq("siteId", site._id).eq("dim", "goal").gte("date", range.from).lte("date", range.to),
+        )
+        .take(MAX_DIM_ROWS);
+      for (const r of rows) {
+        if (r.key === keyGoal) goalByDate.set(r.date, { events: r.events ?? 0, visitors: r.visitors });
+      }
+    }
+    const converted = await convertedByDate(ctx, site, range, goalByDate);
+
     return eachDate(range).map((date) => {
       const r = byDate.get(date);
+      const sessions = r?.sessions ?? 0;
+      const visitors = r?.visitors ?? 0;
+      const conv = converted?.get(date) ?? 0;
       return {
         date,
         pageviews: r?.pageviews ?? 0,
-        visitors: r?.visitors ?? 0,
+        visitors,
         revenueMinor: r?.revenueMinor ?? 0,
+        goal: goalByDate.get(date)?.events ?? 0,
+        bounceRate: sessions === 0 ? null : (r?.bounces ?? 0) / sessions,
+        sessionTimeMs: sessions === 0 ? null : Math.round((r?.sessionEngagedMs ?? 0) / sessions),
+        timeOnPageMs: !r || r.durationCount === 0 ? null : Math.round(r.durationSumMs / r.durationCount),
+        conversionRate: converted === null || visitors === 0 ? null : Math.min(1, conv / visitors),
       };
     });
   },
 });
+
+/**
+ * Converted visitors per day for the chart: distinct paying visitors (in the site's
+ * currency) on each payment's day on a site with revenue, otherwise the key goal's
+ * visitors from its daily rows. Null when the site has neither, or when there are too
+ * many payments to read.
+ */
+async function convertedByDate(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  range: DateRange,
+  goalByDate: Map<string, { visitors: number }>,
+): Promise<Map<string, number> | null> {
+  if ((site.revenueSource ?? "none") === "none") {
+    if (site.keyGoal === undefined) return null;
+    return new Map([...goalByDate].map(([date, g]) => [date, g.visitors]));
+  }
+  // Local days run from UTC-12 to UTC+14; the stored `date` decides
+  const start = Date.parse(`${range.from}T00:00:00Z`) - 14 * HOUR_MS;
+  const end = Date.parse(`${range.to}T00:00:00Z`) + 36 * HOUR_MS;
+  const rows = await ctx.db
+    .query("payments")
+    .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
+    .take(MAX_CONVERSION_ROWS + 1);
+  if (rows.length > MAX_CONVERSION_ROWS) return null;
+  const currency = siteCurrency(site);
+  const ids = new Map<string, Set<string>>();
+  for (const p of rows) {
+    if (p.kind !== "payment" || p.currency !== currency || p.visitorId === undefined) continue;
+    if (p.date < range.from || p.date > range.to) continue;
+    const day = ids.get(p.date) ?? new Set<string>();
+    day.add(p.visitorId);
+    ids.set(p.date, day);
+  }
+  return new Map([...ids].map(([date, s]) => [date, s.size]));
+}
 
 /** Sums one dimension's daily rows per key over the range, plus the totals over every row. */
 async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
@@ -233,23 +300,37 @@ async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }
   return { entries: [...byKey.values()], total };
 }
 
+/** The source entries in one channel, with totals over just those. */
+function onlyChannel(entries: DimEntry[], channel: Channel) {
+  const kept = entries.filter((e) => inChannel(e.key, channel));
+  const total = { pageviews: 0, visitors: 0, sessions: 0, events: 0, revenueMinor: 0 };
+  for (const e of kept) for (const m of DIM_COUNTS) total[m] += e[m];
+  return { entries: kept, total };
+}
+
 /**
  * Pageviews, visitors, sessions and events per key of one dimension over the range,
  * largest first by the dim's metric (see dimMetric): pageviews for pages, sessions for
  * entry and exit pages, events for goals and outbound links, visitors (unique visits,
  * as SA does) for the rest. Keys with none of that metric are left out, unless they
  * have revenue ("Unattributed" has no visitors). The totals cover every key, including
- * any cut off by the row limit.
+ * any cut off by the row limit. With `channel` (sources only), the list and its totals
+ * keep just the sources the classifier puts in that channel (the AI tab).
  */
 export const breakdown = query({
-  args: { ...rangeArgs, dim: dimValidator },
+  args: { ...rangeArgs, dim: dimValidator, channel: v.optional(listChannelValidator) },
   returns: breakdownResult,
   handler: async (ctx, args) => {
     const site = await requireSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
     checkRange(range);
+    if (args.channel !== undefined && args.dim !== "source") {
+      throw new ConvexError("A channel limit only applies to sources");
+    }
 
-    const { entries, total } = await sumDim(ctx, site._id, args.dim, range);
+    const summed = await sumDim(ctx, site._id, args.dim, range);
+    const { entries, total } =
+      args.channel === undefined ? summed : onlyChannel(summed.entries, args.channel);
     const sorted = rankEntries(args.dim, entries);
     return {
       rows: sorted.slice(0, MAX_BREAKDOWN_KEYS),
@@ -288,16 +369,19 @@ export const goals = query({
     rows.sort((a, b) => b.completions - a.completions || b.visitors - a.visitors || a.name.localeCompare(b.name));
 
     const stats = await readDailyStats(ctx, site._id, range);
+    let keyGoalPrevious: number | null = null;
+    if (keyGoal !== null) {
+      const before = await sumDim(ctx, site._id, "goal", previousRange(range));
+      keyGoalPrevious = before.entries.find((e) => e.key === keyGoal)?.events ?? 0;
+    }
     return {
       rows: rows.slice(0, MAX_BREAKDOWN_KEYS),
       visitors: stats.reduce((n, r) => n + r.visitors, 0),
       keyGoal,
+      keyGoalPrevious,
     };
   },
 });
-
-// Payments and goal events read for the conversion count, over two ranges
-const MAX_CONVERSION_ROWS = 10_000;
 
 /**
  * Distinct visitors who converted in the range and in the one before it: visitors with
@@ -384,7 +468,40 @@ export const filtered = query({
       throw new ConvexError(`Between 1 and ${MAX_FILTERS} filters`);
     }
     if (rangeDays(range) > MAX_FILTER_DAYS) return { status: "range" as const };
-    return await filteredView(ctx, site, range, args.filters);
+    return await filteredView(ctx, site, dayWindow(site, range), args.filters);
+  },
+});
+
+const viewResult = v.object({
+  status: v.literal("ok"),
+  summary: summaryResult,
+  timeseries: seriesResult,
+  breakdowns: v.record(v.string(), breakdownResult),
+  goals: goalsResult,
+  conversions: conversionsResult,
+});
+
+/**
+ * Today, Yesterday and the last 24 hours, one chart point per hour, with or without
+ * filters: the shapes stats.filtered returns, worked out from the raw rows of the window
+ * and the window of equal length before it (see lib/filtered.ts). Today and 24h end at
+ * the end of the current hour in the site's timezone, from `now`, which the page passes
+ * in (snapped to a few minutes) because queries can't read the clock. Pageviews without
+ * a session count toward pageviews and the pageview lists when nothing is filtered.
+ */
+export const hourly = query({
+  args: {
+    domain: v.string(),
+    period: v.union(v.literal("today"), v.literal("yesterday"), v.literal("24h")),
+    now: v.number(),
+    filters: v.array(filterValidator),
+  },
+  returns: v.union(viewResult, v.object({ status: v.literal("tooMany") })),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
+    const { start, end } = hourBounds(args.period, args.now, site.timezone);
+    return await filteredView(ctx, site, hourWindow(site, start, end), args.filters);
   },
 });
 

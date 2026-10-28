@@ -28,6 +28,14 @@ export const seriesResult = v.array(
     pageviews: v.number(),
     visitors: v.number(),
     revenueMinor: v.number(),
+    // The key goal's completions (0 without one)
+    goal: v.number(),
+    // Per day, as the tiles count them; null with nothing to divide by
+    bounceRate: v.union(v.null(), v.number()),
+    sessionTimeMs: v.union(v.null(), v.number()),
+    timeOnPageMs: v.union(v.null(), v.number()),
+    // Paying visitors on a site with revenue, otherwise key-goal visitors, ÷ visitors
+    conversionRate: v.union(v.null(), v.number()),
   }),
 );
 
@@ -53,6 +61,8 @@ export const goalsResult = v.object({
   rows: v.array(v.object({ name: v.string(), completions: v.number(), visitors: v.number() })),
   visitors: v.number(),
   keyGoal: v.union(v.null(), v.string()),
+  // The key goal's completions in the period before, for the tile's % change
+  keyGoalPrevious: v.union(v.null(), v.number()),
 });
 
 export const conversionsResult = v.object({

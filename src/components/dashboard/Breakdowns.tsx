@@ -1,6 +1,9 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import Link from "next/link";
 import { createElement, useState, type ReactNode } from "react";
+import { CircleSlash } from "lucide-react";
 import { useQuery } from "convex/react";
 import type { IconType } from "react-icons";
 import {
@@ -27,12 +30,12 @@ import {
   SiVivaldi,
 } from "react-icons/si";
 import { api } from "../../../convex/_generated/api";
-import { dimMetric, type Dim } from "../../../convex/lib/dims";
+import { breakdownKey, dimMetric, type Dim, type ListChannel } from "../../../convex/lib/dims";
 import { canFilter, type Filter } from "../../../convex/lib/filters";
 import { parseGeoKey } from "../../../convex/lib/geo";
 import type { DateRange } from "../../../convex/lib/ranges";
 import type { BreakdownResult, GoalsResult } from "../../../convex/lib/statsShapes";
-import { sourceDomain } from "../../../convex/lib/sources";
+import { DIRECT, sourceDomain } from "../../../convex/lib/sources";
 import {
   cityLabel,
   countryFlag,
@@ -45,199 +48,239 @@ import {
   referrerLabel,
   regionLabel,
 } from "@/lib/format";
-import BreakdownList, { type BreakdownRow } from "./BreakdownList";
-import GoalsPanel from "./GoalsPanel";
+import { Badge } from "@/components/ui/badge";
+import StatsCard, { type CardTab, type StatsRow } from "./StatsCard";
 
 type Props = {
   domain: string;
   range: DateRange;
-  /** The site's currency when it takes payments; adds a revenue column to source and location lists */
+  /** The site's currency when it takes payments; Sources and Countries can then show revenue */
   currency: string | null;
   view: View;
 };
 
 /**
- * Filters on the dashboard. With any set, the lists read `data` and `goals` (from
- * stats.filtered, undefined while loading) instead of their rollup queries. `onSelect`
- * turns a row into a filter; null where filtering is not possible (cookieless sites).
+ * Filters on the dashboard. With `raw` (filters set, or an hour range), the lists read
+ * `data` and `goals` (from stats.filtered or stats.hourly, undefined while loading)
+ * instead of their rollup queries. `onSelect` turns a row into a filter; null where
+ * filtering is not possible (cookieless sites).
  */
 export type View = {
   filters: Filter[];
+  raw: boolean;
   data: Record<string, BreakdownResult> | undefined;
   goals: GoalsResult | undefined;
   onSelect: ((dim: Dim, key: string) => void) | null;
 };
 
-type Tab = { dim: Dim; label: string };
+/**
+ * A tab's id is the list's key in the filtered view ("source", "source:AI", ...), or
+ * "country:map" for the Map tab, which draws the country list.
+ */
+type Tab = CardTab & { dim: Dim; channel?: ListChannel; map?: true };
 
-const SOURCE_TABS: Tab[] = [
-  { dim: "channel", label: "Channels" },
-  { dim: "source", label: "Sources" },
-  { dim: "utm_campaign", label: "Campaigns" },
-  { dim: "referrer", label: "Referrers" },
-];
+const tab = (dim: Dim, label: string, channel?: ListChannel): Tab => ({
+  id: breakdownKey(dim, channel),
+  label,
+  dim,
+  channel,
+});
 
-const PAGE_TABS: Tab[] = [
-  { dim: "page", label: "Pages" },
-  { dim: "entry", label: "Entry" },
-  { dim: "exit", label: "Exit" },
-];
+// The outlines load with the tab, not with the dashboard
+const WorldMap = dynamic(() => import("./WorldMap"), {
+  ssr: false,
+  loading: () => <div className="min-h-66 flex-1 animate-pulse rounded-md bg-muted" aria-busy />,
+});
 
-const DEVICE_TABS: Tab[] = [
-  { dim: "device", label: "Devices" },
-  { dim: "os", label: "OS" },
-];
+/** `revenue`: its lists are credited revenue (a payment's session counts on their keys). */
+type Card = { title: string; tabs: Tab[]; more?: Tab[]; revenue?: boolean };
 
-const COUNTRY_TABS: Tab[] = [
-  { dim: "country", label: "Countries" },
-  { dim: "region", label: "Regions" },
-  { dim: "city", label: "Cities" },
-];
+const SOURCES: Card = {
+  title: "Sources",
+  tabs: [tab("source", "Sources"), tab("channel", "Channels"), tab("referrer", "Referrers"), tab("source", "AI", "AI")],
+  // The campaign tags from the landing page's URL
+  more: [
+    tab("utm_campaign", "Campaign"),
+    tab("utm_source", "UTM source"),
+    tab("utm_medium", "UTM medium"),
+    tab("utm_term", "UTM term"),
+    tab("utm_content", "UTM content"),
+    tab("ref", "ref / via"),
+  ],
+  revenue: true,
+};
 
-// The Campaigns tab can switch to any tag from the landing page's URL
-const CAMPAIGN_DIMS: Tab[] = [
-  { dim: "utm_campaign", label: "Campaign" },
-  { dim: "utm_source", label: "Source" },
-  { dim: "utm_medium", label: "Medium" },
-  { dim: "utm_term", label: "Term" },
-  { dim: "utm_content", label: "Content" },
-  { dim: "ref", label: "ref / via" },
-];
+const PAGES: Card = {
+  title: "Pages",
+  tabs: [tab("page", "Pages"), tab("entry", "Entry"), tab("exit", "Exit"), tab("outbound", "Outbound")],
+};
 
-// Lists that are credited revenue: a payment's session counts on these keys
-const REVENUE_DIMS = new Set<Dim>([...SOURCE_TABS, ...CAMPAIGN_DIMS, ...COUNTRY_TABS].map((t) => t.dim));
+const COUNTRIES: Card = {
+  title: "Countries",
+  tabs: [tab("country", "Countries"), tab("city", "Cities"), { ...tab("country", "Map"), id: "country:map", map: true }],
+  more: [tab("region", "Regions")],
+  revenue: true,
+};
 
-// Lists that show a count rather than a share bar
-const COUNT_DIMS = new Set<Dim>([
-  ...[...SOURCE_TABS, ...PAGE_TABS, ...CAMPAIGN_DIMS].map((t) => t.dim),
-  "outbound",
-]);
+const DEVICES: Card = {
+  title: "Devices",
+  tabs: [tab("device", "Devices"), tab("browser", "Browsers"), tab("os", "OS")],
+};
+
+const METRIC_LABELS = {
+  pageviews: "Pageviews",
+  visitors: "Visitors",
+  sessions: "Sessions",
+  events: "Clicks",
+} as const;
 
 /**
- * The four columns under the chart: sources (Channels, Sources, Campaigns, Referrers),
- * pages (Pages, Entry, Exit), devices (Devices, OS) + Browsers, and countries
- * (Countries, Regions, Cities). Goals and Outbound links sit below, two columns each.
+ * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices,
+ * Events | Funnels, in two columns with dividers (one column on phones).
  */
-export default function Breakdowns({ domain, range, currency, view }: Props) {
-  // Remount the lists when the range or the filters change, so paging starts on page 1
-  const k = `${range.from}_${range.to}${view.filters.map((f) => `|${f.dim}:${f.value}`).join("")}`;
+export default function Breakdowns(props: Props) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Tabbed {...{ domain, range, currency, view }} tabs={SOURCE_TABS} title="Sources" />
-      <Tabbed {...{ domain, range, currency, view }} tabs={PAGE_TABS} title="Pages" />
-      <div className="flex flex-col gap-4">
-        <Tabbed {...{ domain, range, currency, view }} tabs={DEVICE_TABS} title="Devices" />
-        <Breakdown key={`browser${k}`} {...{ domain, range, currency, view }} dim="browser" title="Browsers" />
-      </div>
-      <Tabbed {...{ domain, range, currency, view }} tabs={COUNTRY_TABS} title="Countries" />
-      <div className="sm:col-span-2">
-        <GoalsPanel key={`goal${k}`} {...{ domain, range, view }} />
-      </div>
-      <div className="sm:col-span-2">
-        <Breakdown key={`outbound${k}`} {...{ domain, range, currency, view }} dim="outbound" title="Outbound links" />
-      </div>
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-2">
+      <Breakdown {...props} card={SOURCES} />
+      <Breakdown {...props} card={PAGES} />
+      <Breakdown {...props} card={COUNTRIES} />
+      <Breakdown {...props} card={DEVICES} />
+      <Events {...props} />
+      <StatsCard
+        title="Funnels"
+        tabs={[{ id: "funnels", label: "Funnels" }]}
+        tab="funnels"
+        onTab={() => {}}
+        rows={[]}
+        empty="Funnels are coming soon"
+      />
     </div>
   );
 }
 
-/** A list with tabs in its header; the tab is kept when the range changes. */
-function Tabbed({ domain, range, currency, view, tabs, title }: Props & { tabs: Tab[]; title: string }) {
-  const [tab, setTab] = useState(tabs[0].dim);
-  const [campaignDim, setCampaignDim] = useState<Dim>("utm_campaign");
-  const isCampaign = CAMPAIGN_DIMS.some((t) => t.dim === tab);
-  const dim = isCampaign ? campaignDim : tab;
-
-  const header = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <div role="tablist" aria-label={title} className="flex flex-wrap gap-x-2.5 gap-y-1 text-sm">
-        {tabs.map((t) => (
-          <button
-            key={t.dim}
-            type="button"
-            role="tab"
-            aria-selected={t.dim === tab}
-            onClick={() => setTab(t.dim)}
-            className={
-              t.dim === tab ? "font-medium text-strong" : "font-medium text-muted-foreground hover:text-strong"
-            }
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {isCampaign && (
-        <select
-          value={campaignDim}
-          onChange={(e) => setCampaignDim(e.target.value as Dim)}
-          aria-label="Campaign tag"
-          className="ml-auto rounded border border-line bg-panel px-1.5 py-0.5 text-xs text-muted-foreground"
-        >
-          {CAMPAIGN_DIMS.map((t) => (
-            <option key={t.dim} value={t.dim}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
+/**
+ * Goals by completions, with the key goal marked (stats.goals lists it even at 0). The
+ * tooltip adds visitors and the conversion rate (the share of daily visitors who
+ * completed the goal). Clicking a goal filters to the sessions that completed it.
+ */
+function Events({ domain, range, view }: Props) {
+  const rollup = useQuery(api.stats.goals, view.raw ? "skip" : { domain, ...range });
+  const data = view.raw ? view.goals : rollup;
+  const active = view.filters.find((f) => f.dim === "goal")?.value;
+  const select = view.onSelect && canFilter(view.filters, "goal") ? view.onSelect : null;
+  const top = data?.rows[0]?.completions ?? 0;
+  const rows: StatsRow[] | undefined = data?.rows.map((r) => ({
+    key: r.name,
+    label: r.name,
+    active: r.name === active,
+    ...(select ? { onSelect: () => select("goal", r.name) } : {}),
+    badge:
+      r.name === data.keyGoal ? (
+        <Badge variant="outline" className="shrink-0 bg-background">
+          Key goal
+        </Badge>
+      ) : undefined,
+    tooltip: (
+      <span className="tabular-nums">
+        {formatNumber(r.completions)} {r.completions === 1 ? "completion" : "completions"} ·{" "}
+        {formatNumber(r.visitors)} {r.visitors === 1 ? "visitor" : "visitors"} ·{" "}
+        {data.visitors > 0 ? formatShare(Math.min(1, r.visitors / data.visitors)) : "–"} conversion
+      </span>
+    ),
+    value: formatNumber(r.completions),
+    share: top <= 0 ? 0 : r.completions / top,
+  }));
 
   return (
-    <Breakdown
-      key={`${dim}${range.from}_${range.to}${view.filters.map((f) => `|${f.dim}:${f.value}`).join("")}`}
-      {...{ domain, range, currency, view, dim, header }}
-      title={tabs.find((t) => t.dim === tab)?.label ?? title}
+    <StatsCard
+      title="Events"
+      tabs={[{ id: "goal", label: "Events" }]}
+      tab="goal"
+      onTab={() => {}}
+      metric="Completions"
+      rows={rows}
+      empty={
+        <>
+          No goals completed in this period.{" "}
+          <Link
+            href={`/sites/${encodeURIComponent(domain)}/settings#goals`}
+            className="ml-1 underline hover:text-foreground"
+          >
+            Set up goals
+          </Link>
+        </>
+      }
     />
   );
 }
 
-function Breakdown({
-  domain,
-  range,
-  currency,
-  view,
-  dim,
-  title,
-  header,
-}: Props & { dim: Dim; title: string; header?: ReactNode }) {
-  const filtering = view.filters.length > 0;
-  const rollup = useQuery(api.stats.breakdown, filtering ? "skip" : { domain, dim, ...range });
-  const data = filtering ? view.data?.[dim] : rollup;
+/**
+ * One card; its tab is kept when the range or the filters change. On a site with revenue,
+ * the Sources and Countries cards switch between Visitors and Revenue (rows with revenue,
+ * largest amount first).
+ */
+function Breakdown({ domain, range, currency, view, card }: Props & { card: Card }) {
+  const tabs = [...card.tabs, ...(card.more ?? [])];
+  const [tabId, setTabId] = useState(card.tabs[0].id);
+  const [byRevenue, setByRevenue] = useState(false);
+  const { dim, channel, map } = tabs.find((t) => t.id === tabId) ?? card.tabs[0];
+  const rollup = useQuery(api.stats.breakdown, view.raw ? "skip" : { domain, dim, channel, ...range });
+  const data = view.raw ? view.data?.[breakdownKey(dim, channel)] : rollup;
   const active = view.filters.find((f) => f.dim === dim)?.value;
   const select = view.onSelect && canFilter(view.filters, dim) ? view.onSelect : null;
 
   // Pages count pageviews, entry and exit pages count sessions, outbound links count
-  // clicks, and the source lists count visitors (as SA does); the other lists show each
-  // key's share of all visitors.
-  const variant = COUNT_DIMS.has(dim) ? "count" : "share";
+  // clicks, and the other lists count visitors. Bars are relative to the top row.
   const metric = dimMetric(dim);
-  const total = data
-    ? {
-        pageviews: data.totalPageviews,
-        visitors: data.totalVisitors,
-        sessions: data.totalSessions,
-        events: data.totalEvents,
-      }[metric]
-    : 0;
+  const revenueCurrency = card.revenue ? currency : null;
+  const revenue = revenueCurrency !== null && byRevenue;
+  const ranked = revenue
+    ? data?.rows.filter((r) => r.revenueMinor !== 0).sort((a, b) => b.revenueMinor - a.revenueMinor)
+    : data?.rows;
+  const count = (r: BreakdownRow) => (revenue ? r.revenueMinor : r[metric]);
+  const top = ranked?.[0] ? count(ranked[0]) : 0;
+  const rows: StatsRow[] | undefined = ranked?.map((r) => ({
+    key: r.key,
+    label: <Label dim={dim} value={r.key} />,
+    href: rowHref(dim, r.key),
+    icon: rowIcon(dim, r.key),
+    active: r.key === active,
+    ...(select ? { onSelect: () => select(dim, r.key) } : {}),
+    value: revenue ? formatMoney(r.revenueMinor, revenueCurrency, true) : formatNumber(r[metric]),
+    share: top <= 0 ? 0 : Math.max(0, count(r) / top),
+  }));
 
-  const showRevenue = currency !== null && REVENUE_DIMS.has(dim);
-  const rows: BreakdownRow[] | undefined = data?.rows.map((r) => {
-    const share = total === 0 ? 0 : r[metric] / total;
-    return {
-      key: r.key,
-      label: <Label dim={dim} value={r.key} />,
-      href: rowHref(dim, r.key),
-      icon: rowIcon(dim, r.key),
-      active: r.key === active,
-      ...(select ? { onSelect: () => select(dim, r.key) } : {}),
-      value: variant === "count" ? formatNumber(r[metric]) : formatShare(share),
-      share,
-      ...(showRevenue && r.revenueMinor !== 0 ? { revenue: formatMoney(r.revenueMinor, currency, true) } : {}),
-    };
-  });
+  const metricLabel = revenue ? "Revenue" : METRIC_LABELS[metric];
 
-  return <BreakdownList title={title} header={header} variant={variant} rows={rows} />;
+  return (
+    <StatsCard
+      title={card.title}
+      tabs={card.tabs}
+      more={card.more}
+      tab={tabId}
+      onTab={setTabId}
+      metric={metricLabel}
+      onMetricSwitch={revenueCurrency !== null ? () => setByRevenue(!byRevenue) : undefined}
+      rows={rows}
+      body={
+        map && ranked ? (
+          <WorldMap
+            values={ranked.map((r) => ({
+              code: r.key,
+              count: count(r),
+              value: revenue ? formatMoney(r.revenueMinor, revenueCurrency, true) : formatNumber(r[metric]),
+            }))}
+            metric={metricLabel}
+            active={active}
+            onSelect={select ? (code) => select(dim, code) : null}
+          />
+        ) : undefined
+      }
+    />
+  );
 }
+
+type BreakdownRow = BreakdownResult["rows"][number];
 
 function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
   switch (dim) {
@@ -280,12 +323,13 @@ function rowIcon(dim: Dim, value: string): ReactNode {
     case "city": {
       const country = dim === "country" ? value : (parseGeoKey(value)?.country ?? "");
       return (
-        <span className="text-2xl leading-none" aria-hidden>
+        <span className="text-base leading-none" aria-hidden>
           {countryFlag(country) || "🌐"}
         </span>
       );
     }
     case "source":
+      if (value === DIRECT) return <CircleSlash aria-hidden className="size-3.5" />;
       return <SourceIcon key={value} source={value} />;
     default:
       return null;

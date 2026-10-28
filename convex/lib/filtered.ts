@@ -1,12 +1,13 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { sessionSource, sourceDims } from "./attribution";
-import { dimValidator, rankEntries, type Dim, type DimEntry } from "./dims";
+import { breakdownKey, dimValidator, rankEntries, type Dim, type DimEntry } from "./dims";
 import type { Filter } from "./filters";
-import { localDate } from "./dates";
+import { localDate, localHour } from "./dates";
 import { cityKey, regionKey } from "./geo";
 import { eachDate, previousRange, type DateRange } from "./ranges";
 import { siteCurrency } from "./revenue";
+import { inChannel } from "./sources";
 import type {
   BreakdownResult,
   ConversionsResult,
@@ -92,29 +93,87 @@ export type FilteredView =
     }
   | { status: "tooMany" };
 
+/** Whether a row (its timestamp and site-local date) falls in a period. */
+type Period = (ts: number, date: string) => boolean;
+
+/**
+ * What a view counts: the period, the one of equal length before it, and the chart's
+ * points. `start` and `end` bound the index reads over both periods.
+ */
+export type ViewWindow = {
+  start: number;
+  end: number;
+  current: Period;
+  previous: Period;
+  /** The chart's points in order: dates, or "YYYY-MM-DDTHH:00" for hours */
+  points: string[];
+  /** The point a row in the current period counts on */
+  point: (ts: number, date: string) => string | undefined;
+  /** False when visitor tracking started inside the window, so session changes aren't shown */
+  comparable: boolean;
+};
+
+/** Day ranges (stats.filtered): rows count on their stored site-local date. */
+export function dayWindow(site: Doc<"sites">, range: DateRange): ViewWindow {
+  const prev = previousRange(range);
+  const inRange = (r: DateRange) => (_ts: number, date: string) => date >= r.from && date <= r.to;
+  const current = inRange(range);
+  const launch = site.trackingStartedAt === undefined ? null : localDate(site.trackingStartedAt, site.timezone);
+  return {
+    // Local days run from UTC-12 to UTC+14; the stored `date` decides
+    start: Date.parse(`${prev.from}T00:00:00Z`) - 14 * HOUR_MS,
+    end: Date.parse(`${range.to}T00:00:00Z`) + 36 * HOUR_MS,
+    current,
+    previous: inRange(prev),
+    points: eachDate(range),
+    point: (ts, date) => (current(ts, date) ? date : undefined),
+    comparable: launch === null || launch <= prev.from || launch > range.to,
+  };
+}
+
+/**
+ * Hour ranges (stats.hourly): [start, end) and the window of equal length before it,
+ * one point per hour from `start`, named by its local date and hour in the site's timezone.
+ */
+export function hourWindow(site: Doc<"sites">, start: number, end: number): ViewWindow {
+  const length = end - start;
+  const points: string[] = [];
+  for (let t = start; t < end; t += HOUR_MS) {
+    const { date, hour } = localHour(t, site.timezone);
+    points.push(`${date}T${String(hour).padStart(2, "0")}:00`);
+  }
+  const current: Period = (ts) => ts >= start && ts < end;
+  const launch = site.trackingStartedAt;
+  return {
+    start: start - length,
+    end,
+    current,
+    previous: (ts) => ts >= start - length && ts < start,
+    points,
+    point: (ts) => (current(ts, "") ? points[Math.floor((ts - start) / HOUR_MS)] : undefined),
+    comparable: launch === undefined || launch <= start - length || launch >= end,
+  };
+}
+
 export async function filteredView(
   ctx: QueryCtx,
   site: Doc<"sites">,
-  range: DateRange,
+  window: ViewWindow,
   filters: Filter[],
 ): Promise<FilteredView> {
   try {
-    return { status: "ok", ...(await compute(ctx, site, range, filters)) };
+    return { status: "ok", ...(await compute(ctx, site, window, filters)) };
   } catch (e) {
     if (e instanceof TooManyRows) return { status: "tooMany" };
     throw e;
   }
 }
 
-async function compute(ctx: QueryCtx, site: Doc<"sites">, range: DateRange, filters: Filter[]) {
+async function compute(ctx: QueryCtx, site: Doc<"sites">, window: ViewWindow, filters: Filter[]) {
   const budget = new Budget();
   const siteId = site._id;
-  const prev = previousRange(range);
-  const window: DateRange = { from: prev.from, to: range.to };
-  // Local days run from UTC-12 to UTC+14; the stored `date` decides
-  const start = Date.parse(`${window.from}T00:00:00Z`) - 14 * HOUR_MS;
-  const end = Date.parse(`${window.to}T00:00:00Z`) + 36 * HOUR_MS;
-  const inRange = (date: string, r: DateRange) => date >= r.from && date <= r.to;
+  const { start, end } = window;
+  const inWindow: Period = (ts, date) => window.current(ts, date) || window.previous(ts, date);
 
   const infos = new Map<string, SessionInfo>();
   const sessionRows = await budget.take(
@@ -123,14 +182,26 @@ async function compute(ctx: QueryCtx, site: Doc<"sites">, range: DateRange, filt
       .withIndex("by_site_started", (q) => q.eq("siteId", siteId).gte("startedAt", start).lt("startedAt", end)),
   );
   for (const s of sessionRows) {
-    if (inRange(s.date, window)) infos.set(s.sessionId, { session: s, keys: sessionKeys(s), pageviews: [], events: [] });
+    if (inWindow(s.startedAt, s.date)) {
+      infos.set(s.sessionId, { session: s, keys: sessionKeys(s), pageviews: [], events: [] });
+    }
   }
   const pageviewRows = await budget.take(
     ctx.db
       .query("pageviews")
       .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", start).lt("ts", end + TAIL_MS)),
   );
-  for (const p of pageviewRows) if (p.sessionId) infos.get(p.sessionId)?.pageviews.push(p);
+  // Pageviews without a session (cookieless sites, the old script) count toward
+  // pageviews and the pageview lists when nothing is filtered, on their own time
+  const loose: LoosePageview[] = [];
+  for (const p of pageviewRows) {
+    if (p.sessionId) {
+      infos.get(p.sessionId)?.pageviews.push(p);
+    } else if (filters.length === 0 && p.ts < end) {
+      const date = localDate(p.ts, site.timezone);
+      if (inWindow(p.ts, date)) loose.push({ pageview: p, date });
+    }
+  }
   const eventRows = await budget.take(
     ctx.db
       .query("events")
@@ -151,57 +222,98 @@ async function compute(ctx: QueryCtx, site: Doc<"sites">, range: DateRange, filt
         .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", start).lt("ts", end)),
     );
     for (const p of rows) {
-      if (!inRange(p.date, window) || p.sessionId === undefined) continue;
+      if (!inWindow(p.ts, p.date) || p.sessionId === undefined) continue;
       const info = infos.get(p.sessionId) ?? (await creditedSession(ctx, budget, siteId, p.sessionId, infos));
       if (info && matches(info, filters)) payments.push({ payment: p, info });
     }
   }
 
-  const matched = [...infos.values()].filter((i) => inRange(i.session.date, window) && matches(i, filters));
-  const sessionsIn = (r: DateRange) => matched.filter((i) => inRange(i.session.date, r));
-  const paymentsIn = (r: DateRange) => payments.filter((p) => inRange(p.payment.date, r));
-  const current = sessionsIn(range);
-  const currentPayments = paymentsIn(range);
+  const matched = [...infos.values()].filter((i) => inWindow(i.session.startedAt, i.session.date) && matches(i, filters));
+  const sessionsIn = (r: Period) => matched.filter((i) => r(i.session.startedAt, i.session.date));
+  const paymentsIn = (r: Period) => payments.filter((p) => r(p.payment.ts, p.payment.date));
+  const looseIn = (r: Period) => loose.filter((l) => r(l.pageview.ts, l.date));
+  const prev = window.previous;
+  const current = sessionsIn(window.current);
+  const currentPayments = paymentsIn(window.current);
+  const currentLoose = looseIn(window.current);
 
-  const launch = site.trackingStartedAt === undefined ? null : localDate(site.trackingStartedAt, site.timezone);
   const summary: Summary = {
-    current: sumTotals(current, currentPayments, currency),
-    previous: sumTotals(sessionsIn(prev), paymentsIn(prev), currency),
-    comparable: launch === null || launch <= prev.from || launch > range.to,
+    current: sumTotals(current, currentPayments, currency, currentLoose),
+    previous: sumTotals(sessionsIn(prev), paymentsIn(prev), currency, looseIn(prev)),
+    comparable: window.comparable,
     visitorsApprox: false,
   };
 
-  // Chart: sessions on their start day, revenue on the payment's day
-  const days = new Map(eachDate(range).map((date) => [date, { pageviews: 0, visitors: new Set<string>(), revenueMinor: 0 }]));
-  for (const { session: s } of current) {
-    const day = days.get(s.date);
+  // Chart: sessions at their start, revenue and paying visitors at the payment
+  const keyGoal = site.keyGoal ?? null;
+  const days = new Map(
+    window.points.map((point) => [
+      point,
+      {
+        sessions: [] as SessionInfo[],
+        loose: [] as LoosePageview[],
+        converted: new Set<string>(),
+        revenueMinor: 0,
+        goal: 0,
+      },
+    ]),
+  );
+  for (const l of currentLoose) {
+    const at = window.point(l.pageview.ts, l.date);
+    if (at !== undefined) days.get(at)?.loose.push(l);
+  }
+  for (const info of current) {
+    const s = info.session;
+    const at = window.point(s.startedAt, s.date);
+    const day = at === undefined ? undefined : days.get(at);
     if (!day) continue;
-    day.pageviews += s.pageviews;
-    day.visitors.add(s.visitorId);
+    day.sessions.push(info);
+    const done = info.events.filter((e) => e.type === "goal" && e.name === keyGoal).length;
+    day.goal += done;
+    if (!revenue && done > 0) day.converted.add(s.visitorId);
   }
   for (const { payment: p } of currentPayments) {
-    const day = days.get(p.date);
-    if (day && p.currency === currency) day.revenueMinor += p.amountMinor;
+    const at = window.point(p.ts, p.date);
+    const day = at === undefined ? undefined : days.get(at);
+    if (!day || p.currency !== currency) continue;
+    day.revenueMinor += p.amountMinor;
+    if (p.kind === "payment" && p.visitorId) day.converted.add(p.visitorId);
   }
-  const timeseries: Series = [...days].map(([date, d]) => ({
-    date,
-    pageviews: d.pageviews,
-    visitors: d.visitors.size,
-    revenueMinor: d.revenueMinor,
-  }));
+  const timeseries: Series = [...days].map(([date, d]) => {
+    const t = sumTotals(d.sessions, [], currency, d.loose);
+    return {
+      date,
+      pageviews: t.pageviews,
+      visitors: t.visitors,
+      revenueMinor: d.revenueMinor,
+      goal: d.goal,
+      bounceRate: t.bounceRate,
+      sessionTimeMs: t.sessionTimeMs,
+      timeOnPageMs: t.timeOnPageMs,
+      conversionRate:
+        (!revenue && keyGoal === null) || t.visitors === 0 ? null : Math.min(1, d.converted.size / t.visitors),
+    };
+  });
 
   const breakdowns: Record<string, BreakdownResult> = {};
-  for (const dim of ALL_DIMS) breakdowns[dim] = breakdown(dim, current, currentPayments, currency);
+  for (const dim of ALL_DIMS) breakdowns[dim] = breakdown(dim, current, currentPayments, currency, currentLoose);
+  // The AI tab: the source list limited to AI sources, as stats.breakdown's `channel` does
+  breakdowns[breakdownKey("source", "AI")] = breakdown("source", current, currentPayments, currency, [], (key) =>
+    inChannel(key, "AI"),
+  );
 
   const goalRows = breakdowns.goal.rows.map((r) => ({ name: r.key, completions: r.events, visitors: r.visitors }));
-  const keyGoal = site.keyGoal ?? null;
   if (keyGoal !== null && !goalRows.some((r) => r.name === keyGoal)) {
     goalRows.push({ name: keyGoal, completions: 0, visitors: 0 });
   }
-  const goals: GoalsResult = { rows: goalRows, visitors: summary.current.visitors, keyGoal };
+  const keyGoalPrevious =
+    keyGoal === null
+      ? null
+      : sessionsIn(prev).reduce((n, i) => n + i.events.filter((e) => e.type === "goal" && e.name === keyGoal).length, 0);
+  const goals: GoalsResult = { rows: goalRows, visitors: summary.current.visitors, keyGoal, keyGoalPrevious };
 
   // Converted visitors: a payment credited to a matching session, or the key goal in one
-  const converted = (r: DateRange): number => {
+  const converted = (r: Period): number => {
     if (revenue) {
       return new Set(
         paymentsIn(r)
@@ -218,7 +330,7 @@ async function compute(ctx: QueryCtx, site: Doc<"sites">, range: DateRange, filt
   const kind = revenue ? "revenue" : keyGoal !== null ? "goal" : null;
   const conversions: ConversionsResult = {
     kind,
-    current: kind === null ? null : converted(range),
+    current: kind === null ? null : converted(window.current),
     previous: kind === null ? null : converted(prev),
     otherCurrencyPayments: currentPayments.filter(({ payment: p }) => p.currency !== currency).length,
   };
@@ -264,14 +376,32 @@ async function creditedSession(
 }
 
 type CreditedPayment = { payment: Doc<"payments">; info: SessionInfo };
+type LoosePageview = { pageview: Doc<"pageviews">; date: string };
 
-function sumTotals(sessions: SessionInfo[], payments: CreditedPayment[], currency: string): Totals {
+/**
+ * Totals over sessions and the payments credited to them. Pageviews without a session
+ * add to pageviews and time on page, and their unique visits to visitors (as the
+ * rollups count them); session numbers come from sessions only.
+ */
+function sumTotals(
+  sessions: SessionInfo[],
+  payments: CreditedPayment[],
+  currency: string,
+  loose: LoosePageview[] = [],
+): Totals {
   const visitors = new Set<string>();
-  let pageviews = 0;
+  let uniqueVisits = 0;
+  let pageviews = loose.length;
   let bounces = 0;
   let engagedMs = 0;
   let durationSumMs = 0;
   let durationCount = 0;
+  for (const { pageview: p } of loose) {
+    if (p.unique) uniqueVisits++;
+    if (p.durationMs === undefined) continue;
+    durationSumMs += p.durationMs;
+    durationCount++;
+  }
   for (const { session: s, pageviews: pvs } of sessions) {
     visitors.add(s.visitorId);
     pageviews += s.pageviews;
@@ -294,7 +424,7 @@ function sumTotals(sessions: SessionInfo[], payments: CreditedPayment[], currenc
   }
   const n = sessions.length;
   return {
-    visitors: visitors.size,
+    visitors: visitors.size + uniqueVisits,
     pageviews,
     timeOnPageMs: durationCount === 0 ? null : Math.round(durationSumMs / durationCount),
     sessions: n,
@@ -311,13 +441,23 @@ function sumTotals(sessions: SessionInfo[], payments: CreditedPayment[], currenc
  * sum them per day). Session lists count sessions and their pageviews, plus the revenue
  * of payments credited to them; Pages counts pageviews; Goals and Outbound count events.
  */
-function breakdown(dim: Dim, sessions: SessionInfo[], payments: CreditedPayment[], currency: string): BreakdownResult {
-  const byKey = new Map<string, DimEntry & { ids: Set<string> }>();
+function breakdown(
+  dim: Dim,
+  sessions: SessionInfo[],
+  payments: CreditedPayment[],
+  currency: string,
+  /** Pageviews without a session, counted on the lists a pageview carries */
+  loose: LoosePageview[] = [],
+  /** Session lists: keeps only these keys, in the rows and the totals */
+  keep: (key: string) => boolean = () => true,
+): BreakdownResult {
+  const byKey = new Map<string, DimEntry & { ids: Set<string>; uniqueVisits: number }>();
+  let uniqueVisits = 0;
   const allIds = new Set<string>();
   const entry = (key: string) => {
     let e = byKey.get(key);
     if (!e) {
-      e = { key, pageviews: 0, visitors: 0, sessions: 0, events: 0, revenueMinor: 0, ids: new Set() };
+      e = { key, pageviews: 0, visitors: 0, sessions: 0, events: 0, revenueMinor: 0, ids: new Set(), uniqueVisits: 0 };
       byKey.set(key, e);
     }
     return e;
@@ -330,7 +470,7 @@ function breakdown(dim: Dim, sessions: SessionInfo[], payments: CreditedPayment[
   for (const { session: s, keys, pageviews, events } of sessions) {
     if (SESSION_DIMS.has(dim)) {
       const key = keys.get(dim);
-      if (key === undefined) continue;
+      if (key === undefined || !keep(key)) continue;
       const e = entry(key);
       e.sessions++;
       e.pageviews += s.pageviews;
@@ -351,14 +491,24 @@ function breakdown(dim: Dim, sessions: SessionInfo[], payments: CreditedPayment[
       }
     }
   }
+  for (const { pageview: p } of loose) {
+    const key = looseKey(dim, p);
+    if (key === undefined || !keep(key)) continue;
+    const e = entry(key);
+    e.pageviews++;
+    if (p.unique) {
+      e.uniqueVisits++;
+      uniqueVisits++;
+    }
+  }
   if (SESSION_DIMS.has(dim)) {
     for (const { payment: p, info } of payments) {
       const key = info.keys.get(dim);
-      if (key !== undefined && p.currency === currency) entry(key).revenueMinor += p.amountMinor;
+      if (key !== undefined && keep(key) && p.currency === currency) entry(key).revenueMinor += p.amountMinor;
     }
   }
 
-  const entries = [...byKey.values()].map(({ ids, ...e }) => ({ ...e, visitors: ids.size }));
+  const entries = [...byKey.values()].map(({ ids, uniqueVisits, ...e }) => ({ ...e, visitors: ids.size + uniqueVisits }));
   const total = { pageviews: 0, sessions: 0, events: 0, revenueMinor: 0 };
   for (const e of entries) {
     total.pageviews += e.pageviews;
@@ -369,9 +519,27 @@ function breakdown(dim: Dim, sessions: SessionInfo[], payments: CreditedPayment[
   return {
     rows: rankEntries(dim, entries).slice(0, MAX_BREAKDOWN_KEYS),
     totalPageviews: total.pageviews,
-    totalVisitors: allIds.size,
+    totalVisitors: allIds.size + uniqueVisits,
     totalSessions: total.sessions,
     totalEvents: total.events,
     totalRevenueMinor: total.revenueMinor,
   };
+}
+
+/** The key a pageview without a session has on a list, if the pageview carries it. */
+function looseKey(dim: Dim, p: Doc<"pageviews">): string | undefined {
+  switch (dim) {
+    case "page":
+      return p.path;
+    case "referrer":
+      return p.referrer;
+    case "device":
+      return p.device;
+    case "browser":
+      return p.browser;
+    case "country":
+      return p.country;
+    default:
+      return undefined;
+  }
 }

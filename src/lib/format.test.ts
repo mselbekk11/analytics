@@ -5,7 +5,10 @@ import {
   countryName,
   currencyDigits,
   formatChange,
+  formatRate,
+  goalLabel,
   formatDate,
+  formatPoint,
   formatDateTime,
   formatDuration,
   formatElapsed,
@@ -43,9 +46,30 @@ describe("format", () => {
     expect(formatShare(0.0099)).toBe("1%");
     expect(formatShare(0.456)).toBe("46%");
     expect(formatShare(1)).toBe("100%");
-    expect(formatChange(0.25)).toBe("+25%");
-    expect(formatChange(-0.031)).toBe("-3%");
+    expect(formatChange(0.25)).toBe("+25.0%");
+    expect(formatChange(0.504)).toBe("+50.4%");
+    expect(formatChange(-0.031)).toBe("-3.1%");
     expect(formatChange(0)).toBe("0%");
+    expect(formatChange(0.0004)).toBe("0%");
+  });
+
+  test("tile rates: two decimals below 1%, one above", () => {
+    expect(formatRate(0.008)).toBe("0.80%");
+    expect(formatRate(0.416)).toBe("41.6%");
+    expect(formatRate(0)).toBe("0.00%");
+    expect(formatRate(1)).toBe("100.0%");
+  });
+
+  test("goal names as tile labels", () => {
+    expect(goalLabel("signup")).toBe("Signups");
+    expect(goalLabel("newsletter_subscribe")).toBe("Newsletter Subscribes");
+    expect(goalLabel("click:hero-cta")).toBe("Click Hero Ctas");
+    expect(goalLabel("checkout_started")).toBe("Checkout Started");
+    expect(goalLabel("booking")).toBe("Bookings");
+    expect(goalLabel("demo-request")).toBe("Demo Requests");
+    expect(goalLabel("inquiry")).toBe("Inquiries");
+    expect(goalLabel("purchase")).toBe("Purchases");
+    expect(goalLabel("sales")).toBe("Sales");
   });
 
   test("dates read the string without timezone shifts", () => {
@@ -143,5 +167,14 @@ describe("formatElapsed", () => {
     expect(formatRangeLabel({ from: "2026-10-01", to: "2026-10-14" })).toBe("1 Oct – 14 Oct 2026");
     expect(formatRangeLabel({ from: "2025-12-28", to: "2026-01-03" })).toBe("28 Dec 2025 – 3 Jan 2026");
     expect(formatRangeLabel({ from: "2026-10-14", to: "2026-10-14" })).toBe("14 Oct 2026");
+  });
+});
+
+describe("formatPoint", () => {
+  test("days read as dates, hours as times", () => {
+    expect(formatPoint("2026-10-13")).toBe("Oct 13");
+    expect(formatPoint("2026-10-13", true)).toBe("Oct 13, 2026");
+    expect(formatPoint("2026-10-13T14:00")).toBe("14:00");
+    expect(formatPoint("2026-10-13T09:00", true)).toBe("Oct 13, 09:00");
   });
 });

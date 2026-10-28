@@ -13,7 +13,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:world-map": "node scripts/build-world-map.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -46,11 +47,15 @@
     "@types/react-dom": "^19",
     "@types/ua-parser-js": "^0.7.39",
     "convex-test": "^0.0.61",
+    "d3-geo": "^3.1.1",
     "esbuild": "^0.27.7",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "i18n-iso-countries": "^7.14.0",
     "tailwindcss": "^4",
+    "topojson-client": "^3.1.0",
     "typescript": "^5",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "world-atlas": "^2.0.2"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { isValidTimeZone, localDate } from "./dates";
+import { hourWindow, isValidTimeZone, localDate, zonedTime } from "./dates";
 
 describe("localDate", () => {
   const la = "America/Los_Angeles";
@@ -36,5 +36,27 @@ describe("isValidTimeZone", () => {
     expect(isValidTimeZone("UTC")).toBe(true);
     expect(isValidTimeZone("Mars/Olympus_Mons")).toBe(false);
     expect(isValidTimeZone("")).toBe(false);
+  });
+});
+
+describe("zonedTime and hourWindow", () => {
+  const la = "America/Los_Angeles";
+
+  test("local midnight in LA, in and out of DST", () => {
+    expect(zonedTime("2026-10-14", 0, la)).toBe(Date.UTC(2026, 9, 14, 7));
+    expect(zonedTime("2026-11-02", 0, la)).toBe(Date.UTC(2026, 10, 2, 8));
+    expect(zonedTime("2026-10-14", 15, "Asia/Kolkata")).toBe(Date.UTC(2026, 9, 14, 9, 30));
+  });
+
+  test("today ends at the end of the current local hour", () => {
+    const now = Date.UTC(2026, 9, 14, 21, 40); // 14:40 in LA
+    expect(hourWindow("today", now, la)).toEqual({ start: Date.UTC(2026, 9, 14, 7), end: Date.UTC(2026, 9, 14, 22) });
+    expect(hourWindow("24h", now, la)).toEqual({ start: Date.UTC(2026, 9, 13, 22), end: Date.UTC(2026, 9, 14, 22) });
+    expect(hourWindow("yesterday", now, la)).toEqual({ start: Date.UTC(2026, 9, 13, 7), end: Date.UTC(2026, 9, 14, 7) });
+  });
+
+  test("half-hour zones keep local hour boundaries", () => {
+    const now = Date.UTC(2026, 9, 14, 10, 40); // 16:10 in Kolkata
+    expect(hourWindow("today", now, "Asia/Kolkata").end).toBe(Date.UTC(2026, 9, 14, 11, 30));
   });
 });

@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-28 (design v2, Phases 1 to 3 built). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-28 (design v2, Phases 1 to 7 built). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -23,6 +23,13 @@ Last updated: 2026-10-28 (design v2, Phases 1 to 3 built). Design v2 is planned 
 | Design v2, Phase 1: shadcn foundation and theme | **Pushed, awaiting owner review.** shadcn/ui, light and dark tokens, next-themes with a temporary toggle, theme-aware live map. |
 | Design v2, Phase 2: sticky top bar | **Pushed, awaiting owner review.** One sticky `TopBar` on every signed-in page: logo, site switcher menu, "N online", theme toggle, user button, and Analytics / Live / Customers / Settings tabs. |
 | Design v2, Phase 3: page header and day ranges | **Pushed, awaiting owner review.** "Analytics" header with the range in words, Today \| 24h \| 7d \| 30d, a menu with every preset and a two-month Custom range calendar, a disabled Filter button, filter chips as badges. Default range is now 7d. |
+| Design v2, Phase 4: joined stat tiles | **Pushed, awaiting owner review.** One bordered block of tiles on top of the chart: Visitors, Pageviews, Revenue, Conv. rate, the key goal, Bounce rate, Visit duration, each hidden where it doesn't apply. Sessions, time on page, refunds, payments and revenue per visitor moved into tooltips; the online tile is gone (the top bar has it). |
+| Design v2, Phase 5: monochrome chart driven by the tiles | **Pushed, awaiting owner review.** shadcn Chart: Visitors and Pageviews areas, Revenue and key-goal bars, dashed Conv. rate, Bounce rate and Visit duration lines, each extra series on its own hidden scale. The tiles are toggles, remembered per browser. The timeseries gained the key goal and per-day rates. |
+| Design v2, Phase 6: card grid and rows | **Pushed, awaiting owner review.** One bordered block of four cards in two columns: Sources, Pages (with Outbound), Countries, Devices. Text tabs with a More ▾ menu, the metric on the right, bar rows with the number on the right, 7 rows then "View all N →". |
+| Design v2, Phase 7: AI tab and Revenue ⇅ | **Pushed, awaiting owner review.** Sources has an AI tab (only sources the classifier puts in AI, server-side in the rollup and filtered paths). On revenue sites the Sources and Countries headers read "Visitors ⇅" and switch to "Revenue ⇅". |
+| Design v2, Phase 8: Events and Funnels cards | **Pushed, awaiting owner review.** The grid's bottom row: Events (goals by completions, a "Key goal" badge, a tooltip with completions, visitors and conversion, click to filter) and a "Funnels are coming soon" placeholder. The old Goals panel is gone. |
+| Design v2, Phase 9: Map tab | **Pushed, awaiting owner review.** The Countries card has a Map tab: a monochrome SVG world map (110m outlines, loaded when the tab opens) shaded by visitors, or revenue on "Revenue ⇅", with a hover tooltip and click to filter. |
+| Design v2, Phase 10: hourly ranges | **Pushed, awaiting owner review.** Today, Yesterday and Last 24 hours work: `stats.hourly` reads the raw rows of the window and the one before it and returns the standard shapes, one chart point per hour in the site's timezone, with filters. Cookieless pageviews count toward pageviews and the pageview lists. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -112,7 +119,7 @@ src/
   components/ui/     shadcn/ui components, added with `npx shadcn@latest add` (components.json: base-nova,
                      Base UI, neutral, lucide)
   lib/utils.ts       shadcn's cn()
-  components/dashboard/   SiteDashboard, RangePicker, StatTile, TrafficChart, Breakdowns, BreakdownList, GoalsPanel, FilterBar, useNow
+  components/dashboard/   SiteDashboard, RangePicker, StatRow, StatTile, TrafficChart, series, Breakdowns, StatsCard, FilterBar, RangeControls, useNow
   components/websites/    Websites (header, filter, sort, Add website), SiteCard (sparkline card)
   components/settings/    SiteSettings
   components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
@@ -144,6 +151,13 @@ Checks at the end of Phase 5h: the same four clean, `npm test` 368 tests passing
 Checks at the end of design v2 Phase 1: the same four clean, `npm test` 368 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/websites`, the dashboard, settings, customers, a visitor profile and Live all read correctly in light and dark; the toggle switched the theme, which survived a full reload and showed no console errors; the theme script is the first thing in `<body>` of the server HTML (no flash); Clerk's user menu matched both themes; the live map loaded `positron` in light mode and switched to `dark` live when toggled. The signed-in owner can't see the sign-in page (Clerk redirects), so sign-in was not looked at.
 Checks at the end of design v2 Phase 2: the same four clean, `npm test` 368 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: the bar stayed on top while the dashboard scrolled; "0 online" matched the old "online now" tile on `localhost` and was missing on the cookieless `advancedortholabsf.com`; the switcher menu listed both sites with a check on the current one; switching from `localhost/settings?range=30d` opened `advancedortholabsf.com/settings?range=30d`; "Add site" opened `/websites?add=1` with the form open; `/websites` shows "All sites" in the switcher and no tabs; a visitor profile kept Customers active; light and dark both read well. In a 375px iframe the bar is one 56px row plus the tabs, the domain truncates and the page doesn't scroll sideways. No console errors.
 Checks at the end of design v2 Phase 3: the same four clean, `npm test` 384 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/sites/localhost` with no `?range=` opened on Last 7 days with 7d lit; clicking 30d set `?range=30d` and lit only 30d; the menu listed every preset with a check on the current one and Today, Yesterday and Last 24 hours greyed out; Custom range… opened the two-month calendar under the menu, 14 Sep – 3 Oct applied as `?range=2026-09-14_2026-10-03` with "14 Sep – 3 Oct 2026" under the title and no segment lit; `?range=today` opened Last 7 days; `?range=12m` with two filters showed both badges and the 90-day notice in its bordered block, and removing a badge updated `?f=`; the Filter tooltip showed "Coming soon"; light and dark both read well. Not yet looked at on a phone.
+Checks at the end of design v2 Phase 4: the same four clean, `npm test` 388 tests passing. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `localhost` (revenue, no key goal) showed six tiles; with the key goal temporarily set to `phase5d-test` it showed all seven with "Phase5d Tests" and the key-goal tooltip (the key goal was cleared again afterwards); the cookieless `advancedortholabsf.com` showed Visitors, Pageviews and Visit duration; Pageviews showed a red -8.0% for 20–28 Oct and the session tiles showed "–" (tracking started in the range); the Revenue and Visit duration tooltips showed payments, revenue per visitor, sessions and time on page; `f=device:mobile` changed every tile; light and dark both read well; in a 375px iframe the tiles wrap into two columns with the odd last tile full width and no sideways scroll. "≈" on Visitors was not seen (no site has enough sessions to fall back).
+Checks at the end of design v2 Phase 5: the same four clean, `npm test` 391 tests passing. On `next dev` with Convex dev in Chrome, `localhost` (revenue, no key goal), 30d: Visitors, Pageviews and Revenue on by default; switching on Conv. rate, Bounce rate and Visit duration drew three dashed/dotted lines, and the tooltip listed all six (Revenue $64.00, Pageviews 17, Visitors 8, 12.5%, 44.4%, 26s on 27 Oct); turning series off stopped at the last one; the choice survived a reload; light and dark both read well; `f=device:mobile` redrew the chart; no console errors. The key-goal bars were not seen (no dev site has a key goal) and the chart was not looked at on a phone.
+Checks at the end of design v2 Phase 6: the same four clean, `npm test` 391 tests passing. On `next dev` with Convex dev in Chrome, `localhost`, 30d: four cards in two columns with dividers; Sources showed Direct (neutral icon), Google, Hacker News, ChatGPT, test ($64 revenue beside it) and X with favicons; "View all 17 →" on Pages expanded in place and "Show less" collapsed it; More ▾ → Campaign and → UTM source replaced "More" as the tab label; clicking Mobile set `f=device:mobile`, outlined the row and kept every card's tab; light and dark both read well. Not looked at on a phone, and the 3-filter limit was not clicked through (its logic, `canFilter`, is unchanged).
+Checks at the end of design v2 Phase 8: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 30d: Events listed test-queued 6, test-signup 3 and nine goals at 1 ("View all 11"), the same counts the old panel's `stats.goals` gives; hovering test-signup showed "3 completions · 1 visitor · 3% conversion"; clicking it set `f=goal:test-signup` and outlined the row; with test-signup set as a temporary key goal (cleared afterwards) its row showed the badge in both themes; Funnels sat beside Events at the same height. Not looked at on a phone.
+Checks at the end of design v2 Phase 10: the same four clean, `npm test` 405 tests passing (`convex/hourly.test.ts` covers ownership, today's hours, the previous window, Yesterday, 24h, a timezone change, filters, cookieless pageviews and the read budget; `dates.test.ts` covers the hour helpers, including Kolkata's half-hour offset). On `next dev` with Convex dev in Chrome, `localhost` (LA time, 13:44 on 28 Oct): Yesterday showed 24 hourly points with the same tiles as the custom range 27 Oct–27 Oct from the rollups (8 visitors, 17 pageviews, $64, 12.5%, 44.4%, 26s) and the same lists; Today ran 00:00–13:00 and 24h 14:00–13:00; `f=device:mobile` on Yesterday gave 6 visitors, matching the Devices list; the tooltip read "Oct 27, 13:00". The visitor changes on Yesterday show "–" because tracking started partway through 26 Oct, inside the comparison window (the day view counts the whole of 26 Oct as tracked, so it shows them). The budget notice was only checked in tests. Not looked at on a phone.
+Checks at the end of design v2 Phase 9: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 90d: the Countries tab listed Unknown 27, Norway 1 and United States 1, and the Map shaded exactly Norway and the US; hovering showed "United States · 1 visitor" (and "Canada · 0 visitors" on an unlisted country); clicking the US set `f=country:US`, the Visitors tile went to 1 and the map stayed open with the US outlined; on Revenue ⇅ nothing was shaded, matching the list (only Unknown has revenue); light and dark both read well. Opening the tab fetched one more JS chunk, and in the production build the outlines' chunk (~114 KB) is only listed in the dynamic-import manifests. Not looked at on a phone.
+Checks at the end of design v2 Phase 7: the same four clean, `npm test` 394 tests passing. On `next dev` with Convex dev in Chrome, `localhost`, 30d: the AI tab listed only ChatGPT (2) while Sources listed six; clicking it set `f=source:ChatGPT` and the AI tab (now from the filtered view) showed it outlined; "Visitors ⇅" on Sources and Countries switched to "Revenue ⇅" with just the rows that have revenue (test $64, Unknown $64), while Pages and Devices kept plain labels; the cookieless `advancedortholabsf.com` (no revenue) had no ⇅ button.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
 
 ## Decisions and differences from PLAN.md
@@ -165,7 +179,7 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **"Live pageviews" counts the last 5 minutes**, with `since` snapped to 30-second steps so the subscription only changes every 30 s.
 - **Referrals, Devices, Browsers and Countries leave out keys with zero visitors** (only repeat pageviews), because they count unique visits. Pages counts pageviews and keeps them.
 - **Country names and flags come from `Intl.DisplayNames` and emoji**, so no country list or flag package. Browser and device icons are from `react-icons`.
-- **Layout from Simple Analytics, look from the original dark theme** (owner's choice, 2026-10-14). The arrangement follows `public/SA-website.png` and `public/SA-websites.png` (local only, deliberately not committed: anything in `public/` is served by the live site, and they show the owner's browser): header band with favicon and a large domain switcher, a stat row of lowercase labels over large numbers with % badges, the dates over a large "‹ 30d ›" that opens a preset/custom menu, the chart with its toggles bottom right, then four list columns. Referrals and Pages show a blue count then the label; Devices, Browsers and Countries show an icon or flag and a bar holding the percentage (one decimal under 1%). The look is near-black zinc with Geist, bordered cards for the chart and lists, and smooth (monotone) blue and pink gradient areas with both series on. Colours are theme tokens in `globals.css` (`panel`, `line`, `muted`, `strong`, `accent`, `bar`, `up`, `down`); use the same for `/websites` in Phase 3.
+- **Dashboard design v2 replaces the Simple Analytics layout** (owner's brief `docs/DESIGN-V2.md`, plan `plans/dashboard-design-v2-plan.md`, screenshots in `public/design-v2/`, local only). shadcn/ui on Tailwind v4 in light and dark (following the system), one sticky top bar (logo, site switcher, "N online", theme toggle, Clerk's button; tabs Analytics | Live | Customers | Settings), an "Analytics" header with Today | 24h | 7d | 30d, a preset menu and Custom range…, joined stat tiles that switch a monochrome shadcn chart's series, then a grid of cards (Sources with AI, Pages, Countries with Map, Devices, Events, Funnels). Every signed-in page and the top bar share one container, `max-w-[1200px]` with 16/24/32px side padding (`px-4 sm:px-6 lg:px-8`) and `pt-10 pb-20` on the page, to match the owner's other apps (2026-10-28). The old colour names (`panel`, `line`, `muted`, `strong`, `accent`, `bar`, `up`, `down`) remain as aliases of the shadcn tokens for the pages not yet restyled. See the "Design v2" decision sections below.
 - **The header shows the site's own `/favicon.ico`**, loaded straight from the site, with the first letter as a fallback.
 - **Time-on-page % change** compares the two averages; it shows "–" when either period has no duration beacons.
 - **`sites.listWithStats` takes `now`** from the page (snapped to the minute) and works out each site's 30-day window in that site's own timezone, today included.
@@ -313,6 +327,64 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
 
+### Design v2, Phase 10 (hourly ranges)
+
+- **One aggregation for filtered and hourly views.** `lib/filtered.ts` now takes a `ViewWindow`: the current and previous periods, the chart's points and which point a row lands on. `dayWindow` (stats.filtered) counts rows on their stored site-local `date`, as before; `hourWindow` (stats.hourly) counts on timestamps, [start, end) and the window of equal length before it, one point per hour from `start`, named `YYYY-MM-DDTHH:00` in the site's timezone. Sessions count at their start, payments at their own time.
+- **The window comes from the server, the clock from the page.** `stats.hourly` takes `period` (today, yesterday, 24h), `now` and the filters, and `dates.hourWindow` works out the bounds: Today runs from local midnight to the end of the current local hour, 24h is the 24 hours ending there, Yesterday is the whole local day. Today therefore compares against the same number of hours before midnight, not all of yesterday. The page passes `now` snapped to 5 minutes (`HOURLY_STEP_MS`): every timezone's hours start on a 15-minute grid, so the snapped time is always in the right hour, and the arguments change at most every 5 minutes.
+- **Session-less pageviews** (cookieless sites, the old script) count toward pageviews, time on page and the page, referrer, device, browser and country lists when nothing is filtered, with their unique visits as visitors (as the rollups count them). Session numbers come from sessions only, so a cookieless site's bounce rate and session time are null ("–"). A filter picks sessions, so they drop out then.
+- **`comparable` on hours** is false when `trackingStartedAt` falls inside the window or the one before it, so visitor-based changes show "–".
+- **The dashboard** treats an hour range like a filtered one: `View.raw` makes the cards read the view's lists instead of the rollup queries. The `HOURLY_RANGES` flag and the `hourly` prop of `RangeControls` are gone. The chart's ticks and tooltip use `formatPoint` ("14:00", "Oct 27, 14:00"). Over the 12,000-read budget the page says to pick a day range.
+
+### Design v2, Phase 9 (Map tab)
+
+- **The outlines are pre-built, not computed in the browser.** `npm run build:world-map` (`scripts/build-world-map.mjs`, dev dependencies `world-atlas`, `topojson-client`, `d3-geo`, `i18n-iso-countries`) projects world-atlas's 110m countries with Equal Earth (Antarctica dropped) and writes SVG paths keyed by ISO alpha-2 to `src/components/dashboard/world-110m.json` (committed, 174 countries). Kosovo maps to `XK`, Northern Cyprus joins `CY` and Somaliland joins `SO`. The page needs no map library.
+- **`WorldMap` is loaded with `next/dynamic`** (`ssr: false`), so the outlines (~114 KB, ~110 KB of JSON) only download when the Map tab opens; a pulsing block fills the card meanwhile.
+- **Shading**: `fill-foreground` with opacity 0.25 + 0.75 × √(count ÷ top), and countries with nothing at `foreground/10`, so it works in both themes without new tokens. Only countries with an outline set the top, so "Unknown" (often the biggest row) doesn't wash the map out. Small countries the 110m set doesn't have (Singapore, Malta, Bahrain, ...) are in the list but not on the map.
+- **The Map tab is `country:map`** and reads the `country` list (the filtered view's lists are now looked up by `breakdownKey(dim, channel)`, not the tab id). `StatsCard` gained a `body` that replaces the rows once they've loaded, with no "View all". The active filter's country is outlined and drawn last. The tooltip is one floating element that follows the pointer, not a Tooltip per country. Countries can't be focused by keyboard; the Countries tab is the accessible list.
+
+### Design v2, Phase 8 (Events and Funnels cards)
+
+- **Events is a `StatsCard`** with one tab, fed by `stats.goals` (or the filtered view's `goals`), so the rows are the old panel's: sorted by completions, the key goal always listed (even at 0). Visitors and conversion (goal visitors ÷ the site's daily visitors, as before) moved into a row tooltip. The panel's paging is replaced by "View all N →".
+- **`StatsRow` gained `badge` and `tooltip`, and `StatsCard` an `empty` node and an optional `metric`.** The key-goal badge is an outline Badge on the background colour, since the secondary one disappears into the bar in light mode. Clicking the badge still filters (it sits under the row's stretched button).
+- **Funnels is the same card with no rows** and the empty text "Funnels are coming soon". The empty state is `flex-1`, so it fills the grid row and matches Events' height when that expands.
+
+### Design v2, Phase 7 (AI tab and Revenue ⇅)
+
+- **The AI limit is by source name:** `stats.breakdown` takes an optional `channel` (only `"AI"`, and only with `dim: "source"`) and keeps the sources `KNOWN_SOURCES` puts in AI (`inChannel` in `lib/sources`), with totals over just those. The filtered view returns the same list under the extra key `source:AI` (`breakdownKey`). Going by name, not by each session's channel, keeps both paths the same: a ChatGPT visit tagged `utm_medium=cpc` (channel Paid) still shows under AI. Only AI is allowed because Referral and the other channels also hold unknown hostnames and tags.
+- **Card tabs are keyed by list**, not by dim (`source` and `source:AI` are both the `source` dim). Clicking an AI row adds the ordinary `source` filter.
+- **Revenue ⇅ re-sorts on the client**, not server-side as the PRD suggests: the rows already carry `revenueMinor`, so the switch needs no second query. In Revenue mode the card lists only rows with revenue (refunds can make an amount negative; those sort last), largest first, with the bar relative to the top amount. The catch: a list cut at 500 keys by visitors could miss a paying key beyond that, which no site comes near. The choice is per card and not remembered. The muted amounts Phase 6 added to rows are gone.
+- **⇅ shows on the Sources and Countries cards** (every tab of those is credited revenue) on sites with a currency. Pages and Devices keep a plain label.
+
+### Design v2, Phase 6 (card grid and rows)
+
+- **`StatsCard`** replaces `BreakdownList`: header (text tabs, More ▾, the metric on the right), bar rows and "View all N →" / "Show less". `Breakdowns` holds the four cards in a `gap-px` grid on `bg-border` inside one bordered block, one column below `md`. The Goals panel stays below the grid, unchanged, until Phase 8.
+- **Every list now shows counts** (Devices, Browsers, OS and locations used to show a share %). Bars are relative to the top row, as in the example. The header names the count: Visitors, Pageviews (Pages), Sessions (Entry, Exit) or Clicks (Outbound).
+- **Revenue stays visible until Phase 7's ⇅:** on revenue sites, source, campaign and location rows show their amount muted before the number.
+- **The campaign items under More ▾ are "Campaign", "UTM source", "UTM medium", "UTM term", "UTM content" and "ref / via"** (the PRD says "Source", "Medium" and so on), because the chosen item becomes the tab label and "Source" next to "Sources" read badly.
+- **A filterable row's label is a button stretched over the whole row** (`after:inset-0`), so the ↗ link can sit on top without nesting a link in a button. The bar sits under the content in an `isolate` stacking context.
+- **Each card keeps its tab** across range and filter changes; switching tabs collapses "View all". The expanded state is kept across range changes.
+- **Empty and loading states**: "No data for this range" centred in the height of 7 rows, and 7 skeleton rows.
+
+### Design v2, Phase 5 (monochrome chart)
+
+- **The timeseries gained five fields** on both the rollup and filtered paths: `goal` (key-goal completions; from the key goal's `dailyDims` rows), `bounceRate`, `sessionTimeMs`, `timeOnPageMs` (per day, null with nothing to divide by) and `conversionRate`. Conversion rate per day is converted visitors ÷ that day's visitors, capped at 100%: paying visitors on each payment's own day on a revenue site (the rollup path reads `payments`, null past 10,000 rows), otherwise the key goal's visitors. A payment on a day with no (matching) visits gives null, not a rate.
+- **Visit duration's series** is session time on sites with visitor ids and time on page on cookieless ones, matching the tile.
+- **`series.ts`** holds the series keys, colours (`--chart-1` for Visitors and Revenue, greys for the rest) and `useChartSeries`. The choice is stored in `localStorage` under `dashboard.chartSeries` and keeps keys the current site lacks, so another site's Revenue choice survives. With nothing stored, or nothing the site has, the defaults show.
+- **Hidden scales:** bars go up to two thirds of the height (max × 1.5), lines to about nine tenths (max × 1.1). The left axis shows only while Visitors or Pageviews is on. Lines and areas are straight segments, as in the example.
+- **Dash patterns:** Conv. rate `4 4`, Bounce rate dotted `1 3`, Visit duration `8 4`.
+- **The tooltip** lists bars, then areas, then lines (Recharts' order), which differs a little from the tile order.
+- **The tracking marker** is a faint dashed line with a small label on whichever side has room.
+- **`npx shadcn add chart`** also wrote `ui/card.tsx` (deleted, unused) and lowered the `recharts` range in `package.json` to `^3.8.0` (put back to `^3.10.1`).
+
+### Design v2, Phase 4 (joined stat tiles)
+
+- **`StatRow`** holds the tiles in a `gap-px` grid on `bg-border` (inner dividers), inside one bordered block with the chart under a top border. Two columns on phones (an odd last tile spans both), one row of equal columns from `sm`. With six or seven tiles the side padding drops from 24px to 16px so "Bounce rate" and "Visit duration" fit the 5xl page; longer key-goal names still truncate.
+- **The dots are static for now**: `DEFAULT_SERIES` (Visitors, Pageviews, Revenue, key goal) shows lit, the rest dim. Phase 5 makes the tiles toggles.
+- **The key-goal tile counts completions**, from `stats.goals` (the same query the Goals panel makes, so it's shared) or the filtered view. `goalsResult` gained `keyGoalPrevious`, the key goal's completions in the previous period (from `dailyDims` on the rollup path, from matching sessions on the filtered path), for its % change. The label is `goalLabel`: split on `_ - :` and spaces, title-cased, last word pluralised unless it ends in "s" or "ed".
+- **Number formats follow the example**: `formatChange` now has one decimal ("+50.4%"), rates use `formatRate` (two decimals below 1%, "0.80%", one above, "41.6%"), and Revenue shows whole units ("$552") with the exact amount in its tooltip.
+- **"–" replaces the % change** whenever there's nothing to compare: no previous data, or a session-based tile when tracking started inside the comparison window. Pageviews, Revenue and the key goal are never marked incomparable.
+- **Cookieless sites' Visit duration** is the average time on page, as before.
+
 ## Gotchas
 
 - **Cache Components is on** (`cacheComponents: true` in `next.config.ts`). Client components that read the URL (Clerk's `<SignIn>`, for example) must sit inside `<Suspense>`, or the build fails with "usePathname() outside of Suspense". Expect the same with `useSearchParams` for the `?range=` picker in Phase 2.
@@ -358,14 +430,40 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v2 Phases 1 to 3, then Phase 4
+## Next: review design v2 Phases 4 to 10 on production
+
+Design v2 is complete. Phases 4 to 10 and the 1200px page width were pushed to `main` together on 2026-10-28 and deploy with it (the Convex functions include the new `stats.hourly`). Owner:
+
+1. On production, look at the tiles, chart and cards on a site in both themes and on your phone. Click the tiles to switch series, and try the card tabs (including AI and Map), More ▾, View all, Visitors ⇅ Revenue, clicking rows and countries on the map, and the Events card (hover a goal, click it). Set a key goal in Settings to see the seventh tile, the goal bars and the Key goal badge.
+2. Try Today, Yesterday and 24h, with and without a filter, and on a cookieless site.
+3. Check the other pages (Websites, Live, Customers, Settings) at the new width.
+
+## Earlier: review design v2 Phases 4 to 10
+
+Superseded by the section above.
+
+## Earlier: review design v2 Phases 4 to 9, then Phase 10
+
+Superseded by the section above.
+
+## Earlier: review design v2 Phases 4 to 8, then Phase 9
+
+Superseded by the section above.
+
+## Earlier: review design v2 Phases 4 to 7, then Phase 8
+
+Superseded by the section above.
+
+## Earlier: review design v2 Phases 4 and 5, then Phase 6
+
+Superseded by the section above.
+
+## Earlier: review design v2 Phases 1 to 3, then Phase 4
 
 All three pushed to `main` on 2026-10-28 and deployed. Owner:
 
 1. Restart `npm run dev` if it was running before the new packages were installed (Phase 3 added `react-day-picker` and `date-fns`), then check each page in both themes, the switcher menu, "N online", the bar, and the new range header (segments, menu, Custom range…) on your phone too.
 2. `public/design-v2/` is git-ignored (anything in `public/` is served by the live site), so the screenshots stay local.
-
-Then Phase 4 (joined stat tiles).
 
 ## Earlier: check 5h on production, then Phase 6
 

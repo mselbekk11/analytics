@@ -30,7 +30,7 @@ export default function Customers() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar site={{ domain, section: "customers" }} />
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
+      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 pt-10 pb-20 sm:px-6 lg:px-8">
         <AuthLoading>
           <p className="text-sm text-muted-foreground">Connecting…</p>
         </AuthLoading>

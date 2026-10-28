@@ -23,10 +23,38 @@ export function formatShare(share: number): string {
   return `${Math.round(pct)}%`;
 }
 
-/** A change as a signed percentage: 0.25 -> "+25%", -0.031 -> "-3%". */
+/** A change as a signed percentage with one decimal: 0.504 -> "+50.4%", -0.031 -> "-3.1%", 0 -> "0%". */
 export function formatChange(change: number): string {
-  const pct = Math.round(change * 100);
-  return `${pct > 0 ? "+" : ""}${pct}%`;
+  const pct = Math.round(change * 1000) / 10;
+  if (pct === 0) return "0%";
+  return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+/** A rate from 0 to 1 for the stat tiles: two decimals below 1% ("0.80%"), one above ("41.6%"). */
+export function formatRate(rate: number): string {
+  const pct = rate * 100;
+  return `${pct.toFixed(pct < 1 ? 2 : 1)}%`;
+}
+
+/**
+ * A goal name as a tile label: words split on "_", "-", ":" and spaces, title-cased,
+ * the last one pluralised unless it already ends in "s" or "ed":
+ * "signup" -> "Signups", "checkout_started" -> "Checkout Started".
+ */
+export function goalLabel(name: string): string {
+  const words = name.split(/[\s_:-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1));
+  if (words.length === 0) return name;
+  const last = words[words.length - 1];
+  words[words.length - 1] = plural(last);
+  return words.join(" ");
+}
+
+function plural(word: string): string {
+  const lower = word.toLowerCase();
+  if (/(ed|s)$/.test(lower)) return word;
+  if (/(x|z|ch|sh)$/.test(lower)) return `${word}es`;
+  if (/[^aeiou]y$/.test(lower)) return `${word.slice(0, -1)}ies`;
+  return `${word}s`;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -36,6 +64,16 @@ export function formatDate(date: string, withYear = false): string {
   const [y, m, d] = date.split("-");
   const label = `${MONTHS[Number(m) - 1]} ${Number(d)}`;
   return withYear ? `${label}, ${y}` : label;
+}
+
+/**
+ * A chart point: a day ("2026-10-13" -> "Oct 13") or an hour ("2026-10-13T14:00" ->
+ * "14:00", or "Oct 13, 14:00" with `full`, as the tooltip shows it).
+ */
+export function formatPoint(point: string, full = false): string {
+  const [date, hour] = point.split("T");
+  if (hour === undefined) return formatDate(date, full);
+  return full ? `${formatDate(date)}, ${hour}` : hour;
 }
 
 /**

@@ -29,6 +29,18 @@ export const dimValidator = v.union(
 
 export type Dim = Infer<typeof dimValidator>;
 
+// A source list can be limited to one channel whose sources all have names in the
+// classifier (sources.KNOWN_SOURCES), so the rollups can tell them apart by key. Only AI
+// for now: Referral and the rest also take unknown hostnames and tags.
+export const listChannelValidator = v.literal("AI");
+
+export type ListChannel = Infer<typeof listChannelValidator>;
+
+/** The key of a list in the filtered view's `breakdowns`: the dim, or "source:AI". */
+export function breakdownKey(dim: Dim, channel?: ListChannel): string {
+  return channel === undefined ? dim : `${dim}:${channel}`;
+}
+
 /**
  * Which count a list ranks and shows: pageviews for pages, sessions for entry and exit
  * pages, events for goals and outbound links, visitors otherwise.

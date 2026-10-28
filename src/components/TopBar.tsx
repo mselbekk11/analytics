@@ -36,7 +36,7 @@ export function sitePath(domain: string, section: SiteSection): string {
 export default function TopBar({ site }: { site?: { domain: string; section: SiteSection } }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-md">
-      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6">
+      <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <Link

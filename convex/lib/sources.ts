@@ -105,6 +105,11 @@ export function classify(input: {
   return { source, channel };
 }
 
+/** Whether the classifier names this source in the channel ("ChatGPT" is in AI). */
+export function inChannel(source: string, channel: Channel): boolean {
+  return KNOWN_SOURCES.some((s) => s.name === source && s.channel === channel);
+}
+
 /**
  * The domain whose favicon stands for a source: a known source's own domain, or the
  * source itself when it is a hostname (an unknown referrer). Null for plain tags.
