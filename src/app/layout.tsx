@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
           {/* Clerk follows the color-scheme next-themes sets on <html> (its shadcn theme froze the page) */}
-          <ClerkProvider>
+          <ClerkProvider afterSignOutUrl="/" signInFallbackRedirectUrl="/websites">
             <ConvexClientProvider>
               <TooltipProvider delay={300}>{children}</TooltipProvider>
             </ConvexClientProvider>

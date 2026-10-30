@@ -5,6 +5,7 @@ import { UserButton } from "@clerk/nextjs";
 import { Authenticated, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useNow } from "@/components/dashboard/useNow";
+import LogoMark from "@/components/LogoMark";
 import SiteSwitcher from "@/components/SiteSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
 import { formatNumber } from "@/lib/format";
@@ -42,9 +43,9 @@ export default function TopBar({ site }: { site?: { domain: string; section: Sit
             <Link
               href="/websites"
               aria-label="All sites"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground"
+              className="shrink-0"
             >
-              <span className="size-3.5 rounded-full border-[2.5px] border-background" />
+              <LogoMark />
             </Link>
             <span aria-hidden className="px-1 text-muted-foreground/50">
               /
