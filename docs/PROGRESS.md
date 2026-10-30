@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-29 (design v3, Phases 1 to 5 built). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-29 (design v3, Phases 1 to 6 built; design v3 complete). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -31,6 +31,7 @@ Last updated: 2026-10-29 (design v3, Phases 1 to 5 built). Design v3 is planned 
 | Design v2, Phase 9: Map tab | **Pushed, awaiting owner review.** The Countries card has a Map tab: a monochrome SVG world map (110m outlines, loaded when the tab opens) shaded by visitors, or revenue on "Revenue ⇅", with a hover tooltip and click to filter. |
 | Design v2, Phase 10: hourly ranges | **Pushed, awaiting owner review.** Today, Yesterday and Last 24 hours work: `stats.hourly` reads the raw rows of the window and the one before it and returns the standard shapes, one chart point per hour in the site's timezone, with filters. Cookieless pageviews count toward pageviews and the pageview lists. |
 | Design v3, Phase 1: public homepage and sign-out landing | **Built, awaiting owner review.** `/` is a public, static splash page (logo and "Analytics", Log in top right; headline, one line and a Log in button in the centre). Signed-in visitors are redirected from `/` to `/websites` by the proxy. Clerk signs out to `/` and falls back to `/websites` after sign-in. |
+| Design v3, Phase 6: onboarding redirect | **Built, awaiting owner review.** When the site list loads empty, `/websites` replaces itself with `/websites/new`. That covers a new account and deleting the last site. The skeleton stays up until then, and the old empty state is gone. On `/websites/new`, Cancel only shows when you have at least one site. |
 | Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
 | Design v3, Phase 4: add website, step 1 | **Built, awaiting owner review.** `/websites/new` has the stepper, an "Add your website" card with one Domain field, and a "How it works" panel. As you type, the card previews "We'll track …" using the server's normaliser and shows the browser's timezone. Create site stores the site and replaces the URL with `?site=<domain>`. Step 2 for now is the snippet and "Go to dashboard"; Phase 5 fills in the rest. "Add website" and the switcher's "Add site" link here, and `?add=1` and the old inline form are gone. |
 | Design v3, Phase 3: shadcn user menu | **Built, awaiting owner review.** Clerk's `UserButton` is gone from the bar. In its place is an initials circle plus the email (from `sm` up), opening a shadcn menu: "Signed in as" and the email, Websites / Billing / Settings, and a red Sign out to `/`. It appears in both modes of the bar. |
@@ -164,6 +165,10 @@ Checks at the end of design v2 Phase 6: the same four clean, `npm test` 391 test
 Checks at the end of design v2 Phase 8: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 30d: Events listed test-queued 6, test-signup 3 and nine goals at 1 ("View all 11"), the same counts the old panel's `stats.goals` gives; hovering test-signup showed "3 completions · 1 visitor · 3% conversion"; clicking it set `f=goal:test-signup` and outlined the row; with test-signup set as a temporary key goal (cleared afterwards) its row showed the badge in both themes; Funnels sat beside Events at the same height. Not looked at on a phone.
 Checks at the end of design v2 Phase 10: the same four clean, `npm test` 405 tests passing (`convex/hourly.test.ts` covers ownership, today's hours, the previous window, Yesterday, 24h, a timezone change, filters, cookieless pageviews and the read budget; `dates.test.ts` covers the hour helpers, including Kolkata's half-hour offset). On `next dev` with Convex dev in Chrome, `localhost` (LA time, 13:44 on 28 Oct): Yesterday showed 24 hourly points with the same tiles as the custom range 27 Oct–27 Oct from the rollups (8 visitors, 17 pageviews, $64, 12.5%, 44.4%, 26s) and the same lists; Today ran 00:00–13:00 and 24h 14:00–13:00; `f=device:mobile` on Yesterday gave 6 visitors, matching the Devices list; the tooltip read "Oct 27, 13:00". The visitor changes on Yesterday show "–" because tracking started partway through 26 Oct, inside the comparison window (the day view counts the whole of 26 Oct as tracked, so it shows them). The budget notice was only checked in tests. Not looked at on a phone.
 Checks at the end of design v2 Phase 9: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 90d: the Countries tab listed Unknown 27, Norway 1 and United States 1, and the Map shaded exactly Norway and the US; hovering showed "United States · 1 visitor" (and "Canada · 0 visitors" on an unlisted country); clicking the US set `f=country:US`, the Visitors tile went to 1 and the map stayed open with the US outlined; on Revenue ⇅ nothing was shaded, matching the list (only Unknown has revenue); light and dark both read well. Opening the tab fetched one more JS chunk, and in the production build the outlines' chunk (~114 KB) is only listed in the dynamic-import manifests. Not looked at on a phone.
+Checks at the end of design v3 Phase 6: the same four clean, `npm test` 414 tests passing (no backend changes). On `next dev` (Convex dev) in Chrome:
+- The empty case was checked by forcing the list empty in code for the test, then reverting. `/websites` went to `/websites/new` with one history entry (a replace) and no site card rendered at any point (polled every 15 ms). The step 1 card showed with no Cancel.
+- With the code back as committed, `/websites` showed the grid and `/websites/new` showed Cancel, linking to `/websites`.
+Not checked: a real empty account (that needs a throwaway Clerk user or deleting the dev sites), and the onboarding page at 375px. Phase 6 only removes the Cancel button, so step 1's layout is otherwise unchanged from Phase 4.
 Checks at the end of design v3 Phase 5: the same four clean, `npm test` 414 tests passing (4 new in `convex/sites.test.ts` for `sites.hasPageview`: missing or someone else's site gives null, no hits gives false even when another site has hits, and a cookieless hit and a hit with visitor ids both give true). On a local production build (`next start -p 3001`, Convex dev) in Chrome:
 - `?site=example.com` showed step 2 with "Waiting for your first event…" and Skip to dashboard. A curl of one cookieless pageview to `/api/collect` flipped it to "First pageview received" without a reload. The stepper ticked both steps, the panel ticked all three, and Go to dashboard appeared, linking to `/sites/example.com`.
 - Copy wrote exactly the snippet shown (checked by stubbing `navigator.clipboard.writeText`) and the button read "Copied".
@@ -355,6 +360,20 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
 
+### Design v3 (summary)
+
+- **Top bar modes.** `TopBar` takes `site` (switcher, online count, Analytics / Live / Customers / Settings) or `account` (logo and "Analytics", Websites / Billing / Settings), never both. Both tab rows share one `TabStrip`. `/websites/new` uses account mode with Websites active.
+- **Routes.** `/` is a public splash page (the proxy lets it through, and redirects signed-in visitors to `/websites`). `/websites` is the grid, `/billing` and `/settings` are account pages, and `/websites/new` is the add flow (`?site=<domain>` is step 2 for a site you own). Sign out goes to `/`, and sign-in still lands on `/websites`.
+- **`?add=1` is removed**, along with the inline add form. "Add website" and the switcher's "Add site" link to `/websites/new`.
+- **Onboarding.** An empty site list on `/websites` replaces the URL with `/websites/new`, which hides Cancel while you have no sites.
+- **First-hit query.** `sites.hasPageview` reads one raw pageview through `by_site_ts`, so cookieless hits count. `trackingStartedAt` isn't used because cookieless sites never set it.
+- **User menu.** `UserMenu` (initials plus email, shadcn menu) replaces Clerk's `UserButton` in both modes. Sign out calls `signOut({ redirectUrl: "/" })`.
+
+### Design v3, Phase 6 (onboarding redirect)
+
+- **The redirect is on the client, in `SiteGrid`**: an effect calls `router.replace("/websites/new")` once `sites.listWithStats` comes back empty. While the list is loading or redirecting, the skeleton shows, so an empty grid never flashes. The "Add website" header button stays hidden then.
+- **Cancel reads `sites.list`** (the switcher's light query) and only shows once the list is known and not empty. A user with sites sees Cancel appear when the query lands. That's usually immediate, since the switcher already holds the subscription.
+
 ### Design v3, Phase 5 (add website, step 2)
 
 - **`sites.hasPageview({ domain })`** returns null for a missing or foreign site, otherwise whether one `pageviews` row exists (`by_site_ts`, `.first()`, so it reads at most one row). It reads raw hits rather than `trackingStartedAt`, which cookieless sites never set. `AddFlow` subscribes to it only once `?site=` is confirmed as yours, and passes the result to the stepper (step 3 means both ticked), `HowItWorks` (`received`) and `InstallTracker`.
@@ -500,7 +519,7 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v3 Phases 1 to 5, then Phase 6
+## Next: review design v3 Phases 1 to 6
 
 Owner:
 
@@ -519,7 +538,9 @@ Owner:
 
 8. Add website, step 2: create a site (or open `/websites/new?site=<a site with no hits>`), paste the snippet into a page and load it. The row should flip to "First pageview received" without a reload. Check Copy, Skip to dashboard, and the snippet block in the site's Settings, in both themes and on your phone.
 
-Then build Phase 6 (onboarding redirect).
+9. Onboarding: with at least one site, `/websites` shows the grid and `/websites/new` shows Cancel. To see the empty case, sign in as a user with no sites (a throwaway Clerk user on dev), or delete the last site. You should land on `/websites/new` with no Cancel and no flash of an empty grid.
+
+Design v3 is then complete. Push to `main` to deploy it (the Convex functions include the new `sites.hasPageview`).
 
 ## Earlier: review design v2 Phases 4 to 10 on production
 

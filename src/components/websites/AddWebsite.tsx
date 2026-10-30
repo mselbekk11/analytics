@@ -116,6 +116,9 @@ const browserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function SiteDetails() {
   const create = useMutation(api.sites.create);
   const router = useRouter();
+  // With no sites this page is onboarding, so there is nothing to cancel back to
+  const sites = useQuery(api.sites.list);
+  const canCancel = sites !== undefined && sites.length > 0;
   const [input, setInput] = useState("");
   const [timezone] = useState(browserTimeZone);
   const [error, setError] = useState<string | null>(null);
@@ -199,10 +202,12 @@ function SiteDetails() {
             Timezone: {timezone} · change it in the site&apos;s settings
           </p>
         </CardContent>
-        <CardFooter className="justify-between gap-3">
-          <Button variant="ghost" render={<Link href="/websites" />} nativeButton={false}>
-            Cancel
-          </Button>
+        <CardFooter className="justify-end gap-3">
+          {canCancel && (
+            <Button variant="ghost" render={<Link href="/websites" />} nativeButton={false} className="mr-auto">
+              Cancel
+            </Button>
+          )}
           <Button type="submit" disabled={domain === null || pending} className="gap-1.5 px-3">
             {pending ? (
               <>

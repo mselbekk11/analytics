@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { Authenticated, AuthLoading, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
@@ -33,6 +35,12 @@ export default function Websites() {
 function SiteGrid() {
   const now = useNow(NOW_STEP_MS);
   const sites = useQuery(api.sites.listWithStats, { now });
+  const router = useRouter();
+  const empty = sites !== undefined && sites.length === 0;
+  // No sites (a new account, or the last one deleted): onboarding is the add flow
+  useEffect(() => {
+    if (empty) router.replace("/websites/new");
+  }, [empty, router]);
 
   const header = (
     <PageHeader title="Websites" description="Last 30 days">
@@ -50,7 +58,8 @@ function SiteGrid() {
     </PageHeader>
   );
 
-  if (sites === undefined) {
+  // The skeleton stays up until the list is known, and while an empty list redirects
+  if (sites === undefined || empty) {
     return (
       <div className="flex flex-col gap-10">
         {header}
@@ -59,28 +68,6 @@ function SiteGrid() {
             <div key={i} className="h-56 animate-pulse rounded-lg border border-border bg-muted/40" />
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (sites.length === 0) {
-    return (
-      <div className="flex flex-col gap-10">
-        {header}
-        <section className="flex flex-col gap-4 rounded-lg border border-border p-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="font-medium">Add your first website</h2>
-            <p className="text-sm text-muted-foreground">
-              Add a domain, then paste one line into its HTML.
-            </p>
-          </div>
-          <div>
-            <Button render={<Link href="/websites/new" />} nativeButton={false} className="gap-1.5 px-3">
-              <Plus aria-hidden />
-              Add website
-            </Button>
-          </div>
-        </section>
       </div>
     );
   }
