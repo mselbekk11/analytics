@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-29 (design v3, Phases 1 and 2 built). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-29 (design v3, Phases 1 to 5 built). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -31,6 +31,9 @@ Last updated: 2026-10-29 (design v3, Phases 1 and 2 built). Design v3 is planned
 | Design v2, Phase 9: Map tab | **Pushed, awaiting owner review.** The Countries card has a Map tab: a monochrome SVG world map (110m outlines, loaded when the tab opens) shaded by visitors, or revenue on "Revenue ⇅", with a hover tooltip and click to filter. |
 | Design v2, Phase 10: hourly ranges | **Pushed, awaiting owner review.** Today, Yesterday and Last 24 hours work: `stats.hourly` reads the raw rows of the window and the one before it and returns the standard shapes, one chart point per hour in the site's timezone, with filters. Cookieless pageviews count toward pageviews and the pageview lists. |
 | Design v3, Phase 1: public homepage and sign-out landing | **Built, awaiting owner review.** `/` is a public, static splash page (logo and "Analytics", Log in top right; headline, one line and a Log in button in the centre). Signed-in visitors are redirected from `/` to `/websites` by the proxy. Clerk signs out to `/` and falls back to `/websites` after sign-in. |
+| Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
+| Design v3, Phase 4: add website, step 1 | **Built, awaiting owner review.** `/websites/new` has the stepper, an "Add your website" card with one Domain field, and a "How it works" panel. As you type, the card previews "We'll track …" using the server's normaliser and shows the browser's timezone. Create site stores the site and replaces the URL with `?site=<domain>`. Step 2 for now is the snippet and "Go to dashboard"; Phase 5 fills in the rest. "Add website" and the switcher's "Add site" link here, and `?add=1` and the old inline form are gone. |
+| Design v3, Phase 3: shadcn user menu | **Built, awaiting owner review.** Clerk's `UserButton` is gone from the bar. In its place is an initials circle plus the email (from `sm` up), opening a shadcn menu: "Signed in as" and the email, Websites / Billing / Settings, and a red Sign out to `/`. It appears in both modes of the bar. |
 | Design v3, Phase 2: account tabs and placeholder pages | **Built, awaiting owner review.** The top bar has an account mode on `/websites`, `/billing` and `/settings`: logo and "Analytics", no switcher, Websites \| Billing \| Settings tabs that share one tab strip with the site tabs. `/billing` is a "coming soon" card; `/settings` has the account email with Manage account (Clerk's profile), Light / Dark / System, and Sign out. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
@@ -161,6 +164,25 @@ Checks at the end of design v2 Phase 6: the same four clean, `npm test` 391 test
 Checks at the end of design v2 Phase 8: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 30d: Events listed test-queued 6, test-signup 3 and nine goals at 1 ("View all 11"), the same counts the old panel's `stats.goals` gives; hovering test-signup showed "3 completions · 1 visitor · 3% conversion"; clicking it set `f=goal:test-signup` and outlined the row; with test-signup set as a temporary key goal (cleared afterwards) its row showed the badge in both themes; Funnels sat beside Events at the same height. Not looked at on a phone.
 Checks at the end of design v2 Phase 10: the same four clean, `npm test` 405 tests passing (`convex/hourly.test.ts` covers ownership, today's hours, the previous window, Yesterday, 24h, a timezone change, filters, cookieless pageviews and the read budget; `dates.test.ts` covers the hour helpers, including Kolkata's half-hour offset). On `next dev` with Convex dev in Chrome, `localhost` (LA time, 13:44 on 28 Oct): Yesterday showed 24 hourly points with the same tiles as the custom range 27 Oct–27 Oct from the rollups (8 visitors, 17 pageviews, $64, 12.5%, 44.4%, 26s) and the same lists; Today ran 00:00–13:00 and 24h 14:00–13:00; `f=device:mobile` on Yesterday gave 6 visitors, matching the Devices list; the tooltip read "Oct 27, 13:00". The visitor changes on Yesterday show "–" because tracking started partway through 26 Oct, inside the comparison window (the day view counts the whole of 26 Oct as tracked, so it shows them). The budget notice was only checked in tests. Not looked at on a phone.
 Checks at the end of design v2 Phase 9: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 90d: the Countries tab listed Unknown 27, Norway 1 and United States 1, and the Map shaded exactly Norway and the US; hovering showed "United States · 1 visitor" (and "Canada · 0 visitors" on an unlisted country); clicking the US set `f=country:US`, the Visitors tile went to 1 and the map stayed open with the US outlined; on Revenue ⇅ nothing was shaded, matching the list (only Unknown has revenue); light and dark both read well. Opening the tab fetched one more JS chunk, and in the production build the outlines' chunk (~114 KB) is only listed in the dynamic-import manifests. Not looked at on a phone.
+Checks at the end of design v3 Phase 5: the same four clean, `npm test` 414 tests passing (4 new in `convex/sites.test.ts` for `sites.hasPageview`: missing or someone else's site gives null, no hits gives false even when another site has hits, and a cookieless hit and a hit with visitor ids both give true). On a local production build (`next start -p 3001`, Convex dev) in Chrome:
+- `?site=example.com` showed step 2 with "Waiting for your first event…" and Skip to dashboard. A curl of one cookieless pageview to `/api/collect` flipped it to "First pageview received" without a reload. The stepper ticked both steps, the panel ticked all three, and Go to dashboard appeared, linking to `/sites/example.com`.
+- Copy wrote exactly the snippet shown (checked by stubbing `navigator.clipboard.writeText`) and the button read "Copied".
+- `?site=not-mine.example` showed step 1.
+- `/sites/example.com/settings` showed the same snippet block, in light.
+- In 375px frames (light) step 2 stacked the panel under the card with no sideways scroll. The stored theme was set back to `dark`.
+Not checked: the waiting state at 375px and in light (only the received state), and a hit from `/test.html` in a browser (the curl takes the same `/api/collect` path).
+
+**`example.com` on the dev deployment now has one test pageview** (`/`, cookieless). Delete the site from its Settings if you don't want it.
+Checks at the end of design v3 Phase 4: the same four clean, `npm test` 410 tests passing (no backend changes); `/websites/new` builds as static. On a local production build (`next start -p 3001`, Convex dev) in Chrome:
+- `/websites?add=1` showed the plain grid, and both "Add website" and the switcher's "Add site" opened `/websites/new` with the field focused and Create disabled.
+- `https://www.example.com/path` previewed "We'll track example.com". `not a domain` showed no preview and kept Create disabled.
+- `localhost` showed "localhost has already been added" inline, with the field outlined in red and the text kept.
+- Creating from the full URL stored `example.com` with America/Los_Angeles (the browser's) in its Settings. The URL became `?site=example.com` and step 1 was ticked.
+- `?site=not-mine.example` showed step 1, and Cancel went back to `/websites`.
+- In 375px frames both steps stacked the panel under the card with no sideways scroll, in light and dark.
+
+**The dev deployment now has a test site, `example.com`** (no hits). Delete it from its Settings if you don't want it in the grid; Phase 5 can use it for the first-hit check.
+Checks at the end of design v3 Phase 3: the same four clean, `npm test` 410 tests passing (5 new for `initials`). On a local production build (`next start -p 3001`, Convex dev) in Chrome: the trigger showed "MS" and the owner's email on `/websites` (dark) and `/sites/localhost` (light). The menu opened downwards, aligned to the end, and read well in both. With the keyboard, Enter opened it, the arrows moved through the items and Enter on Settings opened `/settings`. Escape closed it and put focus back on the trigger. In 375px frames both pages showed only the 32px circle and had no sideways scroll. There were no console errors. Not checked: Sign out (it would sign the owner out of the automation browser). It calls the same `signOut({ redirectUrl: "/" })` as the Settings page.
 Checks at the end of design v3 Phase 2: the same four clean, `npm test` 405 tests passing (no backend changes); `/billing` and `/settings` build as static and redirect to sign-in without a session. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/websites`, `/billing` and `/settings` showed the logo, "Analytics" and the account tabs with the right one underlined and `aria-current`, and no switcher; `/sites/localhost` still showed the switcher, "0 online" and its four tabs. On Settings, Light survived a reload (stored `light`), System stored `system` and followed the OS (dark), and Manage account opened Clerk's profile dialog. In 375px frames all three pages had no sideways scroll in light and dark. The stored theme was set back to `dark` afterwards. Not checked: the Sign out button (it would sign the owner out of the automation browser).
 Checks at the end of design v3 Phase 1: the same four clean, `npm test` 405 tests passing (no backend changes); `/` builds as static (○). On a local production build (`next start -p 3001`, Convex dev): curl without cookies got 200 and the splash for `/`, and 307 to `/sign-in?redirect_url=…` for `/websites`, `/billing` and `/sites/localhost`; in Chrome, signed in, `/` landed on `/websites`. The splash (fetched without cookies and rendered in the tab) read well in light and dark, both Log in links point to `/sign-in`, and in 375px frames it had no sideways scroll in either theme. Not checked: signing out and signing in for real (the automation browser holds the owner's session).
 Checks at the end of design v2 Phase 7: the same four clean, `npm test` 394 tests passing. On `next dev` with Convex dev in Chrome, `localhost`, 30d: the AI tab listed only ChatGPT (2) while Sources listed six; clicking it set `f=source:ChatGPT` and the AI tab (now from the filtered view) showed it outlined; "Visitors ⇅" on Sources and Countries switched to "Revenue ⇅" with just the rows that have revenue (test $64, Unknown $64), while Pages and Devices kept plain labels; the cookieless `advancedortholabsf.com` (no revenue) had no ⇅ button.
@@ -333,6 +355,32 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
 
+### Design v3, Phase 5 (add website, step 2)
+
+- **`sites.hasPageview({ domain })`** returns null for a missing or foreign site, otherwise whether one `pageviews` row exists (`by_site_ts`, `.first()`, so it reads at most one row). It reads raw hits rather than `trackingStartedAt`, which cookieless sites never set. `AddFlow` subscribes to it only once `?site=` is confirmed as yours, and passes the result to the stepper (step 3 means both ticked), `HowItWorks` (`received`) and `InstallTracker`.
+- **The status row is `role="status"`**, so screen readers announce the flip. The waiting dot is a pinging green dot.
+- **`Snippet` is now a shadcn-styled code block**: a header with the label and a ghost `xs` Copy button (lucide icons), then the tag in a `pre`. It has its own copy logic. `CopyButton` (react-icons, old tokens) is unchanged and still used by the goals and API blocks in Settings.
+
+### Design v3, Phase 4 (add website, step 1)
+
+- **The flow is `AddWebsite`** (`src/components/websites/AddWebsite.tsx`), with the panel in `HowItWorks.tsx` next to it. The step comes from `?site=`, checked with `sites.get`. A missing site, or one that isn't yours, shows step 1. While the check is loading, a skeleton card shows in place of the form.
+- **The panel takes a `stage`** (`domain`, `install` or `live`) plus `received`, so Phase 5 only has to pass the first-hit result.
+- **The script size in the panel is written in by hand** ("~2 KB script"; the minified build is about 2 KB gzipped). Update `HowItWorks.tsx` if the script grows; `script.test.ts` caps it at 3 KB.
+- **The favicon in the field waits 400 ms after typing stops**, so it doesn't fetch `/favicon.ico` from every partial domain.
+- **There is no timezone picker in the flow.** The browser's zone is used and shown in the hint. `TimezoneSelect` is now used only by site Settings.
+- **`Snippet` moved to `src/components/Snippet.tsx`**, unchanged, and `AddWebsiteForm` is deleted. `/websites` no longer reads the URL, so its page dropped the `Suspense` wrapper. The empty state (until Phase 6) is a link to `/websites/new`.
+- **The privacy note reads** "No personal data is sold or shared. Add `data-cookieless` to the tag to run without cookies." The screenshot's "No personal data stored" isn't true of the default script.
+- **Added with the shadcn CLI:** `alert`, `input-group` (with `input` and `textarea`) and `kbd`.
+
+### Design v3, Phase 3 (user menu)
+
+- **`UserMenu`** (`src/components/UserMenu.tsx`) replaces Clerk's `UserButton` in `TopBar`. It follows `SiteSwitcher`'s idiom: the items navigate with `router.push` and the trigger has the same hover and open styles.
+- **The initials rule is `initials()` in `src/lib/initials.ts`**. It uses the first letters of the first and last name. If only one name is set it gives one letter. Otherwise it takes the first two letters of the email's local part, so a one-letter local part gives one letter. Until Clerk's user loads, the circle shows a person icon and no email.
+- **The avatar is initials only.** It doesn't show Clerk's profile image, as the plan asks.
+- **The menu's links all appear in both modes**, including the account pages you are already on. Sign out calls `signOut({ redirectUrl: "/" })`, the same as the Settings page.
+- **Added with the shadcn CLI:** `avatar`. It imports `cn` from the `cn` package, like the other ui files.
+- **The old "hydration warning from Clerk's `UserButton`"** (an older decision note) should be gone with it. This hasn't been re-checked on the dashboard in dev.
+
 ### Design v3, Phase 2 (account tabs)
 
 - **`TopBar` takes `site` or `account`**, never both (a union type). Both tab rows come from one `TabStrip` inside `TopBar.tsx`, with the same classes as before and an `aria-label` per row. The switcher only appears in site mode, so `SiteSwitcher`'s "no current site" case is gone; the "All sites" item in its menu stays.
@@ -452,7 +500,7 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v3 Phases 1 and 2, then Phase 3
+## Next: review design v3 Phases 1 to 5, then Phase 6
 
 Owner:
 
@@ -462,7 +510,16 @@ Owner:
 4. On `/websites`, `/billing` and `/settings`: the account tabs, in both themes and on your phone. Site pages should look exactly as before.
 5. On `/settings`: Manage account, each theme option (then reload), and Sign out (lands on `/`).
 
-Then build Phase 3 (the shadcn user menu).
+6. The user menu, on `/websites` and on a site page, in both themes: your initials and email (only the circle on your phone). Its items go to Websites, Billing and Settings, and Sign out lands on `/`. Try it with the keyboard too (Tab to it, Enter, arrows, Escape).
+
+7. Add website (from `/websites` and from the switcher), in both themes and on your phone:
+   - Paste a full URL and check the "We'll track" line.
+   - Try a domain you already have and check the error.
+   - Create one, check its timezone in Settings, and see the `?site=` step. Cancel should return to the grid.
+
+8. Add website, step 2: create a site (or open `/websites/new?site=<a site with no hits>`), paste the snippet into a page and load it. The row should flip to "First pageview received" without a reload. Check Copy, Skip to dashboard, and the snippet block in the site's Settings, in both themes and on your phone.
+
+Then build Phase 6 (onboarding redirect).
 
 ## Earlier: review design v2 Phases 4 to 10 on production
 

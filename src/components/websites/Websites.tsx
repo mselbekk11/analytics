@@ -1,10 +1,9 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Authenticated, AuthLoading, useQuery } from "convex/react";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import AddWebsiteForm from "@/components/AddWebsiteForm";
 import { Button } from "@/components/ui/button";
 import PageHeader from "@/components/PageHeader";
 import TopBar from "@/components/TopBar";
@@ -34,24 +33,17 @@ export default function Websites() {
 function SiteGrid() {
   const now = useNow(NOW_STEP_MS);
   const sites = useQuery(api.sites.listWithStats, { now });
-  // The add form is open while the URL has ?add=1, so the switcher's "Add site" opens it
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-  const adding = searchParams.get("add") === "1";
-  function setAdding(open: boolean) {
-    const params = new URLSearchParams(searchParams);
-    if (open) params.set("add", "1");
-    else params.delete("add");
-    const query = params.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
-  }
 
   const header = (
     <PageHeader title="Websites" description="Last 30 days">
       {sites !== undefined && sites.length > 0 && (
-        <Button variant="outline" className="h-8 gap-1.5 px-3" onClick={() => setAdding(!adding)} aria-expanded={adding}>
-          {adding ? <X aria-hidden /> : <Plus aria-hidden />}
+        <Button
+          variant="outline"
+          className="h-8 gap-1.5 px-3"
+          render={<Link href="/websites/new" />}
+          nativeButton={false}
+        >
+          <Plus aria-hidden />
           Add website
         </Button>
       )}
@@ -79,10 +71,15 @@ function SiteGrid() {
           <div className="flex flex-col gap-1">
             <h2 className="font-medium">Add your first website</h2>
             <p className="text-sm text-muted-foreground">
-              Its timezone sets where each day starts and ends in the stats.
+              Add a domain, then paste one line into its HTML.
             </p>
           </div>
-          <AddWebsiteForm />
+          <div>
+            <Button render={<Link href="/websites/new" />} nativeButton={false} className="gap-1.5 px-3">
+              <Plus aria-hidden />
+              Add website
+            </Button>
+          </div>
         </section>
       </div>
     );
@@ -93,11 +90,6 @@ function SiteGrid() {
   return (
     <div className="flex flex-col gap-10">
       {header}
-      {adding && (
-        <section className="rounded-lg border border-border p-5 sm:p-6">
-          <AddWebsiteForm />
-        </section>
-      )}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {shown.map((s) => (
           <SiteCard key={s.domain} {...s} />

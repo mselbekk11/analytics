@@ -80,6 +80,25 @@ export const get = query({
   },
 });
 
+/**
+ * Whether the site has received any pageview yet, or null if it is missing or not the
+ * caller's. Feeds the live status on /websites/new. It reads one raw hit, so cookieless
+ * hits count too (unlike `trackingStartedAt`, which needs a visitor id).
+ */
+export const hasPageview = query({
+  args: { domain: v.string() },
+  returns: v.union(v.null(), v.boolean()),
+  handler: async (ctx, args) => {
+    const site = await findOwnedSite(ctx, args.domain);
+    if (site === null) return null;
+    const first = await ctx.db
+      .query("pageviews")
+      .withIndex("by_site_ts", (q) => q.eq("siteId", site._id))
+      .first();
+    return first !== null;
+  },
+});
+
 /** The signed-in user's sites, sorted by domain. Feeds the site switcher. */
 export const list = query({
   args: {},

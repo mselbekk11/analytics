@@ -7,7 +7,7 @@ import { Authenticated, AuthLoading, useAction, useMutation, useQuery } from "co
 import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { api } from "../../../convex/_generated/api";
-import { Snippet } from "@/components/AddWebsiteForm";
+import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import { appOrigin, embedSnippet } from "@/lib/snippet";

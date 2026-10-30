@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
 import { Authenticated, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useNow } from "@/components/dashboard/useNow";
 import LogoMark from "@/components/LogoMark";
 import SiteSwitcher from "@/components/SiteSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
+import UserMenu from "@/components/UserMenu";
 import { formatNumber } from "@/lib/format";
 
 export type SiteSection = "analytics" | "live" | "customers" | "settings";
@@ -43,7 +43,7 @@ type TopBarProps =
  * The sticky bar on every signed-in page, in one of two modes. Site mode (a site's pages):
  * logo, site switcher, online count and the site's section tabs. Account mode (websites,
  * billing, settings): logo and "Analytics" and the account tabs. Both have the theme toggle
- * and the user button. The current tab is a link too, so a visitor profile (under
+ * and the user menu. The current tab is a link too, so a visitor profile (under
  * Customers) can go back.
  */
 export default function TopBar({ site, account }: TopBarProps) {
@@ -79,9 +79,7 @@ export default function TopBar({ site, account }: TopBarProps) {
               </Authenticated>
             )}
             <ThemeToggle />
-            <span className="flex size-8 items-center justify-center">
-              <UserButton />
-            </span>
+            <UserMenu />
           </div>
         </div>
         {site ? (

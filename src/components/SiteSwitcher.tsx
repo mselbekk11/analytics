@@ -58,7 +58,7 @@ export default function SiteSwitcher({ current, section }: { current: string; se
             <LayoutGridIcon aria-hidden className="text-muted-foreground" />
             All sites
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/websites?add=1")} className="gap-2 py-1.5">
+          <DropdownMenuItem onClick={() => router.push("/websites/new")} className="gap-2 py-1.5">
             <PlusIcon aria-hidden className="text-muted-foreground" />
             Add site
           </DropdownMenuItem>

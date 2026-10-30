@@ -279,3 +279,58 @@ describe("key goal", () => {
     ).rejects.toThrow(/Site not found/);
   });
 });
+
+describe("sites.hasPageview", () => {
+  async function addHit(
+    t: ReturnType<typeof convexTest>,
+    siteId: Id<"sites">,
+    ids: { visitorId?: string; sessionId?: string } = {},
+  ) {
+    await t.run((ctx) =>
+      ctx.db.insert("pageviews", {
+        siteId,
+        ts: 1_000,
+        path: "/",
+        referrer: "(direct)",
+        unique: true,
+        device: "desktop",
+        browser: "Chrome",
+        country: "US",
+        pvId: `pv-${Math.random()}`,
+        ...ids,
+      }),
+    );
+  }
+
+  test("is null for a missing site and for someone else's", async () => {
+    const t = convexTest(schema, modules);
+    const siteId = await addSite(t, "picai.so", "UTC");
+    await addHit(t, siteId);
+    expect(await t.withIdentity(OWNER).query(api.sites.hasPageview, { domain: "nope.example" })).toBeNull();
+    expect(await t.withIdentity(STRANGER).query(api.sites.hasPageview, { domain: "picai.so" })).toBeNull();
+  });
+
+  test("is false until the site's first hit, ignoring other sites' hits", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const otherId = await addSite(t, "sensai.co", "UTC");
+    await addHit(t, otherId);
+    expect(await t.withIdentity(OWNER).query(api.sites.hasPageview, { domain: "picai.so" })).toBe(false);
+  });
+
+  test("a cookieless hit counts", async () => {
+    const t = convexTest(schema, modules);
+    const siteId = await addSite(t, "picai.so", "UTC");
+    await addHit(t, siteId);
+    expect(await t.withIdentity(OWNER).query(api.sites.hasPageview, { domain: "picai.so" })).toBe(true);
+    // trackingStartedAt stays unset for cookieless sites, which is why the query reads hits
+    expect((await t.withIdentity(OWNER).query(api.sites.get, { domain: "picai.so" }))?.trackingStartedAt).toBeNull();
+  });
+
+  test("a hit with visitor ids counts", async () => {
+    const t = convexTest(schema, modules);
+    const siteId = await addSite(t, "www.picai.so", "UTC");
+    await addHit(t, siteId, { visitorId: "v1", sessionId: "s1" });
+    expect(await t.withIdentity(OWNER).query(api.sites.hasPageview, { domain: "https://picai.so/" })).toBe(true);
+  });
+});
