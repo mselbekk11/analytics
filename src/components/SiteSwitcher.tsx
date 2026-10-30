@@ -19,9 +19,8 @@ import {
 /**
  * Favicon, domain and chevron; opens "Switch site", "All sites" and "Add site".
  * Switching stays on the same section and keeps `?range=` (filters belong to one site).
- * `current` is null on the websites list.
  */
-export default function SiteSwitcher({ current, section }: { current: string | null; section: SiteSection }) {
+export default function SiteSwitcher({ current, section }: { current: string; section: SiteSection }) {
   const sites = useQuery(api.sites.list);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,12 +33,8 @@ export default function SiteSwitcher({ current, section }: { current: string | n
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:bg-accent">
-        {current === null ? (
-          <LayoutGridIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <SiteFavicon key={current} domain={current} />
-        )}
-        <span className="truncate">{current ?? "All sites"}</span>
+        <SiteFavicon key={current} domain={current} />
+        <span className="truncate">{current}</span>
         <ChevronsUpDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">

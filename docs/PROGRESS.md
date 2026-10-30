@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-10-29 (design v3, Phase 1 built). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-10-29 (design v3, Phases 1 and 2 built). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -31,6 +31,7 @@ Last updated: 2026-10-29 (design v3, Phase 1 built). Design v3 is planned in [pl
 | Design v2, Phase 9: Map tab | **Pushed, awaiting owner review.** The Countries card has a Map tab: a monochrome SVG world map (110m outlines, loaded when the tab opens) shaded by visitors, or revenue on "Revenue ⇅", with a hover tooltip and click to filter. |
 | Design v2, Phase 10: hourly ranges | **Pushed, awaiting owner review.** Today, Yesterday and Last 24 hours work: `stats.hourly` reads the raw rows of the window and the one before it and returns the standard shapes, one chart point per hour in the site's timezone, with filters. Cookieless pageviews count toward pageviews and the pageview lists. |
 | Design v3, Phase 1: public homepage and sign-out landing | **Built, awaiting owner review.** `/` is a public, static splash page (logo and "Analytics", Log in top right; headline, one line and a Log in button in the centre). Signed-in visitors are redirected from `/` to `/websites` by the proxy. Clerk signs out to `/` and falls back to `/websites` after sign-in. |
+| Design v3, Phase 2: account tabs and placeholder pages | **Built, awaiting owner review.** The top bar has an account mode on `/websites`, `/billing` and `/settings`: logo and "Analytics", no switcher, Websites \| Billing \| Settings tabs that share one tab strip with the site tabs. `/billing` is a "coming soon" card; `/settings` has the account email with Manage account (Clerk's profile), Light / Dark / System, and Sign out. |
 
 Work one phase at a time and stop after each one for the owner to review (PLAN.md, "Instructions for Claude Code").
 
@@ -103,6 +104,8 @@ convex/
 src/
   proxy.ts           clerkMiddleware; everything protected except /, /sign-in, /sign-up, /api/collect, /api/payments, /script.js; signed-in visitors on / go to /websites
   app/layout.tsx     ThemeProvider (outer) > ClerkProvider (afterSignOutUrl /, sign-in fallback /websites) > ConvexClientProvider
+  app/billing/page.tsx          account mode, "Billing is coming soon" card (static)
+  app/settings/page.tsx         account mode > client AccountSettings (email, Manage account, theme, Sign out)
   app/page.tsx       public splash page (static server component, no Convex); LogoMark is shared with TopBar
   app/websites/page.tsx         card grid (Suspense > client Websites; ?add=1 opens the add form)
   app/sites/[domain]/page.tsx   site dashboard (Suspense > client SiteDashboard)
@@ -158,6 +161,7 @@ Checks at the end of design v2 Phase 6: the same four clean, `npm test` 391 test
 Checks at the end of design v2 Phase 8: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 30d: Events listed test-queued 6, test-signup 3 and nine goals at 1 ("View all 11"), the same counts the old panel's `stats.goals` gives; hovering test-signup showed "3 completions · 1 visitor · 3% conversion"; clicking it set `f=goal:test-signup` and outlined the row; with test-signup set as a temporary key goal (cleared afterwards) its row showed the badge in both themes; Funnels sat beside Events at the same height. Not looked at on a phone.
 Checks at the end of design v2 Phase 10: the same four clean, `npm test` 405 tests passing (`convex/hourly.test.ts` covers ownership, today's hours, the previous window, Yesterday, 24h, a timezone change, filters, cookieless pageviews and the read budget; `dates.test.ts` covers the hour helpers, including Kolkata's half-hour offset). On `next dev` with Convex dev in Chrome, `localhost` (LA time, 13:44 on 28 Oct): Yesterday showed 24 hourly points with the same tiles as the custom range 27 Oct–27 Oct from the rollups (8 visitors, 17 pageviews, $64, 12.5%, 44.4%, 26s) and the same lists; Today ran 00:00–13:00 and 24h 14:00–13:00; `f=device:mobile` on Yesterday gave 6 visitors, matching the Devices list; the tooltip read "Oct 27, 13:00". The visitor changes on Yesterday show "–" because tracking started partway through 26 Oct, inside the comparison window (the day view counts the whole of 26 Oct as tracked, so it shows them). The budget notice was only checked in tests. Not looked at on a phone.
 Checks at the end of design v2 Phase 9: the same four clean, `npm test` 394 tests passing (no backend changes). On `next dev` with Convex dev in Chrome, `localhost`, 90d: the Countries tab listed Unknown 27, Norway 1 and United States 1, and the Map shaded exactly Norway and the US; hovering showed "United States · 1 visitor" (and "Canada · 0 visitors" on an unlisted country); clicking the US set `f=country:US`, the Visitors tile went to 1 and the map stayed open with the US outlined; on Revenue ⇅ nothing was shaded, matching the list (only Unknown has revenue); light and dark both read well. Opening the tab fetched one more JS chunk, and in the production build the outlines' chunk (~114 KB) is only listed in the dynamic-import manifests. Not looked at on a phone.
+Checks at the end of design v3 Phase 2: the same four clean, `npm test` 405 tests passing (no backend changes); `/billing` and `/settings` build as static and redirect to sign-in without a session. On a local production build (`next start -p 3001`, Convex dev) in Chrome: `/websites`, `/billing` and `/settings` showed the logo, "Analytics" and the account tabs with the right one underlined and `aria-current`, and no switcher; `/sites/localhost` still showed the switcher, "0 online" and its four tabs. On Settings, Light survived a reload (stored `light`), System stored `system` and followed the OS (dark), and Manage account opened Clerk's profile dialog. In 375px frames all three pages had no sideways scroll in light and dark. The stored theme was set back to `dark` afterwards. Not checked: the Sign out button (it would sign the owner out of the automation browser).
 Checks at the end of design v3 Phase 1: the same four clean, `npm test` 405 tests passing (no backend changes); `/` builds as static (○). On a local production build (`next start -p 3001`, Convex dev): curl without cookies got 200 and the splash for `/`, and 307 to `/sign-in?redirect_url=…` for `/websites`, `/billing` and `/sites/localhost`; in Chrome, signed in, `/` landed on `/websites`. The splash (fetched without cookies and rendered in the tab) read well in light and dark, both Log in links point to `/sign-in`, and in 375px frames it had no sideways scroll in either theme. Not checked: signing out and signing in for real (the automation browser holds the owner's session).
 Checks at the end of design v2 Phase 7: the same four clean, `npm test` 394 tests passing. On `next dev` with Convex dev in Chrome, `localhost`, 30d: the AI tab listed only ChatGPT (2) while Sources listed six; clicking it set `f=source:ChatGPT` and the AI tab (now from the filtered view) showed it outlined; "Visitors ⇅" on Sources and Countries switched to "Revenue ⇅" with just the rows that have revenue (test $64, Unknown $64), while Pages and Devices kept plain labels; the cookieless `advancedortholabsf.com` (no revenue) had no ⇅ button.
 Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing. On Convex dev, for the `localhost` site: Settings → Revenue set to Stripe in Chrome, a throwaway signing secret saved; a visit to `/test.html?utm_source=test&utm_campaign=phase5e`; then events signed with the Stripe SDK posted to the dev webhook URL. A payment with that visitor's `va_vid` in metadata was stored with `matchedBy: metadata` (its retry counted once, a bad signature got 400); a second without metadata was Unattributed until `/test.html?session_id=cs_test_localclaim0001` sent the claim, which moved it to `return_page`. The dashboard showed revenue $64.00, conversion rate, revenue per visitor, the bars and $64 on Referral / test / phase5e.
@@ -329,6 +333,15 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
 
+### Design v3, Phase 2 (account tabs)
+
+- **`TopBar` takes `site` or `account`**, never both (a union type). Both tab rows come from one `TabStrip` inside `TopBar.tsx`, with the same classes as before and an `aria-label` per row. The switcher only appears in site mode, so `SiteSwitcher`'s "no current site" case is gone; the "All sites" item in its menu stays.
+- **`PageHeader`** (`src/components/PageHeader.tsx`) is the title, optional line and actions from `/websites`, now shared by Websites, Billing and Settings.
+- **Manage account calls Clerk's `openUserProfile()`**, the modal profile, so no `/user-profile` route is needed.
+- **The theme choice is a ToggleGroup like the range segments.** It shows no selection until the page is in the browser (`useSyncExternalStore`), because the stored choice isn't known on the server. Clicking the pressed option again keeps the theme.
+- **Sign out on Settings** calls `signOut({ redirectUrl: "/" })` and uses the destructive button style.
+- **Added with the shadcn CLI:** `card`.
+
 ### Design v3, Phase 1 (homepage)
 
 - **The signed-in redirect on `/` lives in the proxy, not the page.** The PRD had the page call `auth()`, but with `cacheComponents` that needs a Suspense boundary and the splash would stream first and then redirect on the client. In the proxy it is a plain 307 before any HTML, and `/` stays a static page.
@@ -439,15 +452,17 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v3 Phase 1, then Phase 2
+## Next: review design v3 Phases 1 and 2, then Phase 3
 
 Owner:
 
 1. Signed out (a private window), open `/`: the splash page in light and dark and on your phone. Both Log in buttons open the sign-in page, and signing in lands on `/websites`.
 2. Signed in, open `/`: it goes straight to `/websites`.
 3. Sign out from the user button: you land on `/`.
+4. On `/websites`, `/billing` and `/settings`: the account tabs, in both themes and on your phone. Site pages should look exactly as before.
+5. On `/settings`: Manage account, each theme option (then reload), and Sign out (lands on `/`).
 
-Then build Phase 2 (account tabs and the Billing and Settings pages).
+Then build Phase 3 (the shadcn user menu).
 
 ## Earlier: review design v2 Phases 4 to 10 on production
 

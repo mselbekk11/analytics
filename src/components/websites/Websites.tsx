@@ -6,6 +6,7 @@ import { Plus, X } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import AddWebsiteForm from "@/components/AddWebsiteForm";
 import { Button } from "@/components/ui/button";
+import PageHeader from "@/components/PageHeader";
 import TopBar from "@/components/TopBar";
 import { useNow } from "@/components/dashboard/useNow";
 import SiteCard from "./SiteCard";
@@ -17,7 +18,7 @@ const NOW_STEP_MS = 60 * 1000;
 export default function Websites() {
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar />
+      <TopBar account="websites" />
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 pt-10 pb-20 sm:px-6 lg:px-8">
         <AuthLoading>
           <p className="text-sm text-muted-foreground">Connecting…</p>
@@ -47,18 +48,14 @@ function SiteGrid() {
   }
 
   const header = (
-    <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-semibold tracking-tight">Websites</h1>
-        <p className="text-sm text-muted-foreground">Last 30 days</p>
-      </div>
+    <PageHeader title="Websites" description="Last 30 days">
       {sites !== undefined && sites.length > 0 && (
         <Button variant="outline" className="h-8 gap-1.5 px-3" onClick={() => setAdding(!adding)} aria-expanded={adding}>
           {adding ? <X aria-hidden /> : <Plus aria-hidden />}
           Add website
         </Button>
       )}
-    </header>
+    </PageHeader>
   );
 
   if (sites === undefined) {
