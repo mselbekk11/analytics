@@ -30,9 +30,10 @@ export const SERIES_COLOR: Record<SeriesKey, string> = {
 };
 
 /** Series on the chart until the owner picks others. */
-export const DEFAULT_SERIES: SeriesKey[] = ["visitors", "pageviews", "revenue", "goal"];
+export const DEFAULT_SERIES: SeriesKey[] = ["visitors", "pageviews"];
 
-const STORAGE_KEY = "dashboard.chartSeries";
+// v2: the default changed to Visitors and Pageviews only, so earlier choices are dropped
+const STORAGE_KEY = "dashboard.chartSeries.v2";
 
 function load(): SeriesKey[] {
   try {

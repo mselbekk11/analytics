@@ -25,18 +25,19 @@ type Props = {
 const barDomain = [0, (max: number) => (max > 0 ? max * 1.5 : 1)] as [number, (max: number) => number];
 const lineDomain = [0, (max: number) => (max > 0 ? max * 1.1 : 1)] as [number, (max: number) => number];
 
+// Bounce rate is solid, the other two are told apart by their dashes
 const DASH: Partial<Record<SeriesKey, string>> = {
   conversionRate: "4 4",
-  bounceRate: "1 3",
   visitDuration: "8 4",
 };
 
 /**
- * The chart under the tiles, the same for hours and days: Visitors as blue bars and
- * Pageviews as a light-blue line with a soft fill, both on the visible scale; Revenue
- * (green) and the key goal (purple) as bars beside Visitors in each bucket, and the rates
- * and duration as grey dashed lines, each on its own hidden scale. Bars are drawn first,
- * so the lines sit on top. The tooltip lists the series in tile order.
+ * The chart under the tiles, the same for hours and days: Visitors (blue) and Pageviews
+ * (light blue) as lines with a soft fill, both on the visible scale; Revenue (green) and
+ * the key goal (purple) as bars in each bucket, and the rates and duration as grey lines,
+ * each on its own hidden scale. A rate has no value in a bucket without sessions, so its
+ * line joins across the gap rather than breaking. Bars are drawn first, so the lines sit
+ * on top. The tooltip lists the series in tile order.
  */
 export default function TrafficChart({ data, shown, labels, trackingStart, currency, tracking }: Props) {
   if (data === undefined) {
@@ -85,8 +86,12 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
       >
         <defs>
           <linearGradient id="fill-pageviews" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-pageviews)" stopOpacity={0.14} />
+            <stop offset="0%" stopColor="var(--color-pageviews)" stopOpacity={0.08} />
             <stop offset="100%" stopColor="var(--color-pageviews)" stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="fill-visitors" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-visitors)" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="var(--color-visitors)" stopOpacity={0} />
           </linearGradient>
         </defs>
         <XAxis
@@ -152,10 +157,10 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
             }}
           />
         )}
-        {(["visitors", "revenue", "goal"] as const).filter(on).map((k) => (
+        {(["revenue", "goal"] as const).filter(on).map((k) => (
           <Bar
             key={k}
-            yAxisId={k === "visitors" ? "count" : k}
+            yAxisId={k}
             dataKey={k}
             name={k}
             fill={`var(--color-${k})`}
@@ -175,25 +180,27 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
             strokeWidth={1.5}
             strokeDasharray={DASH[k]}
             strokeLinecap="round"
+            connectNulls
             dot={false}
             activeDot={{ r: 3, fill: `var(--color-${k})`, stroke: "var(--background)", strokeWidth: 2 }}
             isAnimationActive={false}
           />
         ))}
-        {on("pageviews") && (
+        {(["pageviews", "visitors"] as const).filter(on).map((k) => (
           <Area
+            key={k}
             yAxisId="count"
             type="linear"
-            dataKey="pageviews"
-            name="pageviews"
-            stroke="var(--color-pageviews)"
+            dataKey={k}
+            name={k}
+            stroke={`var(--color-${k})`}
             strokeWidth={1.5}
-            fill="url(#fill-pageviews)"
+            fill={`url(#fill-${k})`}
             dot={false}
-            activeDot={{ r: 3.5, fill: "var(--color-pageviews)", stroke: "var(--background)", strokeWidth: 2 }}
+            activeDot={{ r: 3.5, fill: `var(--color-${k})`, stroke: "var(--background)", strokeWidth: 2 }}
             isAnimationActive={false}
           />
-        )}
+        ))}
       </ComposedChart>
     </ChartContainer>
   );
