@@ -334,3 +334,50 @@ describe("sites.hasPageview", () => {
     expect(await t.withIdentity(OWNER).query(api.sites.hasPageview, { domain: "https://picai.so/" })).toBe(true);
   });
 });
+
+describe("excluded paths", () => {
+  test("setExcludedPaths normalises, dedupes and clears; excludedPaths reads them back", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const owner = t.withIdentity(OWNER);
+    expect(await owner.query(api.sites.excludedPaths, { domain: "picai.so" })).toEqual([]);
+
+    await owner.mutation(api.sites.setExcludedPaths, {
+      domain: "picai.so",
+      patterns: [" /admin/** ", "/preview/", "/admin/*"],
+    });
+    expect(await owner.query(api.sites.excludedPaths, { domain: "picai.so" })).toEqual(["/admin/*", "/preview"]);
+
+    await owner.mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns: [] });
+    expect(await owner.query(api.sites.excludedPaths, { domain: "picai.so" })).toEqual([]);
+  });
+
+  test("rejects invalid patterns and more than 50, with a message", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const owner = t.withIdentity(OWNER);
+    await expect(
+      owner.mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns: ["admin/*"] }),
+    ).rejects.toThrow(/admin\/\*: Patterns start with \//);
+    await expect(
+      owner.mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns: ["/search?q=*"] }),
+    ).rejects.toThrow(/without \? or #/);
+    await expect(
+      owner.mutation(api.sites.setExcludedPaths, {
+        domain: "picai.so",
+        patterns: Array.from({ length: 51 }, (_, i) => `/p${i}`),
+      }),
+    ).rejects.toThrow(/At most 50/);
+    expect(await owner.query(api.sites.excludedPaths, { domain: "picai.so" })).toEqual([]);
+  });
+
+  test("only the owner can read or set them", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const stranger = t.withIdentity(STRANGER);
+    await expect(stranger.query(api.sites.excludedPaths, { domain: "picai.so" })).rejects.toThrow(/Site not found/);
+    await expect(
+      stranger.mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns: ["/admin/*"] }),
+    ).rejects.toThrow(/Site not found/);
+  });
+});

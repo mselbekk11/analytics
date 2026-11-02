@@ -6,7 +6,9 @@ import { useState } from "react";
 import { Authenticated, AuthLoading, useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
+import { PlusIcon, XIcon } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
+import { MAX_EXCLUDED_PATHS, parseExcludedPath } from "../../../convex/lib/paths";
 import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
@@ -32,10 +34,10 @@ export default function SiteSettings() {
   );
 }
 
-type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "danger";
+type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "excluded" | "danger";
 
-// The sidebar, in order. Sections from later phases (mcp, identity, ignore, paths,
-// excluded) join their groups as they are built; until then their ids open Tracking code.
+// The sidebar, in order. Sections from later phases (mcp, identity, ignore, paths) join
+// their groups as they are built; until then their ids open Tracking code.
 const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
   {
     label: "Install",
@@ -51,6 +53,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
       { id: "revenue", label: "Revenue attribution" },
     ],
   },
+  { label: "Filtering", sections: [{ id: "excluded", label: "Excluded paths" }] },
   { label: "Danger zone", sections: [{ id: "danger", label: "Danger zone" }] },
 ];
 const SECTION_IDS = new Set<string>(GROUPS.flatMap((g) => g.sections.map((s) => s.id)));
@@ -148,6 +151,7 @@ function Settings({ domain }: { domain: string }) {
           {section === "timezone" && <TimezoneSection domain={site.domain} timezone={site.timezone} />}
           {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
           {section === "revenue" && <RevenueSection domain={site.domain} />}
+          {section === "excluded" && <ExcludedSection domain={site.domain} />}
           {section === "danger" && <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />}
         </div>
       </div>
@@ -651,6 +655,127 @@ function ApiSetup({ domain, settings }: { domain: string; settings: RevenueSetti
         />
       </Step>
     </div>
+  );
+}
+
+const EXCLUDED_DESCRIPTION =
+  "Drop hits whose path matches any of these patterns, such as /admin, internal previews or load-test pages. Pageviews, goals and outbound clicks on them are not counted.";
+
+function ExcludedSection({ domain }: { domain: string }) {
+  const saved = useQuery(api.sites.excludedPaths, { domain });
+  if (saved === undefined) {
+    return (
+      <Section title="Excluded paths" description={EXCLUDED_DESCRIPTION}>
+        <div className="h-10 animate-pulse rounded bg-line/50" />
+      </Section>
+    );
+  }
+  // Not keyed on `saved`: a save must not remount the form and lose its "Saved"
+  return <ExcludedForm domain={domain} saved={saved} />;
+}
+
+function ExcludedForm({ domain, saved }: { domain: string; saved: string[] }) {
+  const setExcludedPaths = useMutation(api.sites.setExcludedPaths);
+  const [patterns, setPatterns] = useState(saved);
+  const [draft, setDraft] = useState("");
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
+  const changed = patterns.join("\n") !== saved.join("\n");
+  const full = patterns.length >= MAX_EXCLUDED_PATHS;
+
+  function add(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = parseExcludedPath(draft);
+    if ("error" in parsed) {
+      setStatus({ ok: false, text: parsed.error });
+      return;
+    }
+    if (!patterns.includes(parsed.pattern)) setPatterns([...patterns, parsed.pattern]);
+    setDraft("");
+    setStatus(null);
+  }
+
+  async function save() {
+    setPending(true);
+    setStatus(null);
+    try {
+      await setExcludedPaths({ domain, patterns });
+      setStatus({ ok: true, text: "Saved" });
+    } catch (err) {
+      setStatus({ ok: false, text: err instanceof ConvexError ? String(err.data) : "Could not save" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Section title="Excluded paths" description={EXCLUDED_DESCRIPTION}>
+      <p className="text-sm text-muted-foreground">
+        Use <code className="rounded border border-line px-1 font-mono text-xs">*</code> as a wildcard:{" "}
+        <code className="font-mono">/admin/*</code> covers /admin and every page under it, and a pattern
+        without one matches that path only. Applies to new hits only; stats already counted stay.
+      </p>
+      {patterns.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No patterns yet.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
+          {patterns.map((p) => (
+            <li key={p} className="flex items-center gap-2 py-1.5 pr-1.5 pl-3 text-sm">
+              <code className="min-w-0 flex-1 truncate font-mono">{p}</code>
+              <button
+                type="button"
+                onClick={() => {
+                  setPatterns(patterns.filter((x) => x !== p));
+                  setStatus(null);
+                }}
+                aria-label={`Remove ${p}`}
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <XIcon className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="flex gap-2 text-sm">
+        <input
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setStatus(null);
+          }}
+          placeholder="e.g. /admin/* or /preview"
+          aria-label="Path pattern"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={full}
+          className="min-w-0 flex-1 rounded-md border border-line bg-panel px-3 py-2 font-mono disabled:opacity-40"
+        />
+        <button
+          type="submit"
+          disabled={full || !draft.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-2 text-muted-foreground hover:text-foreground disabled:opacity-40"
+        >
+          <PlusIcon className="size-4" />
+          Add
+        </button>
+      </form>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending || !changed}
+          className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
+        >
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+        {status ? (
+          <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>
+        ) : (
+          full && <span className="text-muted-foreground">At most {MAX_EXCLUDED_PATHS} patterns</span>
+        )}
+      </div>
+    </Section>
   );
 }
 

@@ -20,6 +20,7 @@ import type * as lib_filters from "../lib/filters.js";
 import type * as lib_geo from "../lib/geo.js";
 import type * as lib_names from "../lib/names.js";
 import type * as lib_pages from "../lib/pages.js";
+import type * as lib_paths from "../lib/paths.js";
 import type * as lib_ranges from "../lib/ranges.js";
 import type * as lib_revenue from "../lib/revenue.js";
 import type * as lib_rollups from "../lib/rollups.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "lib/geo": typeof lib_geo;
   "lib/names": typeof lib_names;
   "lib/pages": typeof lib_pages;
+  "lib/paths": typeof lib_paths;
   "lib/ranges": typeof lib_ranges;
   "lib/revenue": typeof lib_revenue;
   "lib/rollups": typeof lib_rollups;

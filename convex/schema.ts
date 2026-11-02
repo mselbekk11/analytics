@@ -22,6 +22,9 @@ export default defineSchema({
     // Revenue (5e): where payments come from (missing means "none") and the one currency totals use
     revenueSource: v.optional(v.union(v.literal("none"), v.literal("stripe"), v.literal("api"))),
     currency: v.optional(v.string()), // ISO 4217, "USD" when missing
+    // Path globs whose pageviews, goals and outbound clicks ingest drops (design v4
+    // Phase 13; see lib/paths.ts). Missing means none
+    excludedPaths: v.optional(v.array(v.string())),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),

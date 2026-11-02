@@ -5,6 +5,7 @@ import { action, internalMutation, mutation, query, type MutationCtx } from "./_
 import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
 import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
+import { MAX_EXCLUDED_PATHS, parseExcludedPath } from "./lib/paths";
 import { eachDate, presetRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
 import { STRIPE_EVENTS } from "./lib/stripe";
@@ -212,6 +213,39 @@ export const setKeyGoal = mutation({
       throw new ConvexError("Goal names are at most 100 characters");
     }
     await ctx.db.patch("sites", site._id, { keyGoal });
+    return null;
+  },
+});
+
+/** The site's excluded path patterns, in the order they were added. */
+export const excludedPaths = query({
+  args: { domain: v.string() },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    return site.excludedPaths ?? [];
+  },
+});
+
+/**
+ * Replaces the site's excluded path patterns. Each is validated and normalised (see
+ * lib/paths.ts) and repeats are dropped. Only new hits are affected.
+ */
+export const setExcludedPaths = mutation({
+  args: { domain: v.string(), patterns: v.array(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const patterns: string[] = [];
+    for (const raw of args.patterns) {
+      const parsed = parseExcludedPath(raw);
+      if ("error" in parsed) throw new ConvexError(`${raw.trim() || "Empty pattern"}: ${parsed.error}`);
+      if (!patterns.includes(parsed.pattern)) patterns.push(parsed.pattern);
+    }
+    if (patterns.length > MAX_EXCLUDED_PATHS) {
+      throw new ConvexError(`At most ${MAX_EXCLUDED_PATHS} excluded paths`);
+    }
+    await ctx.db.patch("sites", site._id, { excludedPaths: patterns.length > 0 ? patterns : undefined });
     return null;
   },
 });

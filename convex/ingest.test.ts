@@ -844,3 +844,54 @@ describe("ingest.event", () => {
     ).rejects.toThrow("Invalid ingest secret");
   });
 });
+
+describe("excluded paths", () => {
+  async function exclude(t: ReturnType<typeof convexTest>, patterns: string[]) {
+    await t
+      .withIdentity({ subject: "user_1", tokenIdentifier: "clerk|user_1" })
+      .mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns });
+  }
+
+  test("a hit on an excluded path stores nothing and bumps no rollups", async () => {
+    const t = await setup();
+    await exclude(t, ["/admin/*", "/preview"]);
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/admin/x" }));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/preview" }));
+    await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: "a", ms: 5000 });
+
+    const { pageviews, dailyStats, dailyDims, sessions, visitors } = await tables(t);
+    expect(pageviews).toHaveLength(0);
+    expect(dailyStats).toHaveLength(0);
+    expect(dailyDims).toHaveLength(0);
+    expect(sessions).toHaveLength(0);
+    expect(visitors).toHaveLength(0);
+
+    // Other paths still count
+    await t.mutation(api.ingest.pageview, phone("c", "s1", { path: "/administrator" }));
+    expect((await tables(t)).pageviews.map((p) => p.path)).toEqual(["/administrator"]);
+  });
+
+  test("goals and outbound clicks on excluded paths are dropped", async () => {
+    const t = await setup();
+    await exclude(t, ["/admin/*"]);
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/admin/x" }));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "outbound", url: "https://x.com/" }));
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await tables(t)).events).toHaveLength(0);
+    expect(await eventDims(t)).toEqual([]);
+  });
+
+  test("a goal on a page excluded after its pageview was stored is dropped too", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/admin/x" }));
+    await exclude(t, ["/admin/*"]);
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "outbound", url: "https://x.com/" }));
+
+    const { events, pageviews, sessions } = await tables(t);
+    expect(pageviews).toHaveLength(1);
+    expect(events).toHaveLength(0);
+    expect(sessions[0].goals).toBe(0);
+  });
+});

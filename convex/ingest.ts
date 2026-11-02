@@ -12,6 +12,7 @@ import {
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
 import { cityKey, regionKey } from "./lib/geo";
+import { isExcludedPath } from "./lib/paths";
 import { claimCheckout } from "./lib/revenue";
 import {
   bumpDailyDim,
@@ -82,6 +83,8 @@ export const pageview = mutation({
     checkSecret(args.secret);
     const site = await findSite(ctx, args.site, args.hostname);
     if (site === null) return null;
+    // Excluded paths store nothing, so their pings and events find no pageview either
+    if (isExcludedPath(args.path, site.excludedPaths)) return null;
 
     // A retried beacon must not count twice
     const seen = await ctx.db
@@ -493,8 +496,9 @@ async function recordEvent(
     return;
   }
   if (pv === null || pv.siteId !== site._id) return;
-
   const e = args.event;
+  // A goal or link on a pageview stored before its path was excluded is dropped too
+  if ((e.type === "goal" || e.type === "outbound") && isExcludedPath(pv.path, site.excludedPaths)) return;
   const type = e.type;
   const name = (
     e.type === "goal" ? e.name : e.type === "outbound" ? e.url : e.type === "claim" ? e.checkoutSessionId : "identify"
