@@ -381,3 +381,57 @@ describe("excluded paths", () => {
     ).rejects.toThrow(/Site not found/);
   });
 });
+
+describe("path grouping", () => {
+  const OFF = { enabled: false, placeholder: ":id", patterns: [] };
+
+  test("setPathGrouping normalises and dedupes; pathGrouping reads it back, defaults when unset", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const owner = t.withIdentity(OWNER);
+    expect(await owner.query(api.sites.pathGrouping, { domain: "picai.so" })).toEqual(OFF);
+
+    await owner.mutation(api.sites.setPathGrouping, {
+      domain: "picai.so",
+      enabled: true,
+      placeholder: " record ",
+      patterns: [" /dashboard/:site_id/sites/ ", "/orders/:order", "/dashboard/:site_id/sites"],
+    });
+    expect(await owner.query(api.sites.pathGrouping, { domain: "picai.so" })).toEqual({
+      enabled: true,
+      placeholder: ":record",
+      patterns: ["/dashboard/:site_id/sites", "/orders/:order"],
+    });
+
+    // Back to the defaults clears the field
+    await owner.mutation(api.sites.setPathGrouping, { domain: "picai.so", ...OFF, placeholder: "" });
+    expect(await owner.query(api.sites.pathGrouping, { domain: "picai.so" })).toEqual(OFF);
+    const sites = await t.run((ctx) => ctx.db.query("sites").collect());
+    expect(sites[0].pathGrouping).toBeUndefined();
+  });
+
+  test("rejects a bad placeholder, bad patterns and more than 50, with a message", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const owner = t.withIdentity(OWNER);
+    const set = (o: { placeholder?: string; patterns?: string[] }) =>
+      owner.mutation(api.sites.setPathGrouping, { domain: "picai.so", ...OFF, enabled: true, ...o });
+    await expect(set({ placeholder: ":my id" })).rejects.toThrow(/Placeholders are a name/);
+    await expect(set({ patterns: ["/orders"] })).rejects.toThrow(/\/orders: Use :name/);
+    await expect(set({ patterns: ["/orders/*"] })).rejects.toThrow(/can't contain/);
+    await expect(set({ patterns: Array.from({ length: 51 }, (_, i) => `/p${i}/:id`) })).rejects.toThrow(
+      /At most 50/,
+    );
+    expect(await owner.query(api.sites.pathGrouping, { domain: "picai.so" })).toEqual(OFF);
+  });
+
+  test("only the owner can read or set it", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const stranger = t.withIdentity(STRANGER);
+    await expect(stranger.query(api.sites.pathGrouping, { domain: "picai.so" })).rejects.toThrow(/Site not found/);
+    await expect(
+      stranger.mutation(api.sites.setPathGrouping, { domain: "picai.so", ...OFF, enabled: true }),
+    ).rejects.toThrow(/Site not found/);
+  });
+});

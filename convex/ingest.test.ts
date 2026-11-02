@@ -34,6 +34,7 @@ type Hit = {
     utmContent?: string;
     refTag?: string;
   };
+  title?: string;
 };
 
 function hit(overrides: Partial<Hit> = {}): Hit {
@@ -893,5 +894,64 @@ describe("excluded paths", () => {
     expect(pageviews).toHaveLength(1);
     expect(events).toHaveLength(0);
     expect(sessions[0].goals).toBe(0);
+  });
+});
+
+describe("path grouping", () => {
+  async function group(
+    t: ReturnType<typeof convexTest>,
+    o: { enabled?: boolean; placeholder?: string; patterns?: string[] } = {},
+  ) {
+    await t
+      .withIdentity({ subject: "user_1", tokenIdentifier: "clerk|user_1" })
+      .mutation(api.sites.setPathGrouping, { domain: "picai.so", enabled: true, placeholder: ":id", patterns: [], ...o });
+  }
+
+  test("with grouping on, ids collapse into one stored, rolled-up and titled path", async () => {
+    const t = await setup();
+    await group(t);
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/orders/123456", title: "Order 123456" }));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/orders/987654", title: "Order 987654" }));
+    await t.mutation(api.ingest.pageview, phone("c", "s1", { path: "/pricing" }));
+
+    const { pageviews, dailyDims, sessions } = await tables(t);
+    expect(pageviews.map((p) => p.path)).toEqual(["/orders/:id", "/orders/:id", "/pricing"]);
+    const pages = dailyDims.filter((d) => d.dim === "page");
+    expect(pages.map((d) => [d.key, d.pageviews])).toEqual(
+      expect.arrayContaining([
+        ["/orders/:id", 2],
+        ["/pricing", 1],
+      ]),
+    );
+    expect(pages).toHaveLength(2);
+    expect(sessions[0]).toMatchObject({ entryPath: "/orders/:id", exitPath: "/pricing" });
+    const titles = await t.run((ctx) => ctx.db.query("pageTitles").collect());
+    expect(titles.map((r) => [r.path, r.title])).toEqual([["/orders/:id", "Order 987654"]]);
+  });
+
+  test("named patterns win over auto-detection", async () => {
+    const t = await setup();
+    await group(t, { placeholder: ":n", patterns: ["/orders/:order_id"] });
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/orders/123456" }));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/files/123456" }));
+    expect((await tables(t)).pageviews.map((p) => p.path)).toEqual(["/orders/:order_id", "/files/:n"]);
+  });
+
+  test("off, paths are stored as sent", async () => {
+    const t = await setup();
+    await group(t, { enabled: false, patterns: ["/orders/:order_id"] });
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/orders/123456" }));
+    expect((await tables(t)).pageviews.map((p) => p.path)).toEqual(["/orders/123456"]);
+  });
+
+  test("excluded paths match the path as sent, before grouping", async () => {
+    const t = await setup();
+    await group(t);
+    await t
+      .withIdentity({ subject: "user_1", tokenIdentifier: "clerk|user_1" })
+      .mutation(api.sites.setExcludedPaths, { domain: "picai.so", patterns: ["/orders/123456"] });
+    await t.mutation(api.ingest.pageview, phone("a", "s1", { path: "/orders/123456" }));
+    await t.mutation(api.ingest.pageview, phone("b", "s1", { path: "/orders/987654" }));
+    expect((await tables(t)).pageviews.map((p) => p.path)).toEqual(["/orders/:id"]);
   });
 });

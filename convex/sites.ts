@@ -5,7 +5,14 @@ import { action, internalMutation, mutation, query, type MutationCtx } from "./_
 import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
 import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
-import { MAX_EXCLUDED_PATHS, parseExcludedPath } from "./lib/paths";
+import {
+  DEFAULT_PLACEHOLDER,
+  MAX_EXCLUDED_PATHS,
+  MAX_NAMED_PATTERNS,
+  parseExcludedPath,
+  parseNamedPattern,
+  parsePlaceholder,
+} from "./lib/paths";
 import { eachDate, presetRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
 import { STRIPE_EVENTS } from "./lib/stripe";
@@ -246,6 +253,54 @@ export const setExcludedPaths = mutation({
       throw new ConvexError(`At most ${MAX_EXCLUDED_PATHS} excluded paths`);
     }
     await ctx.db.patch("sites", site._id, { excludedPaths: patterns.length > 0 ? patterns : undefined });
+    return null;
+  },
+});
+
+const pathGroupingValidator = v.object({
+  enabled: v.boolean(),
+  placeholder: v.string(),
+  patterns: v.array(v.string()),
+});
+
+/** The site's path grouping, with the defaults (off, `:id`, no patterns) when never set. */
+export const pathGrouping = query({
+  args: { domain: v.string() },
+  returns: pathGroupingValidator,
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    return site.pathGrouping ?? { enabled: false, placeholder: DEFAULT_PLACEHOLDER, patterns: [] };
+  },
+});
+
+/**
+ * Replaces the site's path grouping. The placeholder and each named pattern are
+ * validated and normalised (see lib/paths.ts), and repeated patterns are dropped, keeping
+ * the first. Only new hits are affected.
+ */
+export const setPathGrouping = mutation({
+  args: { domain: v.string(), ...pathGroupingValidator.fields },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    const placeholder = parsePlaceholder(args.placeholder);
+    if ("error" in placeholder) throw new ConvexError(placeholder.error);
+    const patterns: string[] = [];
+    for (const raw of args.patterns) {
+      const parsed = parseNamedPattern(raw);
+      if ("error" in parsed) throw new ConvexError(`${raw.trim() || "Empty pattern"}: ${parsed.error}`);
+      if (!patterns.includes(parsed.pattern)) patterns.push(parsed.pattern);
+    }
+    if (patterns.length > MAX_NAMED_PATTERNS) {
+      throw new ConvexError(`At most ${MAX_NAMED_PATTERNS} named patterns`);
+    }
+    const isDefault =
+      !args.enabled && placeholder.placeholder === DEFAULT_PLACEHOLDER && patterns.length === 0;
+    await ctx.db.patch("sites", site._id, {
+      pathGrouping: isDefault
+        ? undefined
+        : { enabled: args.enabled, placeholder: placeholder.placeholder, patterns },
+    });
     return null;
   },
 });

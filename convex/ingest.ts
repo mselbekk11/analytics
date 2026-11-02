@@ -12,7 +12,7 @@ import {
 import { localDate } from "./lib/dates";
 import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
 import { cityKey, regionKey } from "./lib/geo";
-import { isExcludedPath } from "./lib/paths";
+import { groupPath, isExcludedPath } from "./lib/paths";
 import { claimCheckout } from "./lib/revenue";
 import {
   bumpDailyDim,
@@ -85,6 +85,9 @@ export const pageview = mutation({
     if (site === null) return null;
     // Excluded paths store nothing, so their pings and events find no pageview either
     if (isExcludedPath(args.path, site.excludedPaths)) return null;
+    // From here on the path is the grouped one: stored, rolled up, titled and used for
+    // the session's entry and exit
+    const path = groupPath(args.path, site.pathGrouping);
 
     // A retried beacon must not count twice
     const seen = await ctx.db
@@ -110,7 +113,7 @@ export const pageview = mutation({
     await ctx.db.insert("pageviews", {
       siteId: site._id,
       ts,
-      path: args.path,
+      path,
       referrer: args.referrer,
       unique: args.unique,
       device: args.device,
@@ -125,7 +128,7 @@ export const pageview = mutation({
     let newSession = false;
     let page: PageDelta = {};
     if (ids !== null) {
-      const visit = await trackVisit(ctx, site, { ...args, ...ids, ts, date, campaign });
+      const visit = await trackVisit(ctx, site, { ...args, ...ids, path, ts, date, campaign });
       countsVisitor = visit.firstToday;
       newSession = visit.newSession;
       page = visit.page;
@@ -138,8 +141,8 @@ export const pageview = mutation({
       visitors: countsVisitor ? 1 : 0,
       ...(newSession ? { sessions: 1, bounces: 1 } : {}),
     });
-    await bumpDailyDim(ctx, site._id, date, "page", args.path, countsVisitor, page);
-    await savePageTitle(ctx, site._id, args.path, args.title, ts);
+    await bumpDailyDim(ctx, site._id, date, "page", path, countsVisitor, page);
+    await savePageTitle(ctx, site._id, path, args.title, ts);
     await bumpDailyDim(ctx, site._id, date, "referrer", args.referrer, countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "device", args.device, countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "browser", args.browser, countsVisitor);

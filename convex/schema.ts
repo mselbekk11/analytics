@@ -25,6 +25,11 @@ export default defineSchema({
     // Path globs whose pageviews, goals and outbound clicks ingest drops (design v4
     // Phase 13; see lib/paths.ts). Missing means none
     excludedPaths: v.optional(v.array(v.string())),
+    // How ingest rewrites dynamic paths (design v4 Phase 14; see lib/paths.ts). Missing
+    // means off, with the `:id` placeholder and no named patterns
+    pathGrouping: v.optional(
+      v.object({ enabled: v.boolean(), placeholder: v.string(), patterns: v.array(v.string()) }),
+    ),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),

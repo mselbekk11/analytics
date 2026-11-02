@@ -8,10 +8,20 @@ import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { PlusIcon, XIcon } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import { MAX_EXCLUDED_PATHS, parseExcludedPath } from "../../../convex/lib/paths";
+import {
+  DEFAULT_PLACEHOLDER,
+  MAX_EXCLUDED_PATHS,
+  MAX_NAMED_PATTERNS,
+  groupPath,
+  parseExcludedPath,
+  parseNamedPattern,
+  parsePlaceholder,
+  type PathGrouping,
+} from "../../../convex/lib/paths";
 import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
+import { normalizePath } from "@/lib/collect";
 import { appOrigin, embedSnippet } from "@/lib/snippet";
 import PageHeader from "@/components/PageHeader";
 import TopBar, { sitePath } from "@/components/TopBar";
@@ -34,9 +44,9 @@ export default function SiteSettings() {
   );
 }
 
-type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "excluded" | "danger";
+type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "paths" | "excluded" | "danger";
 
-// The sidebar, in order. Sections from later phases (mcp, identity, ignore, paths) join
+// The sidebar, in order. Sections from later phases (mcp, identity, ignore) join
 // their groups as they are built; until then their ids open Tracking code.
 const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
   {
@@ -53,7 +63,13 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
       { id: "revenue", label: "Revenue attribution" },
     ],
   },
-  { label: "Filtering", sections: [{ id: "excluded", label: "Excluded paths" }] },
+  {
+    label: "Filtering",
+    sections: [
+      { id: "paths", label: "Page paths" },
+      { id: "excluded", label: "Excluded paths" },
+    ],
+  },
   { label: "Danger zone", sections: [{ id: "danger", label: "Danger zone" }] },
 ];
 const SECTION_IDS = new Set<string>(GROUPS.flatMap((g) => g.sections.map((s) => s.id)));
@@ -151,6 +167,7 @@ function Settings({ domain }: { domain: string }) {
           {section === "timezone" && <TimezoneSection domain={site.domain} timezone={site.timezone} />}
           {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
           {section === "revenue" && <RevenueSection domain={site.domain} />}
+          {section === "paths" && <PathsSection domain={site.domain} />}
           {section === "excluded" && <ExcludedSection domain={site.domain} />}
           {section === "danger" && <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />}
         </div>
@@ -655,6 +672,223 @@ function ApiSetup({ domain, settings }: { domain: string; settings: RevenueSetti
         />
       </Step>
     </div>
+  );
+}
+
+const PATHS_DESCRIPTION =
+  "Collapse id-like URL segments (UUIDs, long numbers, long hashes) into a placeholder in the Pages, Entry and Exit lists, so per-record pages group into one row and raw ids stay out of your analytics.";
+
+const CODE = "rounded border border-line px-1 font-mono text-xs";
+
+function PathsSection({ domain }: { domain: string }) {
+  const saved = useQuery(api.sites.pathGrouping, { domain });
+  if (saved === undefined) {
+    return (
+      <Section title="Page paths" description={PATHS_DESCRIPTION}>
+        <div className="h-10 animate-pulse rounded bg-line/50" />
+      </Section>
+    );
+  }
+  // Not keyed on `saved`: a save must not remount the form and lose its "Saved"
+  return <PathsForm domain={domain} saved={saved} />;
+}
+
+function PathsForm({ domain, saved }: { domain: string; saved: PathGrouping }) {
+  const setPathGrouping = useMutation(api.sites.setPathGrouping);
+  const [enabled, setEnabled] = useState(saved.enabled);
+  const [placeholder, setPlaceholder] = useState(saved.placeholder);
+  const [patterns, setPatterns] = useState(saved.patterns);
+  const [draft, setDraft] = useState("");
+  const [example, setExample] = useState("");
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
+  const parsedPlaceholder = parsePlaceholder(placeholder);
+  const placeholderError = "error" in parsedPlaceholder ? parsedPlaceholder.error : null;
+  const changed =
+    enabled !== saved.enabled ||
+    placeholder.trim() !== saved.placeholder ||
+    patterns.join("\n") !== saved.patterns.join("\n");
+  const full = patterns.length >= MAX_NAMED_PATTERNS;
+
+  // The preview runs what ingest runs, on the path /api/collect would store
+  const examplePath = normalizePath(example.trim() || "/orders/123456");
+  const grouping: PathGrouping = {
+    enabled,
+    placeholder: "placeholder" in parsedPlaceholder ? parsedPlaceholder.placeholder : DEFAULT_PLACEHOLDER,
+    patterns,
+  };
+  const grouped = groupPath(examplePath, grouping);
+
+  function edited() {
+    setStatus(null);
+  }
+
+  function add(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = parseNamedPattern(draft);
+    if ("error" in parsed) {
+      setStatus({ ok: false, text: parsed.error });
+      return;
+    }
+    if (!patterns.includes(parsed.pattern)) setPatterns([...patterns, parsed.pattern]);
+    setDraft("");
+    setStatus(null);
+  }
+
+  async function save() {
+    setPending(true);
+    setStatus(null);
+    try {
+      await setPathGrouping({ domain, enabled, placeholder, patterns });
+      if ("placeholder" in parsedPlaceholder) setPlaceholder(parsedPlaceholder.placeholder);
+      setStatus({ ok: true, text: "Saved" });
+    } catch (err) {
+      setStatus({ ok: false, text: err instanceof ConvexError ? String(err.data) : "Could not save" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Section title="Page paths" description={PATHS_DESCRIPTION}>
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={enabled}
+          onChange={(e) => {
+            setEnabled(e.target.checked);
+            edited();
+          }}
+          className="mt-0.5 size-4 shrink-0 accent-primary"
+        />
+        <span className="flex flex-col gap-1">
+          <span className="font-medium text-foreground">Group dynamic path IDs</span>
+          <span className="text-muted-foreground">
+            UUIDs, segments of 6 or more digits and hashes of 16 or more characters become the
+            placeholder. Plain slugs like <code className={CODE}>/pricing</code> are left alone. Applies
+            to new hits only; pages already counted keep their paths.
+          </span>
+        </span>
+      </label>
+
+      <div className="flex flex-col gap-1.5 text-sm">
+        <label htmlFor="path-placeholder" className="font-medium text-foreground">
+          Placeholder name
+        </label>
+        <input
+          id="path-placeholder"
+          value={placeholder}
+          onChange={(e) => {
+            setPlaceholder(e.target.value);
+            edited();
+          }}
+          placeholder={DEFAULT_PLACEHOLDER}
+          autoComplete="off"
+          spellCheck={false}
+          aria-invalid={placeholderError !== null}
+          aria-describedby="path-placeholder-hint"
+          className="w-full max-w-60 rounded-md border border-line bg-panel px-3 py-2 font-mono"
+        />
+        <p id="path-placeholder-hint" className={placeholderError ? "text-down" : "text-muted-foreground"}>
+          {placeholderError ?? (
+            <>
+              Auto-detected ids show as <code className={CODE}>{grouping.placeholder}</code> (default{" "}
+              <code className={CODE}>{DEFAULT_PLACEHOLDER}</code>).
+            </>
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2 text-sm">
+        <h3 className="font-medium text-foreground">Named path patterns (optional)</h3>
+        <p className="text-muted-foreground">
+          Give dynamic routes real names. Use <code className={CODE}>:name</code> for the dynamic part, so{" "}
+          <code className={CODE}>/dashboard/:site_id/sites</code> turns{" "}
+          <code className={CODE}>/dashboard/abc123/sites</code> into that pattern. Matched top to bottom; the
+          first match wins, then auto-detection handles the rest.
+        </p>
+        {patterns.length > 0 && (
+          <ol className="flex flex-col divide-y divide-line rounded-md border border-line">
+            {patterns.map((p) => (
+              <li key={p} className="flex items-center gap-2 py-1.5 pr-1.5 pl-3">
+                <code className="min-w-0 flex-1 truncate font-mono">{p}</code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPatterns(patterns.filter((x) => x !== p));
+                    edited();
+                  }}
+                  aria-label={`Remove ${p}`}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <XIcon className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+        <form onSubmit={add} className="flex gap-2">
+          <input
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              edited();
+            }}
+            placeholder="/dashboard/:site_id/sites"
+            aria-label="Named path pattern"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={full}
+            className="min-w-0 flex-1 rounded-md border border-line bg-panel px-3 py-2 font-mono disabled:opacity-40"
+          />
+          <button
+            type="submit"
+            disabled={full || !draft.trim()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-2 text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            <PlusIcon className="size-4" />
+            Add
+          </button>
+        </form>
+      </div>
+
+      <div className="flex flex-col gap-1.5 text-sm">
+        <label htmlFor="path-example" className="font-medium text-foreground">
+          Preview
+        </label>
+        <input
+          id="path-example"
+          value={example}
+          onChange={(e) => setExample(e.target.value)}
+          placeholder="/orders/123456"
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-0 rounded-md border border-line bg-panel px-3 py-2 font-mono"
+        />
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground" aria-live="polite">
+          <span>Stored as</span>
+          <code className="min-w-0 font-mono break-all text-foreground">{grouped}</code>
+          {!enabled && <span>(grouping is off)</span>}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending || !changed || placeholderError !== null}
+          className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
+        >
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+        {status ? (
+          <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>
+        ) : (
+          full && <span className="text-muted-foreground">At most {MAX_NAMED_PATTERNS} patterns</span>
+        )}
+      </div>
+    </Section>
   );
 }
 
