@@ -49,12 +49,19 @@
     }
 
     // Skip local and IP hosts (unless tracking a site literally called "localhost"),
-    // automated browsers, and anyone who opted out with localStorage.sa_ignore = "true"
+    // automated browsers, and ignored browsers: ?_va_ignore=1 sets the flag (per browser
+    // and per site, since localStorage is), ?_va_ignore=0 clears it, and the older
+    // localStorage.sa_ignore = "true" still works. An ignored browser sends nothing at all.
     var isLocal = host === "localhost" || /^[\d.]+$/.test(host) || host.indexOf(":") !== -1 || host.charAt(0) === "[";
     if (isLocal && site !== "localhost") return;
     if (nav.webdriver) return;
     try {
-      if (w.localStorage.getItem("sa_ignore") === "true") {
+      var IGN = "_va_ignore";
+      var ls = w.localStorage;
+      var asked = /[?&]_va_ignore=([01])/.exec(loc.search);
+      if (asked && asked[1] === "1") ls.setItem(IGN, "1");
+      if (asked && asked[1] === "0") ls.removeItem(IGN);
+      if (ls.getItem(IGN) || ls.getItem("sa_ignore") === "true") {
         writeCookie(VID, "", 0, rootDomain());
         writeCookie(SID, "", 0, rootDomain());
         return;

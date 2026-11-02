@@ -22,7 +22,7 @@ import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import { normalizePath } from "@/lib/collect";
-import { appOrigin, embedSnippet } from "@/lib/snippet";
+import { appOrigin, embedSnippet, ignoreUrl } from "@/lib/snippet";
 import PageHeader from "@/components/PageHeader";
 import TopBar, { sitePath } from "@/components/TopBar";
 
@@ -44,10 +44,19 @@ export default function SiteSettings() {
   );
 }
 
-type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "identity" | "paths" | "excluded" | "danger";
+type SectionId =
+  | "tracking"
+  | "timezone"
+  | "goals"
+  | "revenue"
+  | "identity"
+  | "ignore"
+  | "paths"
+  | "excluded"
+  | "danger";
 
-// The sidebar, in order. Sections from later phases (mcp, ignore) join their groups
-// as they are built; until then their ids open Tracking code.
+// The sidebar, in order. The MCP section (a later phase) joins its group when it is
+// built; until then its id opens Tracking code.
 const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
   {
     label: "Install",
@@ -67,6 +76,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
   {
     label: "Filtering",
     sections: [
+      { id: "ignore", label: "Ignore my visits" },
       { id: "paths", label: "Page paths" },
       { id: "excluded", label: "Excluded paths" },
     ],
@@ -171,6 +181,7 @@ function Settings({ domain }: { domain: string }) {
           {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
           {section === "revenue" && <RevenueSection domain={site.domain} />}
           {section === "identity" && <IdentitySection domain={site.domain} cookieless={site.cookieless} />}
+          {section === "ignore" && <IgnoreSection domain={site.domain} />}
           {section === "paths" && <PathsSection domain={site.domain} />}
           {section === "excluded" && <ExcludedSection domain={site.domain} />}
           {section === "danger" && <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />}
@@ -444,6 +455,54 @@ function IdentitySection({ domain, cookieless }: { domain: string; cookieless: b
           {status && <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>}
         </div>
       </form>
+    </Section>
+  );
+}
+
+function IgnoreSection({ domain }: { domain: string }) {
+  const links = [
+    { url: ignoreUrl(domain, true), label: "Ignore this browser", text: "Open once on each browser you use." },
+    { url: ignoreUrl(domain, false), label: "Undo", text: "Tracks this browser again from that page load." },
+  ];
+  return (
+    <Section
+      title="Ignore my visits"
+      description={
+        <>
+          Keep your own testing out of the stats. Open the first link in a browser and the script on{" "}
+          {domain} stops sending anything from it: no pageviews, goals or outbound clicks. The second link
+          undoes it. Past visits stay as they are.
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 text-sm">
+        {links.map((link) => (
+          <div key={link.label} className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium text-strong">{link.label}</span>
+              <span className="text-muted-foreground">{link.text}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-md border border-line bg-panel py-2 pr-2 pl-3">
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-w-0 flex-1 truncate font-mono text-xs hover:underline"
+              >
+                {link.url}
+              </a>
+              <CopyButton text={link.url} />
+            </div>
+          </div>
+        ))}
+        <p className="text-muted-foreground">
+          It works per browser and per site: the script keeps a{" "}
+          <code className="font-mono">_va_ignore</code> flag in that browser&apos;s localStorage for {domain},
+          so repeat it on your phone and in each other browser, and on every subdomain you track. Private
+          windows and clearing the site&apos;s data forget it. Any page of the site with the snippet works;
+          add <code className="font-mono">?_va_ignore=1</code> to its URL.
+        </p>
+      </div>
     </Section>
   );
 }

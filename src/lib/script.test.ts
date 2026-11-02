@@ -728,6 +728,52 @@ describe("opt-outs", () => {
     expect(jar.values.has("_va_sid")).toBe(false);
   });
 
+  test("?_va_ignore=1 stores the flag, deletes both cookies and sends nothing", () => {
+    const jar = new CookieJar();
+    const storage = new Map<string, string>();
+    load({ jar, storage });
+    expect(jar.values.has("_va_vid")).toBe(true);
+    const ignored = load({ jar, storage, search: "?utm_source=x&_va_ignore=1" });
+    expect(ignored.sent).toHaveLength(0);
+    expect(storage.get("_va_ignore")).toBe("1");
+    expect(jar.values.has("_va_vid")).toBe(false);
+    expect(jar.values.has("_va_sid")).toBe(false);
+  });
+
+  test("an ignored browser sends no pageviews, goals, outbound clicks or pings on later loads", () => {
+    const storage = new Map([["_va_ignore", "1"]]);
+    const stub = Object.assign(() => {}, { q: [["goal", "queued"]] });
+    const page = load({ storage, analytics: stub });
+    page.click(element("a", { href: "https://other.com/", "data-goal": "signup" }));
+    page.history.pushState(null, "", "/next");
+    page.tick();
+    page.fire("pagehide");
+    expect(page.sent).toHaveLength(0);
+    expect(page.beacons).toHaveLength(0);
+    // The stub stays a stub, so calls are queued and never sent
+    expect(page.window.analytics).toBe(stub);
+  });
+
+  test("?_va_ignore=0 clears the flag and tracking resumes on the same load", () => {
+    const storage = new Map([["_va_ignore", "1"]]);
+    const page = load({ storage, search: "?_va_ignore=0" });
+    expect(storage.has("_va_ignore")).toBe(false);
+    expect(page.sent.map((s) => s.t)).toEqual(["pv"]);
+    // Nothing of the query string is sent
+    expect(JSON.stringify(page.sent)).not.toContain("_va_ignore");
+    expect(load({ storage }).sent).toHaveLength(1);
+  });
+
+  test("other _va_ignore values change nothing", () => {
+    const storage = new Map<string, string>();
+    expect(load({ storage, search: "?_va_ignore=yes" }).sent).toHaveLength(1);
+    expect(storage.has("_va_ignore")).toBe(false);
+  });
+
+  test("blocked localStorage: the ignore link can't be stored, so the page is tracked", () => {
+    expect(load({ storage: null, search: "?_va_ignore=1" }).sent).toHaveLength(1);
+  });
+
   test("localhost is tracked when the site is literally 'localhost'", () => {
     expect(load({ hostname: "localhost", site: "localhost" }).sent).toHaveLength(1);
   });

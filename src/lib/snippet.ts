@@ -11,3 +11,12 @@ export function appOrigin(): string {
 export function embedSnippet(domain: string): string {
   return `<script async src="${appOrigin()}/script.js" data-site="${domain}"></script>`;
 }
+
+/**
+ * The "Ignore my visits" link (or, with ignore false, its undo) for a site. The dev
+ * `localhost` site is this app's /test.html, so its link points there. Client-only, like appOrigin.
+ */
+export function ignoreUrl(domain: string, ignore: boolean): string {
+  const page = domain === "localhost" ? `${appOrigin()}/test.html` : `https://${domain}/`;
+  return `${page}?_va_ignore=${ignore ? 1 : 0}`;
+}
