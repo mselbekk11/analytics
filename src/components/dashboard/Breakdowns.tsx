@@ -231,7 +231,7 @@ function Events({ domain, range, view }: Props) {
         <>
           No goals completed in this period.{" "}
           <Link
-            href={`/sites/${encodeURIComponent(domain)}/settings#goals`}
+            href={`/sites/${encodeURIComponent(domain)}/settings?section=goals`}
             className="ml-1 underline hover:text-foreground"
           >
             Set up goals

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Authenticated, AuthLoading, useAction, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -11,7 +11,8 @@ import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import { appOrigin, embedSnippet } from "@/lib/snippet";
-import TopBar from "@/components/TopBar";
+import PageHeader from "@/components/PageHeader";
+import TopBar, { sitePath } from "@/components/TopBar";
 
 export default function SiteSettings() {
   const params = useParams<{ domain: string }>();
@@ -31,8 +32,33 @@ export default function SiteSettings() {
   );
 }
 
+type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "danger";
+
+// The sidebar, in order. Sections from later phases (mcp, identity, ignore, paths,
+// excluded) join their groups as they are built; until then their ids open Tracking code.
+const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
+  {
+    label: "Install",
+    sections: [
+      { id: "tracking", label: "Tracking code" },
+      { id: "timezone", label: "Timezone" },
+    ],
+  },
+  {
+    label: "Attribution",
+    sections: [
+      { id: "goals", label: "Goals & conversions" },
+      { id: "revenue", label: "Revenue attribution" },
+    ],
+  },
+  { label: "Danger zone", sections: [{ id: "danger", label: "Danger zone" }] },
+];
+const SECTION_IDS = new Set<string>(GROUPS.flatMap((g) => g.sections.map((s) => s.id)));
+
 function Settings({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
+  const searchParams = useSearchParams();
+  const router = useRouter();
   // Set once the site is deleted, so the page does not flash "not found" while leaving
   const [removed, setRemoved] = useState(false);
 
@@ -49,57 +75,116 @@ function Settings({ domain }: { domain: string }) {
     );
   }
 
+  const asked = searchParams.get("section") ?? "";
+  const section = (SECTION_IDS.has(asked) ? asked : "tracking") as SectionId;
+  const href = (id: SectionId) => `${sitePath(site.domain, "settings")}?section=${id}`;
+
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
-      <Section
-        title="Embed snippet"
-        description={
-          <>
-            Paste this into the HTML of every page on {site.domain}, for example just before{" "}
-            <code className="font-mono">&lt;/head&gt;</code>. It sets two first-party cookies,{" "}
-            <code className="font-mono">_va_vid</code> and{" "}
-            <code className="font-mono">_va_sid</code>, to recognise returning visitors and
-            group pageviews into sessions. Add{" "}
-            <code className="font-mono">data-cookieless</code> to the tag to set no cookies
-            and count visits the old way.
-          </>
-        }
-      >
-        <Snippet domain={site.domain} />
-      </Section>
-      <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />
-      <RevenueSection domain={site.domain} />
-      <TimezoneSection domain={site.domain} timezone={site.timezone} />
-      <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />
+    <div className="flex flex-col gap-10">
+      <PageHeader title="Settings" description={site.domain} />
+      <div className="grid gap-8 md:grid-cols-[200px_minmax(0,1fr)] lg:gap-12">
+        <nav aria-label="Settings sections" className="hidden flex-col gap-6 md:flex">
+          {GROUPS.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                {group.label}
+              </h2>
+              {group.sections.map((s) => (
+                <Link
+                  key={s.id}
+                  href={href(s.id)}
+                  scroll={false}
+                  aria-current={s.id === section ? "page" : undefined}
+                  className={`rounded-md px-2.5 py-1.5 text-sm ${
+                    s.id === "danger"
+                      ? "text-down hover:bg-muted"
+                      : s.id === section
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  } ${s.id === section ? "bg-muted font-medium" : ""}`}
+                >
+                  {s.label}
+                </Link>
+              ))}
+            </div>
+          ))}
+        </nav>
+        {/* On phones the sidebar is a select */}
+        <select
+          aria-label="Settings section"
+          value={section}
+          onChange={(e) => router.push(href(e.target.value as SectionId), { scroll: false })}
+          className="rounded-md border border-line bg-panel px-3 py-2 text-sm md:hidden"
+        >
+          {GROUPS.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.sections.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div className="min-w-0">
+          {section === "tracking" && (
+            <Section
+              title="Tracking code"
+              description={
+                <>
+                  Paste this into the HTML of every page on {site.domain}, for example just before{" "}
+                  <code className="font-mono">&lt;/head&gt;</code>. It sets two first-party cookies,{" "}
+                  <code className="font-mono">_va_vid</code> and{" "}
+                  <code className="font-mono">_va_sid</code>, to recognise returning visitors and
+                  group pageviews into sessions. Add{" "}
+                  <code className="font-mono">data-cookieless</code> to the tag to set no cookies
+                  and count visits the old way.
+                </>
+              }
+            >
+              <Snippet domain={site.domain} />
+            </Section>
+          )}
+          {section === "timezone" && <TimezoneSection domain={site.domain} timezone={site.timezone} />}
+          {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
+          {section === "revenue" && <RevenueSection domain={site.domain} />}
+          {section === "danger" && <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />}
+        </div>
+      </div>
     </div>
   );
 }
 
+/** One settings section: its title and description, then its settings in a bordered card. */
 function Section({
-  id,
   title,
   description,
   tone = "normal",
   children,
 }: {
-  id?: string;
   title: string;
   description: React.ReactNode;
   tone?: "normal" | "danger";
   children: React.ReactNode;
 }) {
   return (
-    <section
-      id={id}
-      className={`flex flex-col gap-4 rounded-lg border p-5 ${
-        tone === "danger" ? "border-down/40" : "border-line bg-panel/40"
-      }`}
-    >
+    <section aria-labelledby="settings-section" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className={tone === "danger" ? "text-down" : "text-strong"}>{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <h2
+          id="settings-section"
+          className={`text-lg font-semibold ${tone === "danger" ? "text-down" : "text-foreground"}`}
+        >
+          {title}
+        </h2>
+        <p className="max-w-prose text-sm text-muted-foreground">{description}</p>
       </div>
-      {children}
+      <div
+        className={`flex flex-col gap-4 rounded-lg border p-4 sm:p-5 ${
+          tone === "danger" ? "border-down/40" : "border-line"
+        }`}
+      >
+        {children}
+      </div>
     </section>
   );
 }
@@ -172,8 +257,7 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
 
   return (
     <Section
-      id="goals"
-      title="Goals"
+      title="Goals & conversions"
       description={
         <>
           Count sign-ups, bookings and other actions. Add{" "}
@@ -296,7 +380,7 @@ function RevenueSection({ domain }: { domain: string }) {
   const settings = useQuery(api.sites.revenueSettings, { domain });
   if (settings === undefined) {
     return (
-      <Section id="revenue" title="Revenue" description="Loading…">
+      <Section title="Revenue attribution" description="Loading…">
         <div className="h-10 animate-pulse rounded bg-line/50" />
       </Section>
     );
@@ -331,8 +415,7 @@ function RevenueForm({ domain, settings }: { domain: string; settings: RevenueSe
 
   return (
     <Section
-      id="revenue"
-      title="Revenue"
+      title="Revenue attribution"
       description={
         <>
           Link payments to the visitors and sources that brought them. With None, the dashboard
@@ -644,9 +727,16 @@ function DeleteSection({ domain, onDeleted }: { domain: string; onDeleted: () =>
   return (
     <Section
       tone="danger"
-      title="Delete website"
-      description={`Deletes ${domain} and all of its stats. This cannot be undone. Remove the snippet from the site as well, or its hits will simply be ignored.`}
+      title="Danger zone"
+      description="Removes this site from your account. Think twice: what happens here can't be undone."
     >
+      <div className="flex flex-col gap-1 text-sm">
+        <h3 className="font-medium text-foreground">Delete this site</h3>
+        <p className="text-muted-foreground">
+          Deletes {domain} and all of its stats. This cannot be undone. Remove the snippet from the site as well, or
+          its hits will simply be ignored.
+        </p>
+      </div>
       <form onSubmit={onSubmit} className="flex flex-col gap-3 text-sm sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1">
           <span className="text-muted-foreground">

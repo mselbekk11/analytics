@@ -286,7 +286,7 @@ function Empty({
     <>
       Customers are visitors who paid, or who completed the site&apos;s key goal. Connect Stripe or the payments
       API, or pick a key goal, in{" "}
-      <Link href={sitePath(domain, "settings")} className="underline hover:text-foreground">
+      <Link href={`${sitePath(domain, "settings")}?section=revenue`} className="underline hover:text-foreground">
         Settings
       </Link>
       .
