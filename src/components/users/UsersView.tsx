@@ -301,8 +301,9 @@ function Cookieless({ domain }: { domain: string }) {
       <h2 className="font-medium">No visitor ids on this site</h2>
       <p className="max-w-prose text-muted-foreground">
         Users lists people by the visitor id the snippet keeps in a cookie. This site hasn&apos;t sent one yet:
-        either it runs in cookieless mode (<code className="font-mono text-xs">data-cookieless</code>), which counts
-        pageviews but not visitors, sessions or journeys, or it has had no visits since the snippet was added.
+        either it runs cookieless (the Visitor identity setting, or{" "}
+        <code className="font-mono text-xs">data-cookieless</code> on the snippet), which counts pageviews but not
+        visitors, sessions or journeys, or it has had no visits since the snippet was added.
       </p>
       <p className="text-muted-foreground">
         <Link href={`${sitePath(domain, "settings")}?section=identity`} className="underline hover:text-foreground">

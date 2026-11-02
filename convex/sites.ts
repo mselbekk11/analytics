@@ -60,6 +60,7 @@ const siteSummary = v.object({ domain: v.string(), timezone: v.string() });
  * `trackingStartedAt` is when the first hit with a visitor id arrived (null until then,
  * and for cookieless sites). `keyGoal` is the goal the site converts on, if one is set.
  * `revenueSource` is "none" unless the site takes payments from Stripe or the API.
+ * `cookieless` is the Visitor identity setting (the snippet's data-cookieless is not seen here).
  */
 export const get = query({
   args: { domain: v.string() },
@@ -72,6 +73,7 @@ export const get = query({
       keyGoal: v.union(v.null(), v.string()),
       revenueSource: revenueSourceValidator,
       currency: v.string(),
+      cookieless: v.boolean(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -84,6 +86,7 @@ export const get = query({
       keyGoal: site.keyGoal ?? null,
       revenueSource: site.revenueSource ?? "none",
       currency: siteCurrency(site),
+      cookieless: site.cookieless === true,
     };
   },
 });
@@ -220,6 +223,21 @@ export const setKeyGoal = mutation({
       throw new ConvexError("Goal names are at most 100 characters");
     }
     await ctx.db.patch("sites", site._id, { keyGoal });
+    return null;
+  },
+});
+
+/**
+ * Sets the Visitor identity mode. Cookieless strips visitor and session ids from new hits
+ * and tells the script to clear its cookies; switching back resumes ids on the next visit.
+ * Stored data is not touched.
+ */
+export const setCookieless = mutation({
+  args: { domain: v.string(), cookieless: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    await ctx.db.patch("sites", site._id, { cookieless: args.cookieless || undefined });
     return null;
   },
 });

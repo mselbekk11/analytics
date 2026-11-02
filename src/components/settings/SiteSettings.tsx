@@ -44,10 +44,10 @@ export default function SiteSettings() {
   );
 }
 
-type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "paths" | "excluded" | "danger";
+type SectionId = "tracking" | "timezone" | "goals" | "revenue" | "identity" | "paths" | "excluded" | "danger";
 
-// The sidebar, in order. Sections from later phases (mcp, identity, ignore) join
-// their groups as they are built; until then their ids open Tracking code.
+// The sidebar, in order. Sections from later phases (mcp, ignore) join their groups
+// as they are built; until then their ids open Tracking code.
 const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
   {
     label: "Install",
@@ -63,6 +63,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
       { id: "revenue", label: "Revenue attribution" },
     ],
   },
+  { label: "Privacy", sections: [{ id: "identity", label: "Visitor identity" }] },
   {
     label: "Filtering",
     sections: [
@@ -155,9 +156,11 @@ function Settings({ domain }: { domain: string }) {
                   <code className="font-mono">&lt;/head&gt;</code>. It sets two first-party cookies,{" "}
                   <code className="font-mono">_va_vid</code> and{" "}
                   <code className="font-mono">_va_sid</code>, to recognise returning visitors and
-                  group pageviews into sessions. Add{" "}
-                  <code className="font-mono">data-cookieless</code> to the tag to set no cookies
-                  and count visits the old way.
+                  group pageviews into sessions. To run without them, pick Cookieless under{" "}
+                  <Link href={href("identity")} scroll={false} className="underline hover:text-foreground">
+                    Visitor identity
+                  </Link>
+                  , or add <code className="font-mono">data-cookieless</code> to the tag.
                 </>
               }
             >
@@ -167,6 +170,7 @@ function Settings({ domain }: { domain: string }) {
           {section === "timezone" && <TimezoneSection domain={site.domain} timezone={site.timezone} />}
           {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
           {section === "revenue" && <RevenueSection domain={site.domain} />}
+          {section === "identity" && <IdentitySection domain={site.domain} cookieless={site.cookieless} />}
           {section === "paths" && <PathsSection domain={site.domain} />}
           {section === "excluded" && <ExcludedSection domain={site.domain} />}
           {section === "danger" && <DeleteSection domain={site.domain} onDeleted={() => setRemoved(true)} />}
@@ -285,9 +289,8 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
           <code className="font-mono">data-goal</code> to an element, or call{" "}
           <code className="font-mono">analytics(&quot;goal&quot;, name)</code> from your code.{" "}
           <code className="font-mono">identify</code> stores the user&apos;s id, email and name on
-          their visitor. Clicks on links to other sites are counted automatically. With{" "}
-          <code className="font-mono">data-cookieless</code>, goals and links still count but
-          identify is ignored.
+          their visitor. Clicks on links to other sites are counted automatically. On a
+          cookieless site, goals and links still count but identify is ignored.
         </>
       }
     >
@@ -334,6 +337,112 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
         {names !== undefined && names.length === 0 && (
           <p className="text-muted-foreground">No goals recorded yet; they appear here after their first completion.</p>
         )}
+      </form>
+    </Section>
+  );
+}
+
+const IDENTITY_MODES = [
+  {
+    cookieless: false,
+    label: "Cookies (visitor and session ids)",
+    text: (
+      <>
+        Sets two first-party cookies on your domain, <code className="font-mono">_va_vid</code> (400 days)
+        and <code className="font-mono">_va_sid</code> (30 minutes). Returning visitors are recognised, so
+        you get visitors, sessions, bounce rate, journeys, the Users tab and Live, and a payment weeks later
+        is credited to the source that first brought the visitor.
+      </>
+    ),
+  },
+  {
+    cookieless: true,
+    label: "Cookieless",
+    text: (
+      <>
+        No ids at all. Pageviews, pages, sources, goals and time on page still count, and a visitor is a
+        unique visit (one arriving from another site or typed in), so one person on two days counts twice.
+        You lose sessions, bounce rate, journeys, the Users tab, Live and revenue attribution. Ids are
+        stripped from every hit on our side, even from an old snippet, and the script deletes its cookies
+        after its next pageview.
+      </>
+    ),
+  },
+] as const;
+
+function IdentitySection({ domain, cookieless }: { domain: string; cookieless: boolean }) {
+  const setCookieless = useMutation(api.sites.setCookieless);
+  const [value, setValue] = useState(cookieless);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setStatus(null);
+    try {
+      await setCookieless({ domain, cookieless: value });
+      setStatus({ ok: true, text: "Saved" });
+    } catch (err) {
+      setStatus({ ok: false, text: err instanceof ConvexError ? String(err.data) : "Could not save" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Section
+      title="Visitor identity"
+      description={
+        <>
+          How the script recognises a returning visitor. The change applies to new hits; what is stored
+          stays as it is. Switching back to cookies resumes ids from each visitor&apos;s next visit.
+        </>
+      }
+    >
+      <form onSubmit={save} className="flex flex-col gap-3 text-sm">
+        <div role="radiogroup" aria-label="Visitor identity" className="flex flex-col gap-2">
+          {IDENTITY_MODES.map((mode) => (
+            <label
+              key={mode.label}
+              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 sm:p-4 ${
+                value === mode.cookieless ? "border-link" : "border-line hover:bg-muted/50"
+              }`}
+            >
+              <input
+                type="radio"
+                name="visitor-identity"
+                checked={value === mode.cookieless}
+                onChange={() => {
+                  setValue(mode.cookieless);
+                  setStatus(null);
+                }}
+                className="mt-0.5 accent-link"
+              />
+              <span className="flex flex-col gap-1">
+                <span className="font-medium text-strong">{mode.label}</span>
+                <span className="text-muted-foreground">{mode.text}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="text-muted-foreground">
+          In Cookieless mode the script keeps one flag in the browser&apos;s localStorage,{" "}
+          <code className="font-mono">_va_nc</code>, so later page loads set no cookies; it holds no id. For no
+          storage at all, from the first hit, also add <code className="font-mono">data-cookieless</code> to the
+          snippet. A snippet with <code className="font-mono">data-cookieless</code> stays cookieless whatever is
+          picked here.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={pending || value === cookieless}
+            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
+          >
+            {pending ? "Saving…" : "Save"}
+          </button>
+          {status && <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>}
+        </div>
       </form>
     </Section>
   );

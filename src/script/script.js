@@ -1,4 +1,5 @@
-/* Analytics. Sets a first-party visitor and session cookie, unless the snippet has data-cookieless. */
+/* Analytics. Sets a first-party visitor and session cookie, unless the snippet has data-cookieless
+   or the site's Visitor identity setting is Cookieless. */
 (function (w, d) {
   try {
     var script = d.currentScript;
@@ -8,9 +9,14 @@
     var loc = w.location;
     var nav = w.navigator;
     var host = loc.hostname;
-    var cookieless = script.getAttribute("data-cookieless") !== null;
     var VID = "_va_vid";
     var SID = "_va_sid";
+    var NC = "_va_nc";
+    // data-cookieless, or the site's setting as the last pageview's reply left it
+    var cookieless = script.getAttribute("data-cookieless") !== null;
+    try {
+      if (w.localStorage.getItem(NC)) cookieless = true;
+    } catch (e) {}
     var secure = loc.protocol === "https:" ? "; Secure" : "";
     var cookieDomain = null;
 
@@ -67,6 +73,21 @@
       });
     }
 
+    // A pageview's reply is the site's Visitor identity setting. Cookieless drops both
+    // cookies and remembers it (a flag, not an id), so later page loads send no ids;
+    // cookies forgets it, and the next page load sets them again
+    function reply(mode) {
+      try {
+        if (mode === "cookieless" && !cookieless) {
+          cookieless = true;
+          writeCookie(VID, "", 0, rootDomain());
+          writeCookie(SID, "", 0, rootDomain());
+          w.localStorage.setItem(NC, "1");
+        }
+        if (mode === "cookies") w.localStorage.removeItem(NC);
+      } catch (e) {}
+    }
+
     // Every send renews the visitor id (400 days) and slides the session (30 minutes).
     // If the browser refuses cookies, count the hit the cookieless way instead.
     function send(data) {
@@ -83,12 +104,20 @@
       }
       if (!data.vid) data.nc = 1;
       var body = JSON.stringify(data);
+      // Pageviews go by fetch, whose reply can be read; the rest by beacon
+      var pv = data.t === "pv";
       try {
-        if (nav.sendBeacon && nav.sendBeacon(endpoint, body)) return;
+        if (!pv && nav.sendBeacon && nav.sendBeacon(endpoint, body)) return;
       } catch (e) {}
       try {
-        w.fetch(endpoint, { method: "POST", body: body, keepalive: true });
-      } catch (e) {}
+        var sent = w.fetch(endpoint, { method: "POST", body: body, keepalive: true });
+        if (pv)
+          sent.then(function (r) {
+            return r.text();
+          }).then(reply, function () {});
+      } catch (e) {
+        if (pv && nav.sendBeacon) nav.sendBeacon(endpoint, body);
+      }
     }
 
     function hostnameOf(url) {

@@ -26,7 +26,8 @@ import { checkSecret } from "./lib/secret";
 
 // These are public because /api/collect calls them over HTTP, so every call must
 // carry INGEST_SECRET. Hits for unknown sites or foreign hostnames are dropped
-// silently: the route always answers 204, so there is no one to report to.
+// silently: the route answers 204 (or, for a pageview, the site's identity mode), so
+// there is no one to report to.
 
 const MAX_DURATION_MS = 30 * 60 * 1000;
 const MAX_PING_MS = 70 * 1000;
@@ -78,13 +79,16 @@ export const pageview = mutation({
     campaign: v.optional(campaignValidator),
     title: v.optional(v.string()), // document.title (design v4)
   },
-  returns: v.null(),
+  // The site's Visitor identity setting, for the route to pass back to the script (null
+  // for an unknown site or foreign hostname). Every hit of a known site gets it, stored or not
+  returns: v.union(v.null(), v.object({ cookieless: v.boolean() })),
   handler: async (ctx, args) => {
     checkSecret(args.secret);
     const site = await findSite(ctx, args.site, args.hostname);
     if (site === null) return null;
+    const mode = { cookieless: site.cookieless === true };
     // Excluded paths store nothing, so their pings and events find no pageview either
-    if (isExcludedPath(args.path, site.excludedPaths)) return null;
+    if (isExcludedPath(args.path, site.excludedPaths)) return mode;
     // From here on the path is the grouped one: stored, rolled up, titled and used for
     // the session's entry and exit
     const path = groupPath(args.path, site.pathGrouping);
@@ -94,14 +98,19 @@ export const pageview = mutation({
       .query("pageviews")
       .withIndex("by_pvId", (q) => q.eq("pvId", args.pvId))
       .first();
-    if (seen !== null) return null;
+    if (seen !== null) return mode;
 
     const ts = Date.now();
     const date = localDate(ts, site.timezone);
-    const { visitorId, sessionId } = args;
+    // A cookieless site stores no ids, even from a snippet (or a cached script) that
+    // still sends them. Its pings and events take their ids from this pageview, so they
+    // are stripped too
+    const visitorId = mode.cookieless ? undefined : args.visitorId;
+    const sessionId = mode.cookieless ? undefined : args.sessionId;
     const ids =
       visitorId !== undefined && sessionId !== undefined ? { visitorId, sessionId } : null;
-    if (ids === null && !args.cookieless && legacyWindowOver(site, ts)) return null;
+    const cookieless = args.cookieless || mode.cookieless;
+    if (ids === null && !cookieless && legacyWindowOver(site, ts)) return mode;
     if (site.sourcesStartedAt === undefined || site.pageStatsStartedAt === undefined) {
       await ctx.db.patch("sites", site._id, {
         sourcesStartedAt: site.sourcesStartedAt ?? ts,
@@ -150,7 +159,7 @@ export const pageview = mutation({
     await bumpDailyDim(ctx, site._id, date, "os", args.os ?? "Unknown", countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "region", regionKey(args.country, args.region), countsVisitor);
     await bumpDailyDim(ctx, site._id, date, "city", cityKey(args.country, args.region, args.city), countsVisitor);
-    return null;
+    return mode;
   },
 });
 

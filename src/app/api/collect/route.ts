@@ -22,8 +22,17 @@ const HEADERS = {
   "Cache-Control": "no-store",
 };
 
-// Tracked sites must never see a failure, so every path ends in a 204
+// Tracked sites must never see a failure, so every other path ends in a 204
 const done = () => new Response(null, { status: 204, headers: HEADERS });
+
+// A pageview of a known site is answered with its Visitor identity mode, so the script
+// can drop its cookies ("cookieless") or set them again ("cookies"). Only pageviews are
+// sent with fetch; beacons never read a reply
+const mode = (cookieless: boolean) =>
+  new Response(cookieless ? "cookieless" : "cookies", {
+    status: 200,
+    headers: { ...HEADERS, "Content-Type": "text/plain; charset=utf-8" },
+  });
 
 export function OPTIONS() {
   return done();
@@ -56,7 +65,7 @@ export async function POST(request: Request) {
       const parsed = new UAParser(ua).getResult();
       // The IP itself is never read; Vercel resolves it to these headers
       const geo = parseGeo(geolocation(request));
-      await convex.mutation(api.ingest.pageview, {
+      const site = await convex.mutation(api.ingest.pageview, {
         secret,
         site: payload.site,
         hostname,
@@ -74,6 +83,7 @@ export async function POST(request: Request) {
         campaign: payload.campaign,
         title: payload.title,
       });
+      if (site !== null) return mode(site.cookieless);
     } else if (payload.t === "ping") {
       await convex.mutation(api.ingest.ping, {
         secret,

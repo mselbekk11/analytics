@@ -33,6 +33,8 @@ This is plain-language wording, not legal advice. If a site gets meaningful traf
 
 ## Cookieless snippet (`data-cookieless`)
 
+A site set to Cookieless in Settings → Privacy → Visitor identity, without `data-cookieless` on its snippet, can use this version too, but replace "sets no cookies and stores nothing on your device" with "sets no cookies; it keeps one setting in your browser's local storage that records only that this site runs without cookies, and the first page you ever view may briefly set the visitor and session cookies above until the script learns the setting and deletes them".
+
 > **Analytics**
 >
 > [Site] uses its own privacy-friendly analytics to understand how the site is used, for example which pages are read and where visitors come from. The analytics sets no cookies and stores nothing on your device. We do not use Google Analytics or any advertising trackers, and we do not sell or share this data.

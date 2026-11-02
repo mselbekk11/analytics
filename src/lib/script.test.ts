@@ -88,8 +88,15 @@ function load(opts: {
   noRandomUUID?: boolean;
   analytics?: unknown;
   title?: string;
+  /** The collect route's reply to a pageview: "" (a 204), "cookies" or "cookieless" */
+  reply?: string;
+  /** localStorage, shared across page loads like `jar`; null makes every access throw */
+  storage?: Map<string, string> | null;
+  /** A browser without fetch, so pageviews go by beacon */
+  noFetch?: boolean;
 } = {}) {
   const sent: Sent[] = [];
+  const beacons: Sent[] = [];
   const winListeners: Record<string, Listener[]> = {};
   const docListeners: Record<string, Listener[]> = {};
   const intervals: Listener[] = [];
@@ -100,6 +107,7 @@ function load(opts: {
     protocol: "https:",
   };
   const jar = opts.jar ?? new CookieJar();
+  const storage = opts.storage === undefined ? new Map<string, string>() : opts.storage;
   jar.hostname = location.hostname;
   const attrs: Record<string, string> = { "data-site": opts.site ?? "picai.so", ...opts.attrs };
 
@@ -143,10 +151,32 @@ function load(opts: {
       sendBeacon: (url: string, body: string) => {
         expect(url).toBe("https://stats.example.com/api/collect");
         sent.push(JSON.parse(body));
+        beacons.push(JSON.parse(body));
         return true;
       },
     },
-    localStorage: { getItem: (k: string) => (k === "sa_ignore" && opts.ignore ? "true" : null) },
+    fetch: opts.noFetch
+      ? undefined
+      : (url: string, init: { method: string; body: string; keepalive: boolean }) => {
+          expect(url).toBe("https://stats.example.com/api/collect");
+          expect(init).toMatchObject({ method: "POST", keepalive: true });
+          sent.push(JSON.parse(init.body));
+          return Promise.resolve({ text: () => Promise.resolve(opts.reply ?? "") });
+        },
+    localStorage: {
+      getItem: (k: string) => {
+        if (storage === null) throw new Error("SecurityError");
+        return k === "sa_ignore" && opts.ignore ? "true" : (storage.get(k) ?? null);
+      },
+      setItem: (k: string, v: string) => {
+        if (storage === null) throw new Error("SecurityError");
+        storage.set(k, v);
+      },
+      removeItem: (k: string) => {
+        if (storage === null) throw new Error("SecurityError");
+        storage.delete(k);
+      },
+    },
     crypto: opts.noRandomUUID ? {} : { randomUUID: () => `id-${++ids}` },
     performance: { getEntriesByType: () => [{ type: opts.navType ?? "navigate" }] },
     addEventListener: (type: string, fn: Listener) => (winListeners[type] ??= []).push(fn),
@@ -160,6 +190,8 @@ function load(opts: {
 
   return {
     sent,
+    beacons,
+    storage,
     jar,
     history,
     fire: (type: string) => (winListeners[type] ?? []).forEach((fn) => fn()),
@@ -287,6 +319,89 @@ describe("visitor and session cookies", () => {
     expect(sent[0].vid).toMatch(uuid);
     expect(sent[0].sid).toMatch(uuid);
     expect(sent[0].pvId).toMatch(uuid);
+  });
+});
+
+// Lets the fake fetch's reply reach the script
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe("visitor identity reply", () => {
+  test("pageviews go by fetch and everything else by beacon", () => {
+    const { sent, beacons, window } = load();
+    (window.analytics as (...args: unknown[]) => unknown)("goal", "signup");
+    expect(sent.map((s) => s.t)).toEqual(["pv", "goal"]);
+    expect(beacons.map((s) => s.t)).toEqual(["goal"]);
+  });
+
+  test("without fetch, a pageview goes by beacon", () => {
+    const { beacons } = load({ noFetch: true });
+    expect(beacons.map((s) => s.t)).toEqual(["pv"]);
+  });
+
+  test("cookieless clears both cookies after one hit, and no ids are sent afterwards", async () => {
+    const jar = new CookieJar();
+    const storage = new Map<string, string>();
+    const first = load({ jar, storage, reply: "cookieless" });
+    expect(first.sent[0]).toHaveProperty("vid");
+    await settle();
+    expect([...jar.values.keys()].filter((k) => k.startsWith("_va_"))).toEqual([]);
+    expect(storage.get("_va_nc")).toBe("1");
+    // The rest of this page load
+    first.history.pushState({}, "", "/pricing");
+    (first.window.analytics as (...args: unknown[]) => unknown)("identify", { email: "jo@example.com" });
+    expect((first.window.analytics as (cmd: string) => unknown)("attribution")).toEqual({});
+    expect(first.sent.at(-1)).toMatchObject({ t: "pv", path: "/pricing", nc: 1 });
+    expect(first.sent.slice(1).some((s) => "vid" in s || s.t === "identify")).toBe(false);
+
+    // The next page load
+    const writes = jar.writes.length;
+    const next = load({ jar, storage, reply: "cookieless", search: "?session_id=cs_test_1" });
+    expect(next.sent.map((s) => s.t)).toEqual(["pv"]);
+    expect(next.sent[0]).toMatchObject({ nc: 1 });
+    expect(next.sent[0]).not.toHaveProperty("vid");
+    await settle();
+    expect(jar.writes.slice(writes)).toEqual([]);
+  });
+
+  test("switching back to cookies resumes ids on the next visit", async () => {
+    const jar = new CookieJar();
+    const storage = new Map([["_va_nc", "1"]]);
+    const page = load({ jar, storage, reply: "cookies" });
+    expect(page.sent[0]).not.toHaveProperty("vid");
+    await settle();
+    expect(storage.has("_va_nc")).toBe(false);
+    const next = load({ jar, storage, reply: "cookies" });
+    expect(next.sent[0]).toHaveProperty("vid");
+    expect(jar.values.has("_va_vid")).toBe(true);
+  });
+
+  test("an empty reply (an older server, or an error) changes nothing", async () => {
+    const storage = new Map([["_va_nc", "1"]]);
+    const { jar } = load({ storage, reply: "" });
+    await settle();
+    expect(storage.get("_va_nc")).toBe("1");
+    const cookies = load({ reply: "" });
+    await settle();
+    expect(cookies.jar.values.has("_va_vid")).toBe(true);
+    expect(jar.writes).toEqual([]);
+  });
+
+  test("data-cookieless stores nothing, whatever the reply", async () => {
+    for (const reply of ["cookieless", "cookies"]) {
+      const { jar, storage, sent } = load({ attrs: { "data-cookieless": "" }, reply });
+      await settle();
+      expect(jar.writes).toEqual([]);
+      expect(storage!.size).toBe(0);
+      expect(sent[0]).not.toHaveProperty("vid");
+    }
+  });
+
+  test("without localStorage, cookieless still clears the cookies for this page load", async () => {
+    const { jar, sent, history } = load({ storage: null, reply: "cookieless" });
+    await settle();
+    expect(jar.values.has("_va_vid")).toBe(false);
+    history.pushState({}, "", "/next");
+    expect(sent.at(-1)).not.toHaveProperty("vid");
   });
 });
 

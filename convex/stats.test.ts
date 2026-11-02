@@ -110,6 +110,7 @@ describe("access control", () => {
       keyGoal: null,
       revenueSource: "none",
       currency: "USD",
+      cookieless: false,
     });
     expect(await t.withIdentity(STRANGER).query(api.sites.get, { domain: "picai.so" })).toBeNull();
     expect(await t.withIdentity(STRANGER).query(api.sites.list, {})).toEqual([]);

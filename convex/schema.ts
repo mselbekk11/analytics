@@ -30,6 +30,9 @@ export default defineSchema({
     pathGrouping: v.optional(
       v.object({ enabled: v.boolean(), placeholder: v.string(), patterns: v.array(v.string()) }),
     ),
+    // The Visitor identity setting (design v4 Phase 15): ingest strips visitor and session
+    // ids from every hit and tells the script to drop its cookies. Missing means cookies
+    cookieless: v.optional(v.boolean()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),

@@ -130,6 +130,7 @@ describe("sites.update", () => {
       keyGoal: null,
       revenueSource: "none",
       currency: "USD",
+      cookieless: false,
     });
 
     await expect(
@@ -432,6 +433,30 @@ describe("path grouping", () => {
     await expect(stranger.query(api.sites.pathGrouping, { domain: "picai.so" })).rejects.toThrow(/Site not found/);
     await expect(
       stranger.mutation(api.sites.setPathGrouping, { domain: "picai.so", ...OFF, enabled: true }),
+    ).rejects.toThrow(/Site not found/);
+  });
+});
+
+describe("visitor identity", () => {
+  test("setCookieless sets and clears the mode, and sites.get reports it", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    const owner = t.withIdentity(OWNER);
+    await owner.mutation(api.sites.setCookieless, { domain: "picai.so", cookieless: true });
+    expect(await owner.query(api.sites.get, { domain: "picai.so" })).toMatchObject({ cookieless: true });
+
+    // Back to cookies clears the field
+    await owner.mutation(api.sites.setCookieless, { domain: "picai.so", cookieless: false });
+    expect(await owner.query(api.sites.get, { domain: "picai.so" })).toMatchObject({ cookieless: false });
+    const sites = await t.run((ctx) => ctx.db.query("sites").collect());
+    expect(sites[0].cookieless).toBeUndefined();
+  });
+
+  test("only the owner can set it", async () => {
+    const t = convexTest(schema, modules);
+    await addSite(t, "picai.so", "UTC");
+    await expect(
+      t.withIdentity(STRANGER).mutation(api.sites.setCookieless, { domain: "picai.so", cookieless: true }),
     ).rejects.toThrow(/Site not found/);
   });
 });

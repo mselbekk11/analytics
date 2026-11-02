@@ -955,3 +955,64 @@ describe("path grouping", () => {
     expect((await tables(t)).pageviews.map((p) => p.path)).toEqual(["/orders/:id"]);
   });
 });
+
+describe("visitor identity", () => {
+  async function setCookieless(t: ReturnType<typeof convexTest>, cookieless: boolean) {
+    await t
+      .withIdentity({ subject: "user_1", tokenIdentifier: "clerk|user_1" })
+      .mutation(api.sites.setCookieless, { domain: "picai.so", cookieless });
+  }
+
+  test("a cookieless site stores a hit carrying ids without them, and its events too", async () => {
+    const t = await setup();
+    await setCookieless(t, true);
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await t.mutation(api.ingest.event, send("a", { type: "goal", name: "signup" }));
+    await t.mutation(api.ingest.event, send("a", { type: "identify", email: "jo@example.com" }));
+    await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: "a", ms: 5_000 });
+
+    const { pageviews, sessions, visitors, events, dailyStats, sites } = await tables(t);
+    expect(pageviews[0].visitorId).toBeUndefined();
+    expect(pageviews[0].sessionId).toBeUndefined();
+    expect(sessions).toHaveLength(0);
+    expect(visitors).toHaveLength(0);
+    expect(events.map((e) => e.type)).toEqual(["goal"]);
+    expect(events[0]).not.toHaveProperty("visitorId");
+    expect(events[0]).not.toHaveProperty("sessionId");
+    expect(dailyStats[0]).toMatchObject({ pageviews: 1, visitors: 1, sessions: 0, durationSumMs: 5_000 });
+    expect(sites[0].trackingStartedAt).toBeUndefined();
+  });
+
+  test("cookieless hits are kept long after tracking started, by the unique-visit rule", async () => {
+    const t = await setup();
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await setCookieless(t, true);
+    vi.setSystemTime(new Date("2026-11-30T18:00:00Z"));
+    await t.mutation(api.ingest.pageview, phone("b", "s2"));
+    await t.mutation(api.ingest.pageview, hit({ pvId: "c", unique: false }));
+    const { pageviews, dailyStats } = await tables(t);
+    expect(pageviews.map((p) => p.pvId)).toEqual(["a", "b", "c"]);
+    expect(dailyStats.find((d) => d.date === "2026-11-30")).toMatchObject({ pageviews: 2, visitors: 1, sessions: 0 });
+  });
+
+  test("pageview returns the site's mode for the script, and null for an unknown site", async () => {
+    const t = await setup();
+    expect(await t.mutation(api.ingest.pageview, phone("a", "s1"))).toEqual({ cookieless: false });
+    await setCookieless(t, true);
+    expect(await t.mutation(api.ingest.pageview, phone("b", "s1"))).toEqual({ cookieless: true });
+    // A repeat is not stored again, but still answered
+    expect(await t.mutation(api.ingest.pageview, phone("b", "s1"))).toEqual({ cookieless: true });
+    expect(await t.mutation(api.ingest.pageview, hit({ pvId: "c", site: "other.com", hostname: "other.com" }))).toBeNull();
+  });
+
+  test("switching back to cookies stores ids again from the next hit", async () => {
+    const t = await setup();
+    await setCookieless(t, true);
+    await t.mutation(api.ingest.pageview, phone("a", "s1"));
+    await setCookieless(t, false);
+    await t.mutation(api.ingest.pageview, phone("b", "s2"));
+    const { pageviews, sessions } = await tables(t);
+    expect(pageviews.map((p) => p.sessionId)).toEqual([undefined, "s2"]);
+    expect(sessions.map((s) => s.sessionId)).toEqual(["s2"]);
+  });
+});
