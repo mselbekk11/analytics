@@ -292,6 +292,16 @@ async function trackVisit(
       q.eq("siteId", site._id).eq("visitorId", hit.visitorId),
     )
     .unique();
+  // The Users table's latest details are the latest session's: where and on what it
+  // started, its entry page and (moved by every pageview) its exit page
+  const latest = {
+    country: hit.country,
+    region: hit.region,
+    city: hit.city,
+    device: hit.device,
+    browser: hit.browser,
+    entryPath: hit.path,
+  };
   if (visitor === null) {
     await ctx.db.insert("visitors", {
       siteId: site._id,
@@ -303,13 +313,21 @@ async function trackVisit(
       firstSource: attribution.source,
       firstChannel: attribution.channel,
       revenueMinor: 0,
+      pageviews: 1,
+      engagedMs: 0,
+      ...latest,
+      exitPath: hit.path,
     });
     return { firstToday: true, newSession, page };
   }
+  // Visitors from before the totals start from 0 here; the backfill recounts them
   await ctx.db.patch("visitors", visitor._id, {
     lastSeen: hit.ts,
     lastSeenDate: hit.date,
     sessions: visitor.sessions + (newSession ? 1 : 0),
+    pageviews: (visitor.pageviews ?? 0) + 1,
+    ...(newSession ? latest : {}),
+    exitPath: hit.path,
   });
   return { firstToday: visitor.lastSeenDate !== hit.date, newSession, page };
 }
@@ -382,6 +400,14 @@ export const ping = mutation({
       engagedMs: session.engagedMs + ms,
       lastSeenAt: Date.now(),
     });
+    // The visitor's time on site. Online now stays on sessions; this only feeds the Users table.
+    const visitor = await ctx.db
+      .query("visitors")
+      .withIndex("by_site_visitor", (q) => q.eq("siteId", site._id).eq("visitorId", session.visitorId))
+      .unique();
+    if (visitor !== null) {
+      await ctx.db.patch("visitors", visitor._id, { engagedMs: (visitor.engagedMs ?? 0) + ms });
+    }
     if (session.date === pvDate) {
       await bumpDailyStats(ctx, site._id, pvDate, { ...pvDelta, sessionEngagedMs: ms });
     } else {

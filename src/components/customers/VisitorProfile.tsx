@@ -32,7 +32,7 @@ import {
   regionLabel,
 } from "@/lib/format";
 import { displayName, persona } from "@/lib/names";
-import { Source } from "./Customers";
+import { Source } from "./Source";
 import VisitorAvatar from "./VisitorAvatar";
 
 type Profile = NonNullable<FunctionReturnType<typeof api.visitors.profile>>;
@@ -53,7 +53,7 @@ export default function VisitorProfile() {
   const visitorId = decodeURIComponent(params.visitorId);
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar site={{ domain, section: "customers" }} />
+      <TopBar site={{ domain, section: "users" }} />
       <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 pt-10 pb-20 sm:px-6 lg:px-8">
         <AuthLoading>
           <p className="text-sm text-muted-foreground">Connecting…</p>

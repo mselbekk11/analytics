@@ -40,7 +40,7 @@ const pageTiles = v.object({
 export type PageTiles = Infer<typeof pageTiles>;
 
 // Day ranges, or Today, Yesterday and 24h with the clock (snapped) from the page
-const rangeArg = v.union(
+export const rangeArg = v.union(
   v.object({ from: v.string(), to: v.string() }),
   v.object({
     period: v.union(v.literal("today"), v.literal("yesterday"), v.literal("24h")),

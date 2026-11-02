@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-11-02 (design v4, Phases 1 to 8 built). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-11-02 (design v4, Phases 1 to 9 built). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -38,6 +38,7 @@ Last updated: 2026-11-02 (design v4, Phases 1 to 8 built). Design v4 is planned 
 | Design v4, Phase 6: per-page rollups and backfill | **Built, awaiting owner review.** Page rows count sessions that viewed the page, entries, bounces (on the entry page) and engaged time, at ingest from each site's `pageStatsStartedAt`, and `migrations:backfillPageStats` fills in everything before it (run on dev). The Pages tab has tiles (Pages viewed, Pageviews with change, Sessions, Avg. bounce, Avg. duration), and the table has Sessions (with change), Bounce and Duration in place of Visitors. Schema change (optional fields only); **the backfill must be run once on prod after deploy.** |
 | Design v4, Phase 7: page titles | **Built, awaiting owner review.** The script sends `document.title` (whitespace collapsed, 200 characters) with each pageview, and ingest keeps the latest non-empty one per path in a new `pageTitles` table. The Pages table shows the title over the path (the path alone when none was ever sent), and search matches titles too. Script 2,079 bytes gzipped (was 2,029). New table, nothing to backfill. |
 | Design v4, Phase 8: page drawer | **Built, awaiting owner review.** Clicking a Pages row (or Enter on its page cell) opens a drawer from the right, full width on phones, kept in `?page=<path>` so reloading or sharing the URL opens it again. It shows the title, the live URL (new tab), Visitors, Pageviews, Bounce and Avg. time tiles, a pageviews bar chart per day (per hour on Today, Yesterday and 24h) and Sources / Countries / Devices / Browsers by visitors. Escape, ✕ or a click outside close it and focus goes back to the row. New Convex query `pages.detail` (the filtered view with `page:<path>`), no schema change. Added shadcn `sheet`. |
+| Design v4, Phase 9: Users tab and visitor table | **Built, awaiting owner review.** Users replaces Customers in the tabs (Analytics \| Pages \| Users \| Live \| Settings), and `/sites/[domain]/customers` redirects to `/users?kind=customers`. `visitors` gained optional totals (pageviews, engaged time) and the latest session's location, device, browser, entry and exit, kept at ingest; `migrations:backfillVisitorTotals` fills them in (run on dev: all 73 dev visitors match their sessions). The All visitors table lists everyone seen in the range, latest seen first, 50 a page, with an All \| Customers toggle (`?kind=`), revenue on customers, and search by name, email, id, persona, country, city or page. Cookieless sites get an explanation. New query `visitors.list`. Schema change (optional fields only); **the backfill must be run once on prod after deploy.** |
 | Design v3, Phase 1: public homepage and sign-out landing | **Built, awaiting owner review.** `/` is a public, static splash page (logo and "Analytics", Log in top right; headline, one line and a Log in button in the centre). Signed-in visitors are redirected from `/` to `/websites` by the proxy. Clerk signs out to `/` and falls back to `/websites` after sign-in. |
 | Design v3, Phase 6: onboarding redirect | **Built, awaiting owner review.** When the site list loads empty, `/websites` replaces itself with `/websites/new`. That covers a new account and deleting the last site. The skeleton stays up until then, and the old empty state is gone. On `/websites/new`, Cancel only shows when you have at least one site. |
 | Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
@@ -89,14 +90,16 @@ convex/
                      sites.goalNames + sites.setKeyGoal (5d), sites.revenueSettings, setRevenue,
                      setStripeSecret, createApiKey (action) + internal storeApiKeyHash (5e),
                      sites.remove + internal deleteSiteData (batched, self-rescheduling)
-  visitors.ts        visitors.customers (paying or key-goal visitors), visitors.profile (journey timeline) (5f)
+  visitors.ts        visitors.list (Users table, design v4), visitors.customers (paying or key-goal visitors),
+                     visitors.profile (journey timeline) (5f)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
                      stats.online, stats.filtered (5g), stats.liveFeed (5h) (all behind requireSite)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
   payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
   http.ts            Stripe webhook POST /stripe/{siteId} (Convex HTTP action, Stripe SDK signature check)
-  migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches
+  migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches; backfillPageStats
+                     (design v4 Phase 6); backfillVisitorTotals (design v4 Phase 9)
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
@@ -122,7 +125,7 @@ src/
   app/websites/page.tsx         card grid (Suspense > client Websites; ?add=1 opens the add form)
   app/sites/[domain]/page.tsx   site dashboard (Suspense > client SiteDashboard)
   app/sites/[domain]/settings/page.tsx   snippet, timezone, delete (Suspense > client SiteSettings)
-  app/sites/[domain]/customers/page.tsx  customers list (Suspense > client Customers)
+  app/sites/[domain]/users/page.tsx  Users tab (Suspense > client UsersView); /customers redirects here (next.config)
   app/sites/[domain]/visitors/[visitorId]/page.tsx  visitor profile (Suspense > client VisitorProfile)
   app/sites/[domain]/live/page.tsx       live map and feed (Suspense > client Live)
   app/sign-in, sign-up   Clerk components inside <Suspense>
@@ -138,13 +141,15 @@ src/
   components/dashboard/   SiteDashboard, RangePicker, StatRow, StatTile, TrafficChart, series, Breakdowns, StatsCard, FilterBar, RangeControls, useNow
   components/websites/    Websites (page header, Add website), SiteCard (monochrome sparkline card)
   components/settings/    SiteSettings
-  components/customers/   Customers (+ Source), VisitorProfile, VisitorAvatar
+  components/customers/   VisitorProfile, VisitorAvatar, Source
+  components/users/       UsersView (All visitors table)
   components/live/        Live (online count + feed), LiveMap (MapLibre, one dot per visitor)
   lib/format.ts      number, duration, share, date, country name and flag formatting, truncateMiddle
   lib/snippet.ts     appOrigin, embedSnippet
   lib/collect.ts     parsePayload, normalizeReferrer, normalizePath, detectDevice, requestHostname, parseGeo
   lib/payments.ts    bearerKey, parsePaymentBody
-  lib/names.ts       persona ("brown fox", emoji, colour) and displayName (adapted from minilytics, MIT)
+  lib/names.ts       re-exports convex/lib/names.ts: persona ("brown fox", emoji, colour) and displayName
+                     (adapted from minilytics, MIT); in convex/lib so the Users search can match personas
   lib/*.test.ts      unit tests, including script.test.ts, which runs the minified script in a fake browser
   script/script.js   hand-written ES5 tracking script (the source; see 5d decisions)
 public/script.js     minified copy, built by `npm run build:script` before dev and build; git-ignored
@@ -414,6 +419,20 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
 
+### Design v4, Phase 9 (Users tab and visitor table)
+
+- **Visitor totals** (`visitors.pageviews`, `engagedMs`, `country`, `region`, `city`, `device`, `browser`, `entryPath`, `exitPath`, all optional). Ingest adds each pageview, and a new session sets the location, device, browser and entry page from its first hit (as the session stores them); every pageview moves the exit page. **Pings now also patch the visitor** (`engagedMs`): that is the only exact way to keep time on site current, and goes against 5a's "visitor rows only change on pageviews". Online now still reads sessions; the cost is one more read and write per ping, and the Users query re-runs on pings of listed visitors (it already did on pageviews).
+- **Backfill** `npx convex run migrations:backfillVisitorTotals` (`--prod` for production) recounts every visitor from its sessions (newest 500 per visitor), in batches of 20 per site. It overwrites rather than adds, and ingest keeps sessions and the visitor in the same transaction, so it is safe to run twice or while hits arrive; there is no "backfilled" flag. Until it runs, older visitors show only what came in since the deploy.
+- **"Seen in the range"** means a pageview between the range's start and end (site-local midnight, or the hour window on Today, Yesterday and 24h). `visitors.list` reads `by_site_lastSeen` from the start, newest first, drops those first seen after the end, and for a visitor first seen before and last seen after the range checks that a session overlapped it. "Newest first" is by last seen overall.
+- **Read budget:** at most 5,000 of the range's visitors are read (`MAX_LISTED_VISITORS`). Past that the count shows "+" and a notice says the list, count and search cover the 5,000 seen most recently. Paging is by offset (50 rows), like Pages, so the count is exact below the cap.
+- **Row numbers are lifetime**, not the range's: sessions, pageviews and time over every session, location, device and entry → exit of the latest session, source = first source (how they found you). Per-range numbers would need reading each visitor's sessions.
+- **Customers** = paid (on a site with revenue) **or** completed the key goal (newest 5,000 completions), on a site with both together; the old page showed one at a time (`?by=goal`, now dropped by the redirect). Revenue (lifetime) is a column only in Customers mode on revenue sites. They are limited to the range like All, so the same people as the old Customers page show on a range covering them (12 months covers everything so far). A site with neither gets the old pointer to Settings.
+- **Search** (server side, `convex/lib/visitors.ts`): part of the identify() name, email, animal persona, visitor id, English country name, city or latest entry/exit path, or the whole country code ("de"). `src/lib/names.ts` moved to `convex/lib/names.ts` (re-exported) so the server can match personas. Older pages of a visitor's history aren't searched (only the latest session's entry and exit).
+- **Filters** (`?f=`) carry over to Users and show as chips with "Filters don't narrow the visitor table"; visitor rows have no per-session data to filter. Phase 10's header will honour them.
+- **Cookieless:** a site with no `trackingStartedAt` (never sent a visitor id) gets `status: "cookieless"` and an explanation linking to `settings?section=identity` (Phase 12 adds the section; until then it opens Settings). That also covers a brand-new site with no visits, and says so.
+- **Rows open the old profile page** (`/visitors/<id>`, now under the Users tab) until Phase 11's drawer. `visitorPath` moved to `TopBar` next to `sitePath`, `Source` to `components/customers/Source.tsx`, and `Customers.tsx` and its route are deleted. `visitors.customers` stays (tests, and the MCP phase may use it).
+- **The table** is `min-w-[960px]` and scrolls sideways inside its card on phones (as Pages does); the page itself doesn't scroll sideways at 375px.
+
 ### Design v4, Phase 8 (page drawer)
 
 - **`pages.detail`** (`convex/pages.ts`, `filteredPage` in `lib/filtered.ts`) runs the filtered view with `page:<path>` added to the URL's filters (not added twice if it's already there). The tiles and chart are that page's own entry of the view (its pageviews per point, distinct visitors, entries, bounces and pinged time), not the filtered dashboard's summary: with a page filter the dashboard's Pageviews tile counts every pageview of the sessions that viewed the page, which would not match the row. Bounce and Avg. time use the table's formulas (`bounceRate`, `avgDuration`). The lists are exactly the filtered dashboard's Sources, Countries, Devices and Browsers with `page:<path>` (a test checks this), shown by visitors.
@@ -652,7 +671,7 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v4 Phases 1 to 8
+## Next: review design v4 Phases 1 to 9
 
 Owner, in both themes and on your phone:
 
@@ -675,7 +694,9 @@ Owner, in both themes and on your phone:
 
 12. The page drawer, in both themes and on your phone: click a Pages row and check its numbers against the row (Views, Bounce, Duration), then reload and copy the URL into a new tab (same drawer). Press Escape: focus lands back on the row. Tab to a row and press Enter to open it. Open a page with Analytics filtered by `page:<path>` and compare the Sources, Countries and Devices lists. Try 6 months (the drawer says it needs 90 days or less) and Today (hourly bars).
 
-Push to `main` when happy. Phases 3, 5, 6, 7 and 8 change Convex functions, Phase 6 adds optional schema fields and Phase 7 the `pageTitles` table; the Vercel build deploys them (`npx convex deploy --cmd 'npm run build'`). **Then run the Phase 6 backfill once on production**, a few minutes after the deploy: `npx convex run migrations:backfillPageStats --prod`. Until it runs, the new columns only count hits since the deploy.
+13. The Users tab, in both themes and on your phone: the tabs read Analytics | Pages | Users | Live | Settings, and an old `/sites/<domain>/customers` bookmark lands on Users with Customers on. The All visitors table lists people seen in the range (try Today, 7d and a custom range in the past), latest first, 50 a page. Check a few rows against their profile (click one): sessions, pageviews, time, location, device · browser, entry → exit. Toggle Customers: the people the old Customers page listed (on a range that covers them), with revenue on a site with payments. Search by a name or email, part of a visitor id, an animal name, a country ("germany" or "de"), a city and a page path. A cookieless site shows the "No visitor ids" explanation.
+
+Push to `main` when happy. Phases 3, 5, 6, 7, 8 and 9 change Convex functions, Phases 6 and 9 add optional schema fields and Phase 7 the `pageTitles` table; the Vercel build deploys them (`npx convex deploy --cmd 'npm run build'`). **Then run both backfills once on production**, a few minutes after the deploy: `npx convex run migrations:backfillPageStats --prod` (Phase 6; until it runs, the new Pages columns only count hits since the deploy) and `npx convex run migrations:backfillVisitorTotals --prod` (Phase 9; until it runs, older visitors' rows show only what came in since the deploy, and their location and device are blank).
 
 ## Earlier: review design v3 Phases 1 to 6
 

@@ -1,12 +1,16 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
 import { requireSite } from "./lib/auth";
+import { hourWindow, zonedTime } from "./lib/dates";
+import { addDays, isValidRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
+import { visitorMatches } from "./lib/visitors";
+import { rangeArg } from "./pages";
 
-// Customers and visitor profiles (5f). These read raw rows (visitors, sessions,
-// pageviews, events, payments) through their indexes, always bounded.
+// The Users table (design v4), customers and visitor profiles (5f). These read raw rows
+// (visitors, sessions, pageviews, events, payments) through their indexes, always bounded.
 
 // Newest customers listed; the page says when there are more
 const MAX_CUSTOMERS = 500;
@@ -17,6 +21,9 @@ const MAX_PROFILE_SESSIONS = 50;
 const MAX_SESSION_PAGEVIEWS = 100;
 const MAX_PROFILE_EVENTS = 2_000;
 const MAX_PROFILE_PAYMENTS = 200;
+// The Users table reads at most this many of the range's visitors, the latest seen first
+const MAX_LISTED_VISITORS = 5_000;
+export const VISITOR_ROWS = 50;
 
 const kindValidator = v.union(v.literal("revenue"), v.literal("goal"));
 type Kind = "revenue" | "goal";
@@ -42,6 +49,22 @@ function availableKinds(site: Doc<"sites">): Kind[] {
   if ((site.revenueSource ?? "none") !== "none") kinds.push("revenue");
   if (site.keyGoal !== undefined) kinds.push("goal");
   return kinds;
+}
+
+/** The visitors who completed the key goal, among its newest completions; `more` when some were left out. */
+async function keyGoalVisitors(ctx: QueryCtx, site: Doc<"sites">): Promise<{ ids: Set<string>; more: boolean }> {
+  if (site.keyGoal === undefined) return { ids: new Set(), more: false };
+  const keyGoal = site.keyGoal;
+  const events = await ctx.db
+    .query("events")
+    .withIndex("by_site_type_name", (q) => q.eq("siteId", site._id).eq("type", "goal").eq("name", keyGoal))
+    .order("desc")
+    .take(MAX_GOAL_EVENTS + 1);
+  const ids = new Set<string>();
+  for (const e of events.slice(0, MAX_GOAL_EVENTS)) {
+    if (e.visitorId !== undefined) ids.add(e.visitorId);
+  }
+  return { ids, more: events.length > MAX_GOAL_EVENTS };
 }
 
 async function sessionById(ctx: QueryCtx, siteId: Id<"sites">, sessionId: string | undefined) {
@@ -154,6 +177,140 @@ export const customers = query({
     };
   },
 });
+
+const visitorRow = v.object({
+  visitorId: v.string(),
+  name: v.union(v.null(), v.string()),
+  email: v.union(v.null(), v.string()),
+  // The latest session's; null for visitors the backfill hasn't reached
+  country: v.union(v.null(), v.string()),
+  region: v.union(v.null(), v.string()),
+  city: v.union(v.null(), v.string()),
+  device: v.union(v.null(), v.string()),
+  browser: v.union(v.null(), v.string()),
+  entryPath: v.union(v.null(), v.string()),
+  exitPath: v.union(v.null(), v.string()),
+  firstSource: v.union(v.null(), v.string()),
+  // Over every session, not only the range's
+  sessions: v.number(),
+  pageviews: v.number(),
+  engagedMs: v.number(),
+  revenueMinor: v.number(),
+  lastSeen: v.number(),
+});
+
+export type VisitorRow = Infer<typeof visitorRow>;
+
+/**
+ * One page of the Users table: the visitors seen in the range (a pageview, or a session
+ * open, between its start and end), the latest seen first, 50 from `offset`, kept to
+ * customers (paid, or completed the key goal) with `kind: "customers"` and to those
+ * `search` matches (see lib/visitors.ts). `matched` counts what was kept. At most
+ * MAX_LISTED_VISITORS of the range's visitors are read; `truncated` says when there were
+ * more (or too many key-goal completions to read). `customerKinds` says what customers
+ * mean on the site, empty when it has neither revenue nor a key goal. A site that never
+ * sent a visitor id (cookieless, or no hits yet) gets `cookieless`.
+ */
+export const list = query({
+  args: {
+    domain: v.string(),
+    range: rangeArg,
+    kind: v.union(v.literal("all"), v.literal("customers")),
+    search: v.string(),
+    offset: v.number(),
+  },
+  returns: v.union(
+    v.object({
+      status: v.literal("ok"),
+      rows: v.array(visitorRow),
+      offset: v.number(),
+      matched: v.number(),
+      truncated: v.boolean(),
+      customerKinds: v.array(kindValidator),
+      currency: v.string(),
+    }),
+    v.object({ status: v.literal("cookieless") }),
+  ),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    if (site.trackingStartedAt === undefined) return { status: "cookieless" as const };
+    let start: number;
+    let end: number;
+    if ("period" in args.range) {
+      ({ start, end } = hourWindow(args.range.period, args.range.now, site.timezone));
+    } else {
+      const range = { from: args.range.from, to: args.range.to };
+      if (!isValidRange(range)) throw new ConvexError("Invalid date range");
+      start = zonedTime(range.from, 0, site.timezone);
+      end = zonedTime(addDays(range.to, 1), 0, site.timezone);
+    }
+
+    const kinds = availableKinds(site);
+    const customers = args.kind === "customers";
+    const goal = customers && kinds.includes("goal") ? await keyGoalVisitors(ctx, site) : null;
+    const isCustomer = (visitor: Doc<"visitors">) =>
+      (kinds.includes("revenue") && visitor.firstPaidAt !== undefined) || (goal?.ids.has(visitor.visitorId) ?? false);
+
+    const candidates = await ctx.db
+      .query("visitors")
+      .withIndex("by_site_lastSeen", (q) => q.eq("siteId", site._id).gte("lastSeen", start))
+      .order("desc")
+      .take(MAX_LISTED_VISITORS + 1);
+    const kept: Doc<"visitors">[] = [];
+    for (const visitor of candidates.slice(0, MAX_LISTED_VISITORS)) {
+      if (visitor.firstSeen >= end) continue;
+      if (customers && !isCustomer(visitor)) continue;
+      if (!visitorMatches(visitor, args.search)) continue;
+      if (!(await seenIn(ctx, visitor, start, end))) continue;
+      kept.push(visitor);
+    }
+
+    const offset = Math.max(0, Math.min(Math.floor(args.offset), Math.max(0, kept.length - 1)));
+    return {
+      status: "ok" as const,
+      rows: kept.slice(offset, offset + VISITOR_ROWS).map((visitor) => ({
+        visitorId: visitor.visitorId,
+        name: visitor.name ?? null,
+        email: visitor.email ?? null,
+        country: visitor.country ?? null,
+        region: visitor.region ?? null,
+        city: visitor.city ?? null,
+        device: visitor.device ?? null,
+        browser: visitor.browser ?? null,
+        entryPath: visitor.entryPath ?? null,
+        exitPath: visitor.exitPath ?? null,
+        firstSource: visitor.firstSource ?? null,
+        sessions: visitor.sessions,
+        pageviews: visitor.pageviews ?? 0,
+        engagedMs: visitor.engagedMs ?? 0,
+        revenueMinor: visitor.revenueMinor,
+        lastSeen: visitor.lastSeen,
+      })),
+      offset,
+      matched: kept.length,
+      truncated: candidates.length > MAX_LISTED_VISITORS || (goal?.more ?? false),
+      customerKinds: kinds,
+      currency: siteCurrency(site),
+    };
+  },
+});
+
+/**
+ * Whether the visitor was on the site in [start, end). A first or last pageview inside
+ * it is enough; a visitor first seen before it and last seen after it needs a session
+ * that overlaps it (the latest one started before the end, still open at the start).
+ */
+async function seenIn(ctx: QueryCtx, visitor: Doc<"visitors">, start: number, end: number): Promise<boolean> {
+  if (visitor.lastSeen < end || visitor.firstSeen >= start) return true;
+  const session = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_visitor_started", (q) =>
+      q.eq("siteId", visitor.siteId).eq("visitorId", visitor.visitorId).lt("startedAt", end),
+    )
+    .order("desc")
+    .first();
+  return session !== null && session.lastSeenAt >= start;
+}
 
 const timelineItem = v.union(
   v.object({

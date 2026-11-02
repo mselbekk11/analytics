@@ -263,3 +263,77 @@ async function bouncedBy(ctx: MutationCtx, session: Doc<"sessions">, cutoff: num
     .take(SESSION_READS);
   return !goals.some((e) => e.type === "goal" && e.sessionId === session.sessionId);
 }
+
+// Design v4 Phase 9 backfill: each visitor's totals for the Users table (pageviews and
+// engaged time over their sessions) and the latest session's location, device, browser,
+// entry and exit. Run once after deploying Phase 9:
+//
+//   npx convex run migrations:backfillVisitorTotals          (dev)
+//   npx convex run migrations:backfillVisitorTotals --prod   (production)
+//
+// Each site's visitors go in batches that reschedule themselves. Every visitor is
+// recounted from its sessions, which ingest keeps current in the same transactions, so
+// running this twice (or while hits come in) is safe and leaves the same totals.
+
+const VISITOR_TOTALS_BATCH = 20;
+// Sessions read per visitor; a visitor past it keeps the totals of its latest sessions
+const VISITOR_SESSION_READS = 500;
+
+export const backfillVisitorTotals = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    for await (const site of ctx.db.query("sites")) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillVisitorTotalsSite, {
+        siteId: site._id,
+        cursor: null,
+      });
+    }
+    return null;
+  },
+});
+
+export const backfillVisitorTotalsSite = internalMutation({
+  args: { siteId: v.id("sites"), cursor: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { siteId, cursor }) => {
+    const page = await ctx.db
+      .query("visitors")
+      .withIndex("by_site_visitor", (q) => q.eq("siteId", siteId))
+      .paginate({ numItems: VISITOR_TOTALS_BATCH, cursor });
+    for (const visitor of page.page) {
+      await ctx.db.patch("visitors", visitor._id, await visitorTotals(ctx, visitor));
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillVisitorTotalsSite, {
+        siteId,
+        cursor: page.continueCursor,
+      });
+    }
+    return null;
+  },
+});
+
+/** The visitor's totals and latest details, recounted from its sessions (newest first). */
+async function visitorTotals(ctx: MutationCtx, visitor: Doc<"visitors">) {
+  const sessions = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_visitor_started", (q) =>
+      q.eq("siteId", visitor.siteId).eq("visitorId", visitor.visitorId),
+    )
+    .order("desc")
+    .take(VISITOR_SESSION_READS);
+  const latest = sessions[0];
+  return {
+    pageviews: sessions.reduce((sum, s) => sum + s.pageviews, 0),
+    engagedMs: sessions.reduce((sum, s) => sum + s.engagedMs, 0),
+    // Undefined removes the field, so a visitor without sessions keeps no stale details
+    country: latest?.country,
+    region: latest?.region,
+    city: latest?.city,
+    device: latest?.device,
+    browser: latest?.browser,
+    entryPath: latest?.entryPath,
+    exitPath: latest?.exitPath,
+  };
+}

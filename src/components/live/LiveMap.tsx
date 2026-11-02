@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
-import { visitorPath } from "@/components/customers/Customers";
+import { visitorPath } from "@/components/TopBar";
 import { displayName, persona } from "@/lib/names";
 import type { LiveData } from "./Live";
 

@@ -14,7 +14,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import { formatNumber } from "@/lib/format";
 
-export type SiteSection = "analytics" | "pages" | "live" | "customers" | "settings";
+export type SiteSection = "analytics" | "pages" | "users" | "live" | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
 
 type Icon = ComponentType<{ className?: string }>;
@@ -22,13 +22,13 @@ type Icon = ComponentType<{ className?: string }>;
 const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
   { section: "analytics", label: "Analytics", icon: ChartLineIcon },
   { section: "pages", label: "Pages", icon: FileTextIcon },
+  { section: "users", label: "Users", icon: UsersIcon },
   { section: "live", label: "Live", icon: RadioIcon },
-  { section: "customers", label: "Customers", icon: UsersIcon },
   { section: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 // Views that take a range and filters, which carry over when switching between them
-const RANGED: SiteSection[] = ["analytics", "pages"];
+const RANGED: SiteSection[] = ["analytics", "pages", "users"];
 
 const ACCOUNT_TABS: { section: AccountSection; label: string; href: string }[] = [
   { section: "websites", label: "Websites", href: "/websites" },
@@ -45,6 +45,11 @@ export function sitePath(domain: string, section: SiteSection): string {
   return section === "analytics" ? base : `${base}/${section}`;
 }
 
+/** A visitor's profile page (until the Users drawer replaces it). */
+export function visitorPath(domain: string, visitorId: string): string {
+  return `${sitePath(domain, "analytics")}/visitors/${encodeURIComponent(visitorId)}`;
+}
+
 type TopBarProps =
   | { site: { domain: string; section: SiteSection }; account?: never }
   | { account: AccountSection; site?: never };
@@ -54,7 +59,7 @@ type TopBarProps =
  * logo, site switcher, online count and the site's section tabs. Account mode (websites,
  * billing, settings): logo and "Analytics" and the account tabs. Both have the theme toggle
  * and the user menu. The current tab is a link too, so a visitor profile (under
- * Customers) can go back.
+ * Users) can go back.
  */
 export default function TopBar({ site, account }: TopBarProps) {
   return (
@@ -106,7 +111,7 @@ export default function TopBar({ site, account }: TopBarProps) {
 }
 
 /**
- * The site's tabs. From one ranged view to another (Analytics, Pages) the links keep
+ * The site's tabs. From one ranged view to another (Analytics, Pages, Users) the links keep
  * `?range=` and `?f=`, so you compare like with like. Site pages render inside Suspense,
  * so reading the query string here is fine.
  */

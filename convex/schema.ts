@@ -107,6 +107,17 @@ export default defineSchema({
     name: v.optional(v.string()),
     revenueMinor: v.number(),
     firstPaidAt: v.optional(v.number()),
+    // Totals over every session, and the latest session's details, for the Users table
+    // (design v4). Kept at ingest and filled in by migrations.backfillVisitorTotals.
+    pageviews: v.optional(v.number()),
+    engagedMs: v.optional(v.number()),
+    country: v.optional(v.string()),
+    region: v.optional(v.string()),
+    city: v.optional(v.string()),
+    device: v.optional(v.string()),
+    browser: v.optional(v.string()),
+    entryPath: v.optional(v.string()),
+    exitPath: v.optional(v.string()),
   })
     .index("by_site_visitor", ["siteId", "visitorId"])
     .index("by_site_lastSeen", ["siteId", "lastSeen"])
