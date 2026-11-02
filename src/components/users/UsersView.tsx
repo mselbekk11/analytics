@@ -2,7 +2,6 @@
 
 import { createElement, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { ArrowRightIcon, SearchIcon } from "lucide-react";
 import { FiMonitor } from "react-icons/fi";
@@ -21,7 +20,8 @@ import { useSiteRange } from "@/components/dashboard/useSiteRange";
 import { Source } from "@/components/customers/Source";
 import VisitorAvatar from "@/components/customers/VisitorAvatar";
 import UsersOverview from "./UsersOverview";
-import { sitePath, visitorPath } from "@/components/TopBar";
+import VisitorDrawer from "./VisitorDrawer";
+import { sitePath } from "@/components/TopBar";
 
 // The search box waits this long after the last key before asking again
 const SEARCH_DELAY_MS = 200;
@@ -37,6 +37,7 @@ export default function UsersView() {
         <Users
           domain={site.domain}
           timezone={site.timezone}
+          keyGoal={site.keyGoal}
           tracking={site.trackingStartedAt !== null}
           currency={site.revenueSource === "none" ? null : site.currency}
         />
@@ -48,11 +49,13 @@ export default function UsersView() {
 function Users({
   domain,
   timezone,
+  keyGoal,
   tracking,
   currency,
 }: {
   domain: string;
   timezone: string;
+  keyGoal: string | null;
   /** The site has sent visitor ids; without them there is no one to list */
   tracking: boolean;
   /** The site's currency when it takes payments */
@@ -61,6 +64,18 @@ function Users({
   const { today, range, preset, hourly, hourNow, filters, searchParams, navigate, setRange, setFilters } =
     useSiteRange(timezone, tracking);
   const kind: Kind = searchParams.get("kind") === "customers" ? "customers" : "all";
+  // The drawer's visitor, in `?visitor=` so it can be reloaded and shared
+  const openId = searchParams.get("visitor") || null;
+  const openVisitor = (visitorId: string | null) => navigate({ set: { visitor: visitorId } });
+  const drawer = (
+    <VisitorDrawer
+      domain={domain}
+      timezone={timezone}
+      keyGoal={keyGoal}
+      visitorId={openId}
+      onClose={() => openVisitor(null)}
+    />
+  );
 
   const [typed, setTyped] = useState("");
   const [search, setSearch] = useState("");
@@ -114,6 +129,7 @@ function Users({
         {header}
         {overview}
         <Cookieless domain={domain} />
+        {drawer}
       </div>
     );
   }
@@ -208,7 +224,13 @@ function Users({
                 </tr>
               ) : (
                 ok.rows.map((row) => (
-                  <Row key={row.visitorId} row={row} domain={domain} currency={revenue ? ok.currency : null} />
+                  <Row
+                    key={row.visitorId}
+                    row={row}
+                    currency={revenue ? ok.currency : null}
+                    open={row.visitorId === openId}
+                    onOpen={() => openVisitor(row.visitorId)}
+                  />
                 ))
               )}
             </tbody>
@@ -240,6 +262,7 @@ function Users({
           </div>
         )}
       </section>
+      {drawer}
     </div>
   );
 }
@@ -291,29 +314,43 @@ function Cookieless({ domain }: { domain: string }) {
 }
 
 /**
- * One visitor. Clicking anywhere on the row opens their profile; the name is the link
- * keyboards reach.
+ * One visitor. Clicking anywhere on the row opens their drawer; the name cell is the
+ * button keyboards reach, and focus comes back to it when the drawer closes.
  */
-function Row({ row, domain, currency }: { row: VisitorRow; domain: string; currency: string | null }) {
-  const router = useRouter();
-  const href = visitorPath(domain, row.visitorId);
+function Row({
+  row,
+  currency,
+  open,
+  onOpen,
+}: {
+  row: VisitorRow;
+  currency: string | null;
+  /** Its drawer is open */
+  open: boolean;
+  onOpen: () => void;
+}) {
   const name = displayName(row.visitorId, row.name, row.email);
   return (
     <tr
-      onClick={() => router.push(href)}
-      className="cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-muted/40"
+      onClick={onOpen}
+      className={cn(
+        "cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-muted/40",
+        open && "bg-muted/40",
+      )}
     >
       <td className="max-w-56 px-4 py-3 sm:pl-5">
-        <Link
-          href={href}
-          onClick={(e) => e.stopPropagation()}
-          className="flex min-w-0 items-center gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        <button
+          type="button"
+          data-visitor-row={row.visitorId}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className="flex w-full min-w-0 items-center gap-3 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <VisitorAvatar visitorId={row.visitorId} />
           <span className="truncate" title={name}>
             {name}
           </span>
-        </Link>
+        </button>
       </td>
       <td className="max-w-52 px-4 py-3">
         {row.country === null ? (

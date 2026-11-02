@@ -324,6 +324,8 @@ const timelineItem = v.union(
     ts: v.number(),
     name: v.string(),
     path: v.string(),
+    // A goal's properties, when it was sent with some
+    props: v.optional(v.record(v.string(), v.string())),
   }),
   v.object({
     type: v.union(v.literal("payment"), v.literal("refund")),
@@ -358,8 +360,12 @@ const sessionValidator = v.object({
   os: v.union(v.null(), v.string()),
   revenueMinor: v.number(),
   credited: v.boolean(), // a payment's revenue was credited to this session
+  events: v.number(), // goals and outbound clicks
   items: v.array(timelineItem),
 });
+
+// Goals and outbound clicks are a visitor's "events"; identify and checkout returns are not
+const isCountedEvent = (type: Doc<"events">["type"]) => type === "goal" || type === "outbound";
 
 type TimelineItem = typeof timelineItem.type;
 
@@ -367,7 +373,8 @@ type TimelineItem = typeof timelineItem.type;
  * One visitor's profile: who they are (identify() or a payment), where and on what
  * they visit from, and a timeline of their latest sessions, oldest first, each with its
  * pages, goals, outbound clicks and payments. Null for an unknown visitor id.
- * `moreSessions` is true when older sessions were left out.
+ * `moreSessions` is true when older sessions were left out. The visitor drawer (design
+ * v4) adds lifetime totals, how their first visit arrived and per-session event counts.
  */
 export const profile = query({
   args: { domain: v.string(), visitorId: v.string() },
@@ -386,6 +393,21 @@ export const profile = query({
       revenueMinor: v.number(),
       firstPaidAt: v.union(v.null(), v.number()),
       currency: v.string(),
+      // Over every session (the visitor's totals); events over the latest MAX_PROFILE_EVENTS
+      pageviews: v.number(),
+      engagedMs: v.number(),
+      events: v.number(),
+      moreEvents: v.boolean(),
+      // The visitor's first session: where it landed and where it came from
+      firstVisit: v.union(
+        v.null(),
+        v.object({
+          startedAt: v.number(),
+          path: v.string(),
+          source: v.string(),
+          channel: v.string(),
+        }),
+      ),
       sessions: v.array(sessionValidator),
       moreSessions: v.boolean(),
     }),
@@ -404,6 +426,13 @@ export const profile = query({
       .take(MAX_PROFILE_SESSIONS + 1);
     const sessions = latest.slice(0, MAX_PROFILE_SESSIONS).reverse();
     const moreSessions = latest.length > MAX_PROFILE_SESSIONS;
+    const first = moreSessions
+      ? await ctx.db
+          .query("sessions")
+          .withIndex("by_site_visitor_started", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+          .order("asc")
+          .first()
+      : sessions[0];
 
     const items = new Map<string, TimelineItem[]>(sessions.map((s) => [s.sessionId, []]));
     for (const s of sessions) {
@@ -426,9 +455,12 @@ export const profile = query({
       .withIndex("by_site_visitor_ts", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
       .order("desc")
       .take(MAX_PROFILE_EVENTS);
+    const sessionEvents = new Map<string, number>();
     for (const e of events) {
       const list = e.sessionId === undefined ? undefined : items.get(e.sessionId);
-      list?.push({ type: e.type, ts: e.ts, name: e.name, path: e.path });
+      if (e.sessionId === undefined || list === undefined) continue;
+      list.push({ type: e.type, ts: e.ts, name: e.name, path: e.path, ...(e.props ? { props: e.props } : {}) });
+      if (isCountedEvent(e.type)) sessionEvents.set(e.sessionId, (sessionEvents.get(e.sessionId) ?? 0) + 1);
     }
 
     // A payment shows in the session that was open when it was made (the last one that
@@ -465,6 +497,15 @@ export const profile = query({
       revenueMinor: visitor.revenueMinor,
       firstPaidAt: visitor.firstPaidAt ?? null,
       currency: siteCurrency(site),
+      // Visitors from before the totals were kept (and not backfilled) add up their listed sessions
+      pageviews: visitor.pageviews ?? sessions.reduce((sum, s) => sum + s.pageviews, 0),
+      engagedMs: visitor.engagedMs ?? sessions.reduce((sum, s) => sum + s.engagedMs, 0),
+      events: events.filter((e) => isCountedEvent(e.type)).length,
+      moreEvents: events.length === MAX_PROFILE_EVENTS,
+      firstVisit:
+        first === undefined || first === null
+          ? null
+          : { startedAt: first.startedAt, path: first.entryPath, ...sessionSource(first) },
       moreSessions,
       sessions: sessions.map((s) => ({
         sessionId: s.sessionId,
@@ -486,6 +527,7 @@ export const profile = query({
         os: s.os ?? null,
         revenueMinor: s.revenueMinor,
         credited: credited.has(s.sessionId),
+        events: sessionEvents.get(s.sessionId) ?? 0,
         items: items.get(s.sessionId)!.sort((a, b) => a.ts - b.ts),
       })),
     };

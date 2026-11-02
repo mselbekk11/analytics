@@ -45,9 +45,9 @@ export function sitePath(domain: string, section: SiteSection): string {
   return section === "analytics" ? base : `${base}/${section}`;
 }
 
-/** A visitor's profile page (until the Users drawer replaces it). */
+/** The Users tab with a visitor's drawer open. */
 export function visitorPath(domain: string, visitorId: string): string {
-  return `${sitePath(domain, "analytics")}/visitors/${encodeURIComponent(visitorId)}`;
+  return `${sitePath(domain, "users")}?visitor=${encodeURIComponent(visitorId)}`;
 }
 
 type TopBarProps =

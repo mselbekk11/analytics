@@ -6,7 +6,7 @@ export default function VisitorAvatar({ visitorId, size = "sm" }: { visitorId: s
   return (
     <span
       className={`flex shrink-0 items-center justify-center rounded-full ${
-        size === "lg" ? "size-14 text-3xl" : "size-7 text-base"
+        size === "lg" ? "size-10 text-xl" : "size-7 text-base"
       }`}
       style={{ backgroundColor: p.color }}
       title={p.name}

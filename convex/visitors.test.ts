@@ -247,6 +247,57 @@ describe("profile", () => {
     });
   });
 
+  test("the drawer's totals, first visit, goal props and per-session events", async () => {
+    const { t, owner } = await setup();
+    await visit(t, "2026-10-10T17:00:00Z", { vid: VID_A, sid: SID1, pvId: "pv-1", referrer: "google.com" });
+    vi.setSystemTime(new Date("2026-10-10T17:00:30Z"));
+    await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: "pv-1", ms: 30_000 });
+    await t.mutation(api.ingest.event, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: "pv-1",
+      event: { type: "goal", name: "signup", props: { plan: "free" } },
+    });
+    await visit(t, "2026-10-12T17:00:00Z", { vid: VID_A, sid: SID2, pvId: "pv-2", path: "/pricing" });
+    await visit(t, "2026-10-12T17:01:00Z", { vid: VID_A, sid: SID2, pvId: "pv-3", path: "/docs" });
+    await t.mutation(api.ingest.event, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: "pv-3",
+      event: { type: "outbound", url: "https://github.com/" },
+    });
+    await t.mutation(api.ingest.event, {
+      secret: SECRET,
+      site: "picai.so",
+      hostname: "picai.so",
+      pvId: "pv-3",
+      event: { type: "identify", email: "jo@example.com" },
+    });
+
+    const p = await owner.query(api.visitors.profile, { domain: "picai.so", visitorId: VID_A });
+    // Identify isn't an event; the goal and the outbound click are
+    expect(p).toMatchObject({ pageviews: 3, engagedMs: 30_000, events: 2, moreEvents: false });
+    expect(p!.firstVisit).toEqual({
+      startedAt: Date.parse("2026-10-10T17:00:00Z"),
+      path: "/",
+      source: "Google",
+      channel: "Organic Search",
+    });
+    expect(p!.sessions.map((s) => [s.sessionId, s.events])).toEqual([
+      [SID1, 1],
+      [SID2, 1],
+    ]);
+    expect(p!.sessions[0].items[1]).toEqual({
+      type: "goal",
+      ts: Date.parse("2026-10-10T17:00:30Z"),
+      name: "signup",
+      path: "/",
+      props: { plan: "free" },
+    });
+  });
+
   test("an unknown visitor, or another site's, is null", async () => {
     const { t, owner } = await setup();
     await owner.mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
