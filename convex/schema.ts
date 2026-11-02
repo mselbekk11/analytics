@@ -13,6 +13,10 @@ export default defineSchema({
     // First pageview classified by source and channel (Phase 5b); the backfill covers hits before it
     sourcesStartedAt: v.optional(v.number()),
     sourcesBackfilled: v.optional(v.boolean()),
+    // First pageview whose page rows got sessions, bounces and time at ingest (design v4
+    // Phase 6); the backfill covers hits before it
+    pageStatsStartedAt: v.optional(v.number()),
+    pageStatsBackfilled: v.optional(v.boolean()),
     // The goal a site without revenue converts on, e.g. "signup" (5d)
     keyGoal: v.optional(v.string()),
     // Revenue (5e): where payments come from (missing means "none") and the one currency totals use
@@ -67,12 +71,26 @@ export default defineSchema({
     key: v.string(),
     pageviews: v.number(),
     visitors: v.number(),
-    sessions: v.optional(v.number()), // session dims only, from 5b
+    sessions: v.optional(v.number()), // session dims from 5b; page rows from design v4 (sessions that viewed it)
+    // Page rows only, from design v4: sessions that started on the page and those that
+    // bounced there, and the engaged time pinged on its pageviews (and how many sent any)
+    entries: v.optional(v.number()),
+    bounces: v.optional(v.number()),
+    engagedMs: v.optional(v.number()),
+    durationCount: v.optional(v.number()),
     events: v.optional(v.number()), // goal completions and outbound clicks, from 5d
     revenueMinor: v.optional(v.number()), // net revenue credited to this key, from 5e
   })
     .index("by_site_dim_date", ["siteId", "dim", "date"])
     .index("by_site_date_dim_key", ["siteId", "date", "dim", "key"]),
+
+  // The latest non-empty title each path was seen with (design v4)
+  pageTitles: defineTable({
+    siteId: v.id("sites"),
+    path: v.string(),
+    title: v.string(),
+    updatedAt: v.number(),
+  }).index("by_site_path", ["siteId", "path"]),
 
   // One row per cookie visitor id (_va_vid) per site
   visitors: defineTable({

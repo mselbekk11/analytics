@@ -55,7 +55,7 @@ function AddFlow() {
       <Stepper step={created ? (received ? 3 : 2) : 1} />
       <div className="grid items-start gap-6 lg:grid-cols-[3fr_2fr]">
         {checking ? (
-          <div className="h-72 animate-pulse rounded-xl bg-muted/40 ring-1 ring-foreground/10" />
+          <div className="h-72 animate-pulse rounded-xl bg-muted/40 ring-1 ring-line" />
         ) : created ? (
           <InstallTracker domain={created} received={received} />
         ) : (

@@ -30,7 +30,15 @@ import {
   SiVivaldi,
 } from "react-icons/si";
 import { api } from "../../../convex/_generated/api";
-import { breakdownKey, dimMetric, type Dim, type ListChannel } from "../../../convex/lib/dims";
+import {
+  breakdownKey,
+  listCount,
+  rankEntries,
+  type CardMetric,
+  type Dim,
+  type DimCount,
+  type ListChannel,
+} from "../../../convex/lib/dims";
 import { canFilter, type Filter } from "../../../convex/lib/filters";
 import { parseGeoKey } from "../../../convex/lib/geo";
 import type { DateRange } from "../../../convex/lib/ranges";
@@ -54,9 +62,13 @@ import StatsCard, { type CardTab, type StatsRow } from "./StatsCard";
 type Props = {
   domain: string;
   range: DateRange;
-  /** The site's currency when it takes payments; Sources and Countries can then show revenue */
+  /** The site's currency when it takes payments; the cards can then show revenue */
   currency: string | null;
   view: View;
+  /** What every card ranks and shows (`?metric=`); never revenue without a currency */
+  metric: CardMetric;
+  /** Moves every card to the next metric */
+  onMetric: () => void;
 };
 
 /**
@@ -86,14 +98,13 @@ const tab = (dim: Dim, label: string, channel?: ListChannel): Tab => ({
   channel,
 });
 
-// The outlines load with the tab, not with the dashboard
+// The dotted map loads with the tab, not with the dashboard
 const WorldMap = dynamic(() => import("./WorldMap"), {
   ssr: false,
-  loading: () => <div className="min-h-66 flex-1 animate-pulse rounded-md bg-muted" aria-busy />,
+  loading: () => <div className="min-h-40 flex-1 animate-pulse rounded-md bg-muted sm:min-h-66" aria-busy />,
 });
 
-/** `revenue`: its lists are credited revenue (a payment's session counts on their keys). */
-type Card = { title: string; tabs: Tab[]; more?: Tab[]; revenue?: boolean };
+type Card = { title: string; tabs: Tab[]; more?: Tab[] };
 
 const SOURCES: Card = {
   title: "Sources",
@@ -107,7 +118,6 @@ const SOURCES: Card = {
     tab("utm_content", "UTM content"),
     tab("ref", "ref / via"),
   ],
-  revenue: true,
 };
 
 const PAGES: Card = {
@@ -119,7 +129,6 @@ const COUNTRIES: Card = {
   title: "Countries",
   tabs: [tab("country", "Countries"), tab("city", "Cities"), { ...tab("country", "Map"), id: "country:map", map: true }],
   more: [tab("region", "Regions")],
-  revenue: true,
 };
 
 const DEVICES: Card = {
@@ -127,16 +136,31 @@ const DEVICES: Card = {
   tabs: [tab("device", "Devices"), tab("browser", "Browsers"), tab("os", "OS")],
 };
 
-const METRIC_LABELS = {
+const COUNT_LABELS: Record<DimCount, string> = {
   pageviews: "Pageviews",
   visitors: "Visitors",
   sessions: "Sessions",
   events: "Clicks",
-} as const;
+  revenueMinor: "Revenue",
+};
+
+const METRIC_LABELS: Record<CardMetric, string> = {
+  visitors: "Visitors",
+  pageviews: "Pageviews",
+  revenue: "Revenue",
+};
+
+/** The metrics a site's cards cycle through: Revenue only when it takes payments. */
+export function cardMetrics(currency: string | null): CardMetric[] {
+  return currency === null ? ["visitors", "pageviews"] : ["visitors", "pageviews", "revenue"];
+}
+
+/** Hidden until they show more than a list of goals and a placeholder */
+const SHOW_EVENTS_AND_FUNNELS = false;
 
 /**
- * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices,
- * Events | Funnels, in two columns with dividers (one column on phones).
+ * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices
+ * (and Events | Funnels, hidden for now), in two columns with dividers (one column on phones).
  */
 export default function Breakdowns(props: Props) {
   return (
@@ -145,15 +169,19 @@ export default function Breakdowns(props: Props) {
       <Breakdown {...props} card={PAGES} />
       <Breakdown {...props} card={COUNTRIES} />
       <Breakdown {...props} card={DEVICES} />
-      <Events {...props} />
-      <StatsCard
-        title="Funnels"
-        tabs={[{ id: "funnels", label: "Funnels" }]}
-        tab="funnels"
-        onTab={() => {}}
-        rows={[]}
-        empty="Funnels are coming soon"
-      />
+      {SHOW_EVENTS_AND_FUNNELS && (
+        <>
+          <Events {...props} />
+          <StatsCard
+            title="Funnels"
+            tabs={[{ id: "funnels", label: "Funnels" }]}
+            tab="funnels"
+            onTab={() => {}}
+            rows={[]}
+            empty="Funnels are coming soon"
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -215,30 +243,25 @@ function Events({ domain, range, view }: Props) {
 }
 
 /**
- * One card; its tab is kept when the range or the filters change. On a site with revenue,
- * the Sources and Countries cards switch between Visitors and Revenue (rows with revenue,
- * largest amount first).
+ * One card; its tab is kept when the range or the filters change. Rows rank, number and
+ * bar by the shared metric, or by the list's own count where it doesn't have that one
+ * (see listCount), and the header names the count shown. Rows with none drop out.
  */
-function Breakdown({ domain, range, currency, view, card }: Props & { card: Card }) {
+function Breakdown({ domain, range, currency, view, metric, onMetric, card }: Props & { card: Card }) {
   const tabs = [...card.tabs, ...(card.more ?? [])];
   const [tabId, setTabId] = useState(card.tabs[0].id);
-  const [byRevenue, setByRevenue] = useState(false);
   const { dim, channel, map } = tabs.find((t) => t.id === tabId) ?? card.tabs[0];
   const rollup = useQuery(api.stats.breakdown, view.raw ? "skip" : { domain, dim, channel, ...range });
   const data = view.raw ? view.data?.[breakdownKey(dim, channel)] : rollup;
   const active = view.filters.find((f) => f.dim === dim)?.value;
   const select = view.onSelect && canFilter(view.filters, dim) ? view.onSelect : null;
 
-  // Pages count pageviews, entry and exit pages count sessions, outbound links count
-  // clicks, and the other lists count visitors. Bars are relative to the top row.
-  const metric = dimMetric(dim);
-  const revenueCurrency = card.revenue ? currency : null;
-  const revenue = revenueCurrency !== null && byRevenue;
-  const ranked = revenue
-    ? data?.rows.filter((r) => r.revenueMinor !== 0).sort((a, b) => b.revenueMinor - a.revenueMinor)
-    : data?.rows;
-  const count = (r: BreakdownRow) => (revenue ? r.revenueMinor : r[metric]);
-  const top = ranked?.[0] ? count(ranked[0]) : 0;
+  // Bars are relative to the top row
+  const count = listCount(dim, metric);
+  const ranked = data && rankEntries(dim, data.rows, metric);
+  const format = (r: BreakdownRow) =>
+    count === "revenueMinor" && currency !== null ? formatMoney(r.revenueMinor, currency, true) : formatNumber(r[count]);
+  const top = ranked?.[0]?.[count] ?? 0;
   const rows: StatsRow[] | undefined = ranked?.map((r) => ({
     key: r.key,
     label: <Label dim={dim} value={r.key} />,
@@ -246,11 +269,14 @@ function Breakdown({ domain, range, currency, view, card }: Props & { card: Card
     icon: rowIcon(dim, r.key),
     active: r.key === active,
     ...(select ? { onSelect: () => select(dim, r.key) } : {}),
-    value: revenue ? formatMoney(r.revenueMinor, revenueCurrency, true) : formatNumber(r[metric]),
-    share: top <= 0 ? 0 : Math.max(0, count(r) / top),
+    value: format(r),
+    share: top <= 0 ? 0 : Math.max(0, r[count] / top),
   }));
 
-  const metricLabel = revenue ? "Revenue" : METRIC_LABELS[metric];
+  const shown = COUNT_LABELS[count];
+  const metrics = cardMetrics(currency);
+  const next = METRIC_LABELS[metrics[(metrics.indexOf(metric) + 1) % metrics.length]];
+  const note = shown === METRIC_LABELS[metric] ? "" : ` (this list has no ${METRIC_LABELS[metric].toLowerCase()})`;
 
   return (
     <StatsCard
@@ -259,18 +285,15 @@ function Breakdown({ domain, range, currency, view, card }: Props & { card: Card
       more={card.more}
       tab={tabId}
       onTab={setTabId}
-      metric={metricLabel}
-      onMetricSwitch={revenueCurrency !== null ? () => setByRevenue(!byRevenue) : undefined}
+      metric={shown}
+      onMetricSwitch={onMetric}
+      metricHint={`Showing ${shown.toLowerCase()}${note}. Switch every card to ${next.toLowerCase()}`}
       rows={rows}
       body={
         map && ranked ? (
           <WorldMap
-            values={ranked.map((r) => ({
-              code: r.key,
-              count: count(r),
-              value: revenue ? formatMoney(r.revenueMinor, revenueCurrency, true) : formatNumber(r[metric]),
-            }))}
-            metric={metricLabel}
+            values={ranked.map((r) => ({ code: r.key, count: r[count], value: format(r) }))}
+            metric={shown}
             active={active}
             onSelect={select ? (code) => select(dim, code) : null}
           />

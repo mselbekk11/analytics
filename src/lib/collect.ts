@@ -18,6 +18,8 @@ export type PageviewPayload = {
   nc: boolean;
   /** Campaign tags from the landing page's URL, first pageview of a page load only */
   campaign?: Campaign;
+  /** document.title, whitespace collapsed, at most MAX_TITLE_LENGTH characters (design v4) */
+  title?: string;
 };
 
 export type Campaign = {
@@ -86,6 +88,7 @@ export type Payload = PageviewPayload | PingPayload | DurationPayload | EventPay
 // Room for six 100-character campaign tags, even in non-Latin scripts
 export const MAX_BODY_BYTES = 4096;
 export const MAX_TAG_LENGTH = 100;
+export const MAX_TITLE_LENGTH = 200;
 export const MAX_DURATION_MS = 30 * 60 * 1000;
 export const MAX_PING_MS = 70 * 1000;
 export const MAX_GOAL_NAME = 100;
@@ -97,6 +100,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function str(value: unknown, max: number, min = 0): value is string {
   return typeof value === "string" && value.length >= min && value.length <= max;
+}
+
+/** A page title with whitespace collapsed, cut to MAX_TITLE_LENGTH; anything else is left out. */
+export function parseTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.replace(/\s+/g, " ").trim().slice(0, MAX_TITLE_LENGTH).trim() || undefined;
 }
 
 /** Validates the beacon body. Returns null for anything malformed. */
@@ -122,6 +131,7 @@ export function parsePayload(body: string): Payload | null {
     if (ids && !(isUuid(d.vid) && isUuid(d.sid))) return null;
     const campaign = d.c === undefined ? undefined : parseCampaign(d.c);
     if (campaign === null) return null;
+    const title = parseTitle(d.ti);
     return {
       t: "pv",
       site: d.site,
@@ -134,6 +144,7 @@ export function parsePayload(body: string): Payload | null {
       ...(ids ? { vid: d.vid as string, sid: d.sid as string } : {}),
       nc: d.nc === 1 || d.nc === true,
       ...(campaign ? { campaign } : {}),
+      ...(title ? { title } : {}),
     };
   }
 

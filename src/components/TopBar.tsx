@@ -1,8 +1,12 @@
 "use client";
 
+import type { ComponentType } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Authenticated, useQuery } from "convex/react";
+import { ChartLineIcon, FileTextIcon, RadioIcon, SettingsIcon, UsersIcon } from "lucide-react";
 import { api } from "../../convex/_generated/api";
+import { formatFiltersParam, parseFiltersParam } from "../../convex/lib/filters";
 import { useNow } from "@/components/dashboard/useNow";
 import LogoMark from "@/components/LogoMark";
 import SiteSwitcher from "@/components/SiteSwitcher";
@@ -10,15 +14,21 @@ import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import { formatNumber } from "@/lib/format";
 
-export type SiteSection = "analytics" | "live" | "customers" | "settings";
+export type SiteSection = "analytics" | "pages" | "live" | "customers" | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
 
-const SITE_TABS: { section: SiteSection; label: string }[] = [
-  { section: "analytics", label: "Analytics" },
-  { section: "live", label: "Live" },
-  { section: "customers", label: "Customers" },
-  { section: "settings", label: "Settings" },
+type Icon = ComponentType<{ className?: string }>;
+
+const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
+  { section: "analytics", label: "Analytics", icon: ChartLineIcon },
+  { section: "pages", label: "Pages", icon: FileTextIcon },
+  { section: "live", label: "Live", icon: RadioIcon },
+  { section: "customers", label: "Customers", icon: UsersIcon },
+  { section: "settings", label: "Settings", icon: SettingsIcon },
 ];
+
+// Views that take a range and filters, which carry over when switching between them
+const RANGED: SiteSection[] = ["analytics", "pages"];
 
 const ACCOUNT_TABS: { section: AccountSection; label: string; href: string }[] = [
   { section: "websites", label: "Websites", href: "/websites" },
@@ -83,14 +93,7 @@ export default function TopBar({ site, account }: TopBarProps) {
           </div>
         </div>
         {site ? (
-          <TabStrip
-            label="Site sections"
-            tabs={SITE_TABS.map((t) => ({
-              label: t.label,
-              href: sitePath(site.domain, t.section),
-              active: t.section === site.section,
-            }))}
-          />
+          <SiteTabs domain={site.domain} section={site.section} />
         ) : (
           <TabStrip
             label="Account"
@@ -102,21 +105,51 @@ export default function TopBar({ site, account }: TopBarProps) {
   );
 }
 
+/**
+ * The site's tabs. From one ranged view to another (Analytics, Pages) the links keep
+ * `?range=` and `?f=`, so you compare like with like. Site pages render inside Suspense,
+ * so reading the query string here is fine.
+ */
+function SiteTabs({ domain, section }: { domain: string; section: SiteSection }) {
+  const searchParams = useSearchParams();
+  const range = RANGED.includes(section) ? searchParams.get("range") : null;
+  const filters = RANGED.includes(section) ? formatFiltersParam(parseFiltersParam(searchParams.get("f"))) : "";
+  const query = [range && `range=${encodeURIComponent(range)}`, filters && `f=${filters}`].filter(Boolean).join("&");
+  return (
+    <TabStrip
+      label="Site sections"
+      tabs={SITE_TABS.map((t) => ({
+        label: t.label,
+        icon: t.icon,
+        href: `${sitePath(domain, t.section)}${query && RANGED.includes(t.section) ? `?${query}` : ""}`,
+        active: t.section === section,
+      }))}
+    />
+  );
+}
+
 /** The underlined tab row under the bar; scrolls sideways on narrow screens. */
-function TabStrip({ label, tabs }: { label: string; tabs: { label: string; href: string; active: boolean }[] }) {
+function TabStrip({
+  label,
+  tabs,
+}: {
+  label: string;
+  tabs: { label: string; href: string; active: boolean; icon?: Icon }[];
+}) {
   return (
     <nav aria-label={label} className="-mb-px flex gap-6 overflow-x-auto text-sm [scrollbar-width:none]">
       {tabs.map((t) => (
         <Link
-          key={t.href}
+          key={t.label}
           href={t.href}
           aria-current={t.active ? "page" : undefined}
           className={
             t.active
-              ? "shrink-0 border-b-2 border-foreground pt-1 pb-3 text-foreground"
-              : "shrink-0 border-b-2 border-transparent pt-1 pb-3 text-muted-foreground transition-colors hover:text-foreground"
+              ? "flex shrink-0 items-center gap-1.5 border-b-2 border-foreground pt-1 pb-3 text-foreground"
+              : "flex shrink-0 items-center gap-1.5 border-b-2 border-transparent pt-1 pb-3 text-muted-foreground transition-colors hover:text-foreground"
           }
         >
+          {t.icon && <t.icon aria-hidden className="size-4" />}
           {t.label}
         </Link>
       ))}

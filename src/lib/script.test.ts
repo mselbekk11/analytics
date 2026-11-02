@@ -87,6 +87,7 @@ function load(opts: {
   jar?: CookieJar;
   noRandomUUID?: boolean;
   analytics?: unknown;
+  title?: string;
 } = {}) {
   const sent: Sent[] = [];
   const winListeners: Record<string, Listener[]> = {};
@@ -108,6 +109,7 @@ function load(opts: {
       getAttribute: (name: string) => attrs[name] ?? null,
     },
     referrer: opts.referrer ?? "",
+    title: opts.title ?? "",
     visibilityState: "visible",
     addEventListener: (type: string, fn: Listener, capture?: boolean) => {
       if (type === "click" || type === "auxclick") expect(capture).toBe(true);
@@ -168,6 +170,7 @@ function load(opts: {
     },
     location,
     window,
+    document,
     /** A click (button 0) or auxclick (1 = middle, 2 = right) on `target`. */
     click(target: FakeElement, button = 0) {
       const type = button === 0 ? "click" : "auxclick";
@@ -378,6 +381,30 @@ describe("engaged-time pings", () => {
     vi.setSystemTime(30 * 60_000 + 5_000);
     page.tick();
     expect(pings(page.sent).at(-1)).toMatchObject({ pvId: "id-4", ms: 5_000 });
+  });
+});
+
+describe("page titles", () => {
+  test("go with the pageview, whitespace collapsed and cut to 200 characters", () => {
+    expect(load({ title: "  Pricing \n  — Picai  " }).sent[0]).toMatchObject({ t: "pv", ti: "Pricing — Picai" });
+    expect((load({ title: "x".repeat(250) }).sent[0].ti as string).length).toBe(200);
+  });
+
+  test("are left out when the page has none", () => {
+    expect(load({ title: "   " }).sent[0]).not.toHaveProperty("ti");
+  });
+
+  test("after an SPA route change, only once the app has set a new title", () => {
+    const { sent, history, document } = load({ title: "Home" });
+    history.pushState({}, "", "/stale");
+    document.title = "Pricing";
+    history.pushState({}, "", "/pricing");
+    const pageviews = sent.filter((s) => s.t === "pv");
+    expect(pageviews.map((s) => [s.path, s.ti])).toEqual([
+      ["/", "Home"],
+      ["/stale", undefined],
+      ["/pricing", "Pricing"],
+    ]);
   });
 });
 

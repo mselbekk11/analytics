@@ -2,8 +2,8 @@
 
 import { useState, type PointerEvent } from "react";
 import { cn } from "cn";
-import { countryName } from "@/lib/format";
-import world from "./world-110m.json";
+import { countryFlag, countryName } from "@/lib/format";
+import world from "./world-dots.json";
 
 export type MapValue = {
   /** ISO alpha-2, as the Countries list keys its rows */
@@ -23,25 +23,34 @@ type Props = {
   onSelect: ((code: string) => void) | null;
 };
 
+const centres: Record<string, number[]> = world.centres;
+// Bubble radii in map units (the map is 960 wide, so roughly half that in pixels on a card)
+const MIN_RADIUS = 6;
+const MAX_RADIUS = 24;
+
 /**
- * The Countries card's Map tab: 110m outlines (from `npm run build:world-map`), each
- * country shaded by its share of the top country's count, from faint to the foreground
- * colour. Loaded only when the tab opens, as the outlines are ~110 KB.
+ * The Countries card's Map tab: a dot-matrix world (from `npm run build:world-map`) with
+ * one bubble per country at its centre, sized by the square root of its share of the top
+ * country's count. "Unknown", and the few places without a centre, stay in the list only.
+ * Loaded only when the tab opens.
  */
 export default function WorldMap({ values, metric, active, onSelect }: Props) {
-  const [hover, setHover] = useState<{ code: string; x: number; y: number } | null>(null);
-  const byCode = new Map(values.map((v) => [v.code, v]));
-  // Only countries with an outline set the scale ("Unknown" and tiny islands don't)
-  const top = Math.max(0, ...world.countries.map((c) => byCode.get(c.code)?.count ?? 0));
-  const hovered = hover && (byCode.get(hover.code) ?? { code: hover.code, count: 0, value: "0" });
+  const [hover, setHover] = useState<{ code: string; x: number; y: number; width: number } | null>(null);
+  const placed = values.filter((v) => v.count > 0 && centres[v.code]);
+  const top = Math.max(0, ...placed.map((v) => v.count));
+  // Big bubbles first so small neighbours stay on top, and the active one last of all
+  const bubbles = placed
+    .map((v) => ({ ...v, r: MIN_RADIUS + (MAX_RADIUS - MIN_RADIUS) * Math.sqrt(v.count / top) }))
+    .sort((a, b) => Number(a.code === active) - Number(b.code === active) || b.r - a.r);
+  const hovered = hover && placed.find((v) => v.code === hover.code);
 
-  const track = (code: string) => (e: PointerEvent<SVGPathElement>) => {
+  const track = (code: string) => (e: PointerEvent<SVGCircleElement>) => {
     const box = e.currentTarget.ownerSVGElement?.parentElement?.getBoundingClientRect();
-    if (box) setHover({ code, x: e.clientX - box.left, y: e.clientY - box.top });
+    if (box) setHover({ code, x: e.clientX - box.left, y: e.clientY - box.top, width: box.width });
   };
 
   return (
-    <div className="relative flex min-h-66 flex-1 items-center">
+    <div className="relative flex min-h-40 flex-1 items-center sm:min-h-66">
       <svg
         viewBox={`0 0 ${world.width} ${world.height}`}
         role="img"
@@ -49,25 +58,30 @@ export default function WorldMap({ values, metric, active, onSelect }: Props) {
         className="h-auto w-full"
         onPointerLeave={() => setHover(null)}
       >
-        {/* The active country last, so its outline isn't covered by its neighbours */}
-        {[...world.countries].sort((a, b) => Number(a.code === active) - Number(b.code === active)).map(({ code, d }) => {
-          const v = byCode.get(code);
-          // Square root, so a few large countries don't wash out the rest
-          const shade = v && top > 0 && v.count > 0 ? 0.25 + 0.75 * Math.sqrt(v.count / top) : 0;
-          const clickable = onSelect !== null && v !== undefined && v.count > 0;
+        <path
+          d={world.dots}
+          className="fill-none stroke-foreground/25 dark:stroke-foreground/15"
+          strokeWidth={world.dotRadius * 2}
+          strokeLinecap="round"
+        />
+        {bubbles.map(({ code, r }) => {
+          const [cx, cy] = centres[code];
           return (
-            <path
+            <circle
               key={code}
-              d={d}
+              cx={cx}
+              cy={cy}
+              r={r}
               onPointerMove={track(code)}
-              onClick={clickable ? () => onSelect(code) : undefined}
+              onClick={onSelect ? () => onSelect(code) : undefined}
               className={cn(
-                "transition-[fill-opacity] [vector-effect:non-scaling-stroke]",
-                code === active ? "stroke-ring [stroke-width:1.5]" : "stroke-background [stroke-width:0.5]",
-                shade > 0 ? "fill-foreground" : code === hover?.code ? "fill-foreground/20" : "fill-foreground/10",
-                clickable && "cursor-pointer",
+                "fill-series-visitors transition-[fill-opacity,stroke-opacity]",
+                code === active
+                  ? "stroke-foreground [stroke-width:2]"
+                  : "stroke-series-visitors [stroke-opacity:0.3] [stroke-width:5]",
+                code === hover?.code ? "[fill-opacity:1]" : "[fill-opacity:0.85]",
+                onSelect && "cursor-pointer",
               )}
-              style={shade > 0 && code !== hover?.code ? { fillOpacity: shade } : undefined}
             />
           );
         })}
@@ -75,11 +89,19 @@ export default function WorldMap({ values, metric, active, onSelect }: Props) {
       {hovered && hover && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute z-50 -translate-x-1/2 -translate-y-full rounded-md bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background"
-          style={{ left: hover.x, top: hover.y - 10 }}
+          className={cn(
+            "pointer-events-none absolute z-50 flex -translate-y-full items-center gap-1.5 rounded-md bg-popover px-2.5 py-1.5 text-xs whitespace-nowrap text-popover-foreground shadow-md ring-1 ring-line",
+            // Opens away from the nearer edge, so it stays on the card on a phone
+            hover.x > hover.width / 2 && "-translate-x-full",
+          )}
+          style={{ left: hover.x > hover.width / 2 ? hover.x - 8 : hover.x + 8, top: hover.y - 8 }}
         >
-          {countryName(hovered.code)} · <span className="tabular-nums">{hovered.value}</span>{" "}
-          {hovered.count === 1 ? metric.toLowerCase().replace(/s$/, "") : metric.toLowerCase()}
+          {countryFlag(hovered.code) && <span aria-hidden>{countryFlag(hovered.code)}</span>}
+          <span className="font-medium">{countryName(hovered.code)}</span>
+          <span className="text-muted-foreground">
+            · <span className="tabular-nums">{hovered.value}</span>{" "}
+            {hovered.count === 1 ? metric.toLowerCase().replace(/s$/, "") : metric.toLowerCase()}
+          </span>
         </div>
       )}
     </div>

@@ -129,6 +129,7 @@
     // Visible time on the current page, paused while the tab is hidden
     var pvId = null;
     var lastPath = null;
+    var lastTitle = null;
     var pendingMs = 0;
     var visibleSince = null;
     var pings = 0;
@@ -197,6 +198,11 @@
       };
       var tags = isFirst && campaign();
       if (tags) data.c = tags;
+      // The page's title, cut to 200 characters. After an SPA route change the app may
+      // not have set the new title yet, so the old page's title is left out
+      var title = (d.title || "").replace(/\s+/g, " ").trim().substring(0, 200);
+      if (title && (isFirst || title !== lastTitle)) data.ti = title;
+      lastTitle = title;
       send(data);
     }
 

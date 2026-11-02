@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
+import { rankEntries, type CardMetric } from "./lib/dims";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -274,7 +275,24 @@ describe("stats.breakdown", () => {
     expect(b.totalVisitors).toBe(3);
   });
 
-  test("visitor lists sort by visitors and drop keys with no unique visits", async () => {
+  test("the rows re-rank by each card metric", async () => {
+    const t = await setup();
+    // US: one visitor, three pageviews; NO: two visitors, two pageviews
+    await visit(t, "2026-10-10T17:00:00Z", { country: "US" });
+    await visit(t, "2026-10-10T17:01:00Z", { country: "US", unique: false });
+    await visit(t, "2026-10-10T17:02:00Z", { country: "US", unique: false });
+    await visit(t, "2026-10-11T17:00:00Z", { country: "NO" });
+    await visit(t, "2026-10-11T18:00:00Z", { country: "NO" });
+
+    const b = await t.withIdentity(OWNER).query(api.stats.breakdown, { ...range, dim: "country" });
+    const keys = (metric: CardMetric) => rankEntries("country", b.rows, metric).map((r) => r.key);
+    expect(keys("visitors")).toEqual(["NO", "US"]);
+    expect(keys("pageviews")).toEqual(["US", "NO"]);
+    // No payments: every row has zero revenue and drops out
+    expect(keys("revenue")).toEqual([]);
+  });
+
+  test("visitor lists sort by visitors; keys with no unique visits are kept for Pageviews", async () => {
     const t = await setup();
     await visit(t, "2026-10-10T17:00:00Z", { referrer: "google.com" });
     await visit(t, "2026-10-11T17:00:00Z", { referrer: "google.com" });
@@ -289,7 +307,10 @@ describe("stats.breakdown", () => {
     expect(b.rows.map((r) => [r.key, r.visitors])).toEqual([
       ["google.com", 2],
       ["news.ycombinator.com", 1],
+      ["(direct)", 0],
     ]);
+    // The page drops it under Visitors
+    expect(rankEntries("referrer", b.rows, "visitors").map((r) => r.key)).toEqual(["google.com", "news.ycombinator.com"]);
     expect(b.totalVisitors).toBe(3);
   });
 

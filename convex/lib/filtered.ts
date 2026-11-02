@@ -1,7 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { sessionSource, sourceDims } from "./attribution";
-import { breakdownKey, dimValidator, rankEntries, type Dim, type DimEntry } from "./dims";
+import { breakdownKey, dimValidator, topEntries, type Dim, type DimEntry } from "./dims";
+import { emptyPageEntry, type PageEntry } from "./pages";
 import type { Filter } from "./filters";
 import { localDate, localHour } from "./dates";
 import { cityKey, regionKey } from "./geo";
@@ -162,7 +163,30 @@ export async function filteredView(
   filters: Filter[],
 ): Promise<FilteredView> {
   try {
-    return { status: "ok", ...(await compute(ctx, site, window, filters)) };
+    const { summary, timeseries, breakdowns, goals, conversions } = await compute(ctx, site, window, filters);
+    return { status: "ok", summary, timeseries, breakdowns, goals, conversions };
+  } catch (e) {
+    if (e instanceof TooManyRows) return { status: "tooMany" };
+    throw e;
+  }
+}
+
+/**
+ * The Pages tab over the same rows: every page the matching sessions viewed (not just
+ * the top rows), with its pageviews at each of the window's points, and the summary for
+ * its tiles.
+ */
+export async function filteredPages(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+): Promise<
+  { status: "ok"; pages: PageEntry[]; totalPageviews: number; summary: Summary } | { status: "tooMany" }
+> {
+  try {
+    const { pages, breakdowns, summary } = await compute(ctx, site, window, filters);
+    return { status: "ok", pages, totalPageviews: breakdowns.page.totalPageviews, summary };
   } catch (e) {
     if (e instanceof TooManyRows) return { status: "tooMany" };
     throw e;
@@ -335,7 +359,45 @@ async function compute(ctx: QueryCtx, site: Doc<"sites">, window: ViewWindow, fi
     otherCurrencyPayments: currentPayments.filter(({ payment: p }) => p.currency !== currency).length,
   };
 
-  return { summary, timeseries, breakdowns, goals, conversions };
+  // The Pages tab: each page's pageviews per point, counted where its session counts (as
+  // the chart does), the sessions that viewed it, entries and bounces on the entry page,
+  // and the time its pageviews sent
+  const pointIndex = new Map(window.points.map((point, i) => [point, i]));
+  const byPath = new Map<string, PageEntry>();
+  const page = (path: string) => {
+    let e = byPath.get(path);
+    if (!e) {
+      e = emptyPageEntry(path, window.points.length);
+      byPath.set(path, e);
+    }
+    return e;
+  };
+  for (const e of breakdownEntries("page", current, currentPayments, currency, currentLoose).entries) {
+    Object.assign(page(e.key), e);
+  }
+  const viewed = (pv: Doc<"pageviews">, at: string | undefined) => {
+    const e = page(pv.path);
+    const i = at === undefined ? undefined : pointIndex.get(at);
+    if (i !== undefined) e.trend[i]++;
+    if (pv.durationMs === undefined) return;
+    e.engagedMs += pv.durationMs;
+    e.durationCount++;
+  };
+  for (const { session: s, pageviews } of current) {
+    const at = window.point(s.startedAt, s.date);
+    for (const p of pageviews) viewed(p, at);
+    for (const path of new Set(pageviews.map((p) => p.path))) page(path).sessions++;
+    const entry = page(s.entryPath);
+    entry.entries++;
+    if (s.pageviews <= 1 && s.goals === 0) entry.bounces++;
+  }
+  for (const { pageviews } of sessionsIn(prev)) {
+    for (const path of new Set(pageviews.map((p) => p.path))) page(path).previousSessions++;
+  }
+  for (const l of currentLoose) viewed(l.pageview, window.point(l.pageview.ts, l.date));
+  const pages = [...byPath.values()];
+
+  return { summary, timeseries, breakdowns, goals, conversions, pages };
 }
 
 /**
@@ -451,6 +513,33 @@ function breakdown(
   /** Session lists: keeps only these keys, in the rows and the totals */
   keep: (key: string) => boolean = () => true,
 ): BreakdownResult {
+  const { entries, totalVisitors } = breakdownEntries(dim, sessions, payments, currency, loose, keep);
+  const total = { pageviews: 0, sessions: 0, events: 0, revenueMinor: 0 };
+  for (const e of entries) {
+    total.pageviews += e.pageviews;
+    total.sessions += e.sessions;
+    total.events += e.events;
+    total.revenueMinor += e.revenueMinor;
+  }
+  return {
+    rows: topEntries(dim, entries, MAX_BREAKDOWN_KEYS),
+    totalPageviews: total.pageviews,
+    totalVisitors,
+    totalSessions: total.sessions,
+    totalEvents: total.events,
+    totalRevenueMinor: total.revenueMinor,
+  };
+}
+
+/** Every key of one list, and the distinct visitors over all of them (see breakdown). */
+function breakdownEntries(
+  dim: Dim,
+  sessions: SessionInfo[],
+  payments: CreditedPayment[],
+  currency: string,
+  loose: LoosePageview[] = [],
+  keep: (key: string) => boolean = () => true,
+): { entries: DimEntry[]; totalVisitors: number } {
   const byKey = new Map<string, DimEntry & { ids: Set<string>; uniqueVisits: number }>();
   let uniqueVisits = 0;
   const allIds = new Set<string>();
@@ -509,21 +598,7 @@ function breakdown(
   }
 
   const entries = [...byKey.values()].map(({ ids, uniqueVisits, ...e }) => ({ ...e, visitors: ids.size + uniqueVisits }));
-  const total = { pageviews: 0, sessions: 0, events: 0, revenueMinor: 0 };
-  for (const e of entries) {
-    total.pageviews += e.pageviews;
-    total.sessions += e.sessions;
-    total.events += e.events;
-    total.revenueMinor += e.revenueMinor;
-  }
-  return {
-    rows: rankEntries(dim, entries).slice(0, MAX_BREAKDOWN_KEYS),
-    totalPageviews: total.pageviews,
-    totalVisitors: allIds.size + uniqueVisits,
-    totalSessions: total.sessions,
-    totalEvents: total.events,
-    totalRevenueMinor: total.revenueMinor,
-  };
+  return { entries, totalVisitors: allIds.size + uniqueVisits };
 }
 
 /** The key a pageview without a session has on a list, if the pageview carries it. */

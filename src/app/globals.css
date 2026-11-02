@@ -4,7 +4,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* shadcn neutral tokens in a light and a dark set (.dark on <html>, set by next-themes) */
+/* shadcn neutral tokens in a light and a dark set (.dark on <html>, set by next-themes).
+   Dark uses piqo's near-black palette. Every border reads --line: --border, --input and
+   --sidebar-border all point at it, so one edit changes every border in the app. */
 
 @theme inline {
   --color-background: var(--background);
@@ -16,10 +18,14 @@
      The old `muted` (text) is now `muted-foreground`, and the old `accent` (blue counts
      and links) is now `link`, because shadcn uses both names for background colours. */
   --color-panel: var(--panel);
-  --color-line: var(--border);
+  --color-line: var(--line);
   --color-strong: var(--foreground);
   --color-link: var(--link);
   --color-bar: var(--bar);
+  --color-series-visitors: var(--series-visitors);
+  --color-series-pageviews: var(--series-pageviews);
+  --color-series-revenue: var(--series-revenue);
+  --color-series-goal: var(--series-goal);
   --color-up: var(--up);
   --color-down: var(--down);
   --font-heading: var(--font-sans);
@@ -31,11 +37,6 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -77,19 +78,20 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --line: #e5e5e5;
+  --border: var(--line);
+  --input: var(--line);
   --ring: oklch(0.708 0 0);
-  /* Monochrome chart: 1 is the foreground, 2-5 are greys */
-  --chart-1: oklch(0.145 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.708 0 0);
-  --chart-4: oklch(0.439 0 0);
-  --chart-5: oklch(0.87 0 0);
   --radius: 0.625rem;
   --panel: oklch(0.985 0 0);
   --link: oklch(0.546 0.245 262.881);
-  --bar: oklch(0.922 0 0);
+  /* Row share bars: a subtle tint on the card */
+  --bar: #f4f4f4;
+  /* Series colours for the chart and the tile dots */
+  --series-visitors: #2563eb;
+  --series-pageviews: #60a5fa;
+  --series-revenue: #059669;
+  --series-goal: #7c3aed;
   --up: oklch(0.627 0.194 149.214);
   --down: oklch(0.577 0.245 27.325);
   --sidebar: oklch(0.985 0 0);
@@ -98,46 +100,46 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: var(--line);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #0a0a0a;
+  --card-foreground: #ededed;
+  --popover: #111111;
+  --popover-foreground: #ededed;
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ededed;
+  --muted: #1a1a1a;
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: #1a1a1a;
+  --accent-foreground: #ededed;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --line: #1f1f1f;
+  --border: var(--line);
+  --input: var(--line);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.985 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.708 0 0);
-  --chart-5: oklch(0.371 0 0);
-  --panel: oklch(0.205 0 0);
+  --panel: #0a0a0a;
   --link: oklch(0.707 0.165 254.624);
-  --bar: oklch(0.371 0 0);
+  --bar: #141414;
+  --series-visitors: #4f8fe0;
+  --series-pageviews: #8fb4e3;
+  --series-revenue: #2eab7e;
+  --series-goal: #9c7ee6;
   --up: oklch(0.792 0.209 151.711);
   --down: oklch(0.704 0.191 22.216);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar: #0a0a0a;
+  --sidebar-foreground: #ededed;
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: var(--line);
   --sidebar-ring: oklch(0.556 0 0);
 }
 

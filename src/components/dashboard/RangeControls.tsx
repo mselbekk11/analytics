@@ -43,7 +43,10 @@ type Props = {
   onChange: (next: Preset | DateRange) => void;
 };
 
-/** Segmented Today | 24h | 7d | 30d, the full range menu with Custom range…, and the (not yet working) Filter button. */
+/** Hidden until filtering from a menu works; click-to-filter and the chips work without it. */
+const SHOW_FILTER_BUTTON = false;
+
+/** Segmented Today | 24h | 7d | 30d, the full range menu with Custom range…, and the (not yet working, hidden) Filter button. */
 export default function RangeControls({ range, preset, today, onChange }: Props) {
   const [customOpen, setCustomOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -113,24 +116,26 @@ export default function RangeControls({ range, preset, today, onChange }: Props)
         </Popover>
       </div>
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              focusableWhenDisabled
-              // Focusable when disabled sets data-disabled, not :disabled, so dim it here
-              className="h-8 gap-1.5 px-3 data-disabled:cursor-default data-disabled:opacity-60 data-disabled:hover:bg-transparent"
-            />
-          }
-        >
-          <SlidersHorizontalIcon aria-hidden />
-          Filter
-        </TooltipTrigger>
-        <TooltipContent>Coming soon</TooltipContent>
-      </Tooltip>
+      {SHOW_FILTER_BUTTON && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                focusableWhenDisabled
+                // Focusable when disabled sets data-disabled, not :disabled, so dim it here
+                className="h-8 gap-1.5 px-3 data-disabled:cursor-default data-disabled:opacity-60 data-disabled:hover:bg-transparent"
+              />
+            }
+          >
+            <SlidersHorizontalIcon aria-hidden />
+            Filter
+          </TooltipTrigger>
+          <TooltipContent>Coming soon</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

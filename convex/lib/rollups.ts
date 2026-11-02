@@ -70,6 +70,7 @@ export async function bumpDailyDim(
   dim: Dim,
   key: string,
   countsVisitor: boolean, // first hit of the visitor that day (an SA unique visit without cookies)
+  page: PageDelta = {}, // page rows only: the pageview's session counts (see bumpPageDim)
 ): Promise<void> {
   const row = await ctx.db
     .query("dailyDims")
@@ -79,13 +80,59 @@ export async function bumpDailyDim(
     .unique();
   const visitors = countsVisitor ? 1 : 0;
   if (row === null) {
-    await ctx.db.insert("dailyDims", { siteId, date, dim, key, pageviews: 1, visitors });
+    await ctx.db.insert("dailyDims", { siteId, date, dim, key, pageviews: 1, visitors, ...pageFields(null, page) });
     return;
   }
   await ctx.db.patch("dailyDims", row._id, {
     pageviews: row.pageviews + 1,
     visitors: row.visitors + visitors,
+    ...pageFields(row, page),
   });
+}
+
+/** What a page row counts besides pageviews and visitors (design v4 Phase 6). */
+export type PageDelta = {
+  sessions?: number; // the first pageview of a session on this page
+  entries?: number; // a session started here
+  bounces?: number; // a session started here with one pageview and no goal
+  engagedMs?: number; // engaged time pinged on the page's pageviews
+  durationCount?: number; // pageviews that sent any time
+};
+
+const PAGE_FIELDS = ["sessions", "entries", "bounces", "engagedMs", "durationCount"] as const;
+
+// Only the fields in the delta, so other rows don't gain zero fields
+function pageFields(row: Doc<"dailyDims"> | null, delta: PageDelta) {
+  const out: PageDelta = {};
+  for (const f of PAGE_FIELDS) {
+    if (delta[f] !== undefined) out[f] = (row?.[f] ?? 0) + delta[f];
+  }
+  return out;
+}
+
+/**
+ * Adds to a page row's sessions, bounces or time without a pageview: a bounce taken back
+ * when the session goes on, or a ping. The row is the pageview's day (bounces: the day
+ * the session started, on its entry page).
+ */
+export async function bumpPageDim(
+  ctx: MutationCtx,
+  siteId: Id<"sites">,
+  date: string,
+  path: string,
+  delta: PageDelta,
+): Promise<void> {
+  const row = await ctx.db
+    .query("dailyDims")
+    .withIndex("by_site_date_dim_key", (q) =>
+      q.eq("siteId", siteId).eq("date", date).eq("dim", "page").eq("key", path),
+    )
+    .unique();
+  if (row === null) {
+    await ctx.db.insert("dailyDims", { siteId, date, dim: "page", key: path, pageviews: 0, visitors: 0, ...pageFields(null, delta) });
+    return;
+  }
+  await ctx.db.patch("dailyDims", row._id, pageFields(row, delta));
 }
 
 /**

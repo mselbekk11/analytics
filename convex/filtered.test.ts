@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
+import { rankEntries, type CardMetric } from "./lib/dims";
 import type { Filter } from "./lib/filters";
 import schema from "./schema";
 
@@ -16,6 +17,12 @@ const VID_C = "0b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f7c";
 const SID1 = "1b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f71";
 const SID2 = "2b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f72";
 const SID3 = "3b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f73";
+const VID_D = "0b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f7d";
+const VID_E = "0b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f7e";
+const SID4 = "4b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f74";
+const SID5 = "5b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f75";
+const VID_F = "0b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f7f";
+const SID6 = "6b6f3a52-6c1e-4f7e-9a51-2d3c4b5a6f76";
 
 const WEEK = { from: "2026-10-07", to: "2026-10-13" };
 
@@ -309,4 +316,28 @@ test("a payment credited to a session before the range still counts under that s
   expect(pricing.summary.current.revenueMinor).toBe(1000);
   const direct = await ok(owner, [{ dim: "channel", value: "Direct" }], day);
   expect(direct.summary.current.revenueMinor).toBe(0);
+});
+
+test("filtered lists re-rank by each card metric", async () => {
+  const { t, owner } = await seed();
+  // A third page for A (US: A and C, four pageviews); three one-page visitors from
+  // Norway, all on phones
+  await visit(t, "2026-10-12T17:03:00Z", { vid: VID_A, sid: SID1, pvId: "a3", path: "/docs" });
+  await visit(t, "2026-10-13T09:00:00Z", { vid: VID_D, sid: SID4, pvId: "d1", country: "NO" });
+  await visit(t, "2026-10-13T10:00:00Z", { vid: VID_E, sid: SID5, pvId: "e1", country: "NO" });
+  await visit(t, "2026-10-13T11:00:00Z", { vid: VID_F, sid: SID6, pvId: "f1", country: "NO" });
+
+  const view = await ok(owner, [{ dim: "device", value: "mobile" }]);
+  const keys = (metric: CardMetric) => rankEntries("country", view.breakdowns.country.rows, metric).map((r) => r.key);
+  // Germany is on a desktop, so filtered out
+  expect(keys("visitors")).toEqual(["NO", "US"]);
+  expect(keys("pageviews")).toEqual(["US", "NO"]);
+  // A's $49 is credited to the US; Norway has none and drops out
+  expect(keys("revenue")).toEqual(["US"]);
+  // Pages have no revenue: they keep their pageviews
+  expect(rankEntries("page", view.breakdowns.page.rows, "revenue").map((r) => [r.key, r.pageviews])).toEqual([
+    ["/", 5],
+    ["/docs", 1],
+    ["/pricing", 1],
+  ]);
 });

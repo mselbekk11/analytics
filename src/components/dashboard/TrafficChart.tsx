@@ -4,7 +4,7 @@ import { Area, Bar, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "rec
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { Series } from "../../../convex/lib/statsShapes";
 import { formatDuration, formatMoney, formatNumber, formatPoint, formatRate } from "@/lib/format";
-import { SERIES_COLOR, type SeriesKey } from "./series";
+import { SERIES_COLOR, SERIES_KEYS, type SeriesKey } from "./series";
 
 type Props = {
   data: Series | undefined;
@@ -20,7 +20,8 @@ type Props = {
   tracking: boolean;
 };
 
-// Hidden scales: bars stay in the lower part of the chart, lines use most of its height
+// Hidden scales: Revenue and key-goal bars stay in the lower part of the chart, lines
+// use most of its height
 const barDomain = [0, (max: number) => (max > 0 ? max * 1.5 : 1)] as [number, (max: number) => number];
 const lineDomain = [0, (max: number) => (max > 0 ? max * 1.1 : 1)] as [number, (max: number) => number];
 
@@ -31,10 +32,11 @@ const DASH: Partial<Record<SeriesKey, string>> = {
 };
 
 /**
- * The monochrome chart under the tiles: Visitors and Pageviews as areas on the visible
- * scale, Revenue and the key goal as bars, and the rates and duration as dashed lines,
- * each on its own hidden scale. Drawn bars first, so the lines sit on top and the
- * tooltip lists them in the example's order.
+ * The chart under the tiles, the same for hours and days: Visitors as blue bars and
+ * Pageviews as a light-blue line with a soft fill, both on the visible scale; Revenue
+ * (green) and the key goal (purple) as bars beside Visitors in each bucket, and the rates
+ * and duration as grey dashed lines, each on its own hidden scale. Bars are drawn first,
+ * so the lines sit on top. The tooltip lists the series in tile order.
  */
 export default function TrafficChart({ data, shown, labels, trackingStart, currency, tracking }: Props) {
   if (data === undefined) {
@@ -75,12 +77,13 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
 
   return (
     <ChartContainer config={config} className="aspect-auto h-72 w-full">
-      <ComposedChart data={points} margin={{ top: 8, right: 4, bottom: 0, left: counts ? -8 : 4 }} barGap={2}>
+      <ComposedChart
+        data={points}
+        margin={{ top: 8, right: 4, bottom: 0, left: counts ? -8 : 4 }}
+        barGap={2}
+        barCategoryGap="20%"
+      >
         <defs>
-          <linearGradient id="fill-visitors" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-visitors)" stopOpacity={0.22} />
-            <stop offset="100%" stopColor="var(--color-visitors)" stopOpacity={0} />
-          </linearGradient>
           <linearGradient id="fill-pageviews" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--color-pageviews)" stopOpacity={0.14} />
             <stop offset="100%" stopColor="var(--color-pageviews)" stopOpacity={0} />
@@ -104,15 +107,20 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
           width={44}
         />
         {(["revenue", "goal"] as const).filter(on).map((k) => (
-          <YAxis key={k} yAxisId={k} hide domain={barDomain} />
+          <YAxis key={k} yAxisId={k} hide width={0} domain={barDomain} />
         ))}
         {(["conversionRate", "bounceRate", "visitDuration"] as const).filter(on).map((k) => (
-          <YAxis key={k} yAxisId={k} hide domain={lineDomain} />
+          <YAxis key={k} yAxisId={k} hide width={0} domain={lineDomain} />
         ))}
         <ChartTooltip
           cursor={{ stroke: "var(--muted-foreground)", strokeWidth: 1 }}
-          content={
+          content={(props) => (
             <ChartTooltipContent
+              active={props.active}
+              label={props.label}
+              payload={[...(props.payload ?? [])].sort(
+                (a, b) => SERIES_KEYS.indexOf(a.name as SeriesKey) - SERIES_KEYS.indexOf(b.name as SeriesKey),
+              )}
               className="min-w-44 gap-2.5 rounded-md border-border bg-popover px-3 py-2.5"
               labelClassName="font-normal text-muted-foreground"
               labelFormatter={(value) => formatPoint(String(value), true)}
@@ -126,7 +134,7 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
                 </div>
               )}
             />
-          }
+          )}
         />
         {marker >= 0 && (
           <ReferenceLine
@@ -144,15 +152,15 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
             }}
           />
         )}
-        {(["revenue", "goal"] as const).filter(on).map((k) => (
+        {(["visitors", "revenue", "goal"] as const).filter(on).map((k) => (
           <Bar
             key={k}
-            yAxisId={k}
+            yAxisId={k === "visitors" ? "count" : k}
             dataKey={k}
             name={k}
             fill={`var(--color-${k})`}
-            radius={[1, 1, 0, 0]}
-            maxBarSize={14}
+            radius={[2, 2, 0, 0]}
+            maxBarSize={16}
             isAnimationActive={false}
           />
         ))}
@@ -172,21 +180,20 @@ export default function TrafficChart({ data, shown, labels, trackingStart, curre
             isAnimationActive={false}
           />
         ))}
-        {(["pageviews", "visitors"] as const).filter(on).map((k) => (
+        {on("pageviews") && (
           <Area
-            key={k}
             yAxisId="count"
             type="linear"
-            dataKey={k}
-            name={k}
-            stroke={`var(--color-${k})`}
+            dataKey="pageviews"
+            name="pageviews"
+            stroke="var(--color-pageviews)"
             strokeWidth={1.5}
-            fill={`url(#fill-${k})`}
+            fill="url(#fill-pageviews)"
             dot={false}
-            activeDot={{ r: 3.5, fill: `var(--color-${k})`, stroke: "var(--background)", strokeWidth: 2 }}
+            activeDot={{ r: 3.5, fill: "var(--color-pageviews)", stroke: "var(--background)", strokeWidth: 2 }}
             isAnimationActive={false}
           />
-        ))}
+        )}
       </ComposedChart>
     </ChartContainer>
   );

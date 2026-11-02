@@ -44,8 +44,10 @@ type Props = {
   onTab: (id: string) => void;
   /** What the numbers count, on the right of the header ("Visitors", "Pageviews", ...) */
   metric?: string;
-  /** Makes the metric a "⇅" button that switches it (Visitors and Revenue) */
+  /** Makes the metric a "⇅" button that switches it (Visitors, Pageviews, Revenue) */
   onMetricSwitch?: () => void;
+  /** The button's accessible name and tooltip: what it shows and what comes next */
+  metricHint?: string;
   /** undefined while loading */
   rows: StatsRow[] | undefined;
   /** Shown when there are no rows; "No data for this range" by default */
@@ -70,6 +72,7 @@ export default function StatsCard({
   onTab,
   metric,
   onMetricSwitch,
+  metricHint,
   rows,
   empty,
   body,
@@ -96,7 +99,8 @@ export default function StatsCard({
           <button
             type="button"
             onClick={onMetricSwitch}
-            title="Switch between visitors and revenue"
+            title={metricHint}
+            aria-label={metricHint}
             className="flex shrink-0 items-center gap-1 rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             {metric}
@@ -210,7 +214,7 @@ function Row({ row }: { row: StatsRow }) {
     >
       <div
         aria-hidden
-        className="absolute inset-y-0 left-0 -z-10 rounded-md bg-muted dark:bg-muted/60"
+        className="absolute inset-y-0 left-0 -z-10 rounded-md bg-bar"
         style={{ width: `${Math.max(row.share * 100, 1)}%` }}
       />
       {row.icon && (

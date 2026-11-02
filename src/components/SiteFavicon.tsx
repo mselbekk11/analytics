@@ -9,7 +9,7 @@ export default function SiteFavicon({ domain, className }: { domain: string; cla
   return (
     <span
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center overflow-hidden rounded bg-white text-[11px] font-medium text-zinc-700 ring-1 ring-foreground/10",
+        "flex size-5 shrink-0 items-center justify-center overflow-hidden rounded bg-white text-[11px] font-medium text-zinc-700 ring-1 ring-line",
         className,
       )}
     >

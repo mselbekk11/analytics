@@ -4,7 +4,7 @@ import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
 import { requireSite } from "./lib/auth";
 import { hourWindow as hourBounds, localDate } from "./lib/dates";
-import { DIM_COUNTS, dimValidator, listChannelValidator, rankEntries, type Dim, type DimEntry } from "./lib/dims";
+import { DIM_COUNTS, dimValidator, listChannelValidator, topEntries, type Dim, type DimEntry } from "./lib/dims";
 import { dayWindow, filteredView, hourWindow } from "./lib/filtered";
 import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
 import { eachDate, isValidRange, previousRange, rangeDays, type DateRange } from "./lib/ranges";
@@ -46,7 +46,7 @@ function checkRange(range: DateRange): void {
   }
 }
 
-async function readDailyStats(
+export async function readDailyStats(
   ctx: QueryCtx,
   siteId: Id<"sites">,
   { from, to }: DateRange,
@@ -59,7 +59,7 @@ async function readDailyStats(
     .take(MAX_STATS_ROWS);
 }
 
-function sumTotals(rows: Doc<"dailyStats">[]) {
+export function sumTotals(rows: Doc<"dailyStats">[]) {
   let visitors = 0;
   let pageviews = 0;
   let durationSumMs = 0;
@@ -313,8 +313,9 @@ function onlyChannel(entries: DimEntry[], channel: Channel) {
  * largest first by the dim's metric (see dimMetric): pageviews for pages, sessions for
  * entry and exit pages, events for goals and outbound links, visitors (unique visits,
  * as SA does) for the rest. Keys with none of that metric are left out, unless they
- * have revenue ("Unattributed" has no visitors). The totals cover every key, including
- * any cut off by the row limit. With `channel` (sources only), the list and its totals
+ * have revenue ("Unattributed" has no visitors). The rows are the top keys by every
+ * count the card metric can pick (see topEntries), for the page to re-rank. The totals
+ * cover every key, including any cut off by the row limit. With `channel` (sources only), the list and its totals
  * keep just the sources the classifier puts in that channel (the AI tab).
  */
 export const breakdown = query({
@@ -331,9 +332,8 @@ export const breakdown = query({
     const summed = await sumDim(ctx, site._id, args.dim, range);
     const { entries, total } =
       args.channel === undefined ? summed : onlyChannel(summed.entries, args.channel);
-    const sorted = rankEntries(args.dim, entries);
     return {
-      rows: sorted.slice(0, MAX_BREAKDOWN_KEYS),
+      rows: topEntries(args.dim, entries, MAX_BREAKDOWN_KEYS),
       totalPageviews: total.pageviews,
       totalVisitors: total.visitors,
       totalSessions: total.sessions,

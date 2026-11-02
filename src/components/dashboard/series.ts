@@ -15,15 +15,18 @@ export const SERIES_KEYS = [
 
 export type SeriesKey = (typeof SERIES_KEYS)[number];
 
-/** Monochrome: the foreground for Visitors and Revenue, greys for the rest. */
+/**
+ * Blue for Visitors and Pageviews, green for Revenue, purple for the key goal. The rates
+ * and duration have no series colour of their own: grey, told apart by their dashes.
+ */
 export const SERIES_COLOR: Record<SeriesKey, string> = {
-  visitors: "var(--chart-1)",
-  pageviews: "var(--chart-2)",
-  revenue: "var(--chart-1)",
-  conversionRate: "var(--chart-4)",
-  goal: "var(--chart-3)",
-  bounceRate: "var(--chart-2)",
-  visitDuration: "var(--chart-4)",
+  visitors: "var(--series-visitors)",
+  pageviews: "var(--series-pageviews)",
+  revenue: "var(--series-revenue)",
+  conversionRate: "var(--muted-foreground)",
+  goal: "var(--series-goal)",
+  bounceRate: "var(--muted-foreground)",
+  visitDuration: "var(--muted-foreground)",
 };
 
 /** Series on the chart until the owner picks others. */

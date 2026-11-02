@@ -22,8 +22,8 @@ const LINKS = [
 ];
 
 /**
- * Initials circle and email (email from `sm` up); opens who is signed in, the account
- * pages and Sign out (to `/`). Replaces Clerk's UserButton in the top bar.
+ * Initials circle; opens who is signed in (the email), the account pages and Sign out
+ * (to `/`). Replaces Clerk's UserButton in the top bar.
  */
 export default function UserMenu() {
   const { user } = useUser();
@@ -36,14 +36,13 @@ export default function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Account menu"
-        className="flex min-w-0 items-center gap-2 rounded-md p-1 text-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:bg-accent data-popup-open:text-foreground sm:pr-2"
+        className="flex shrink-0 items-center rounded-full p-0.5 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:bg-accent"
       >
         <Avatar size="sm">
           <AvatarFallback className="text-[10px] font-medium text-foreground">
             {letters || <UserIcon aria-hidden className="size-3.5" />}
           </AvatarFallback>
         </Avatar>
-        {email && <span className="hidden max-w-48 truncate sm:block">{email}</span>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuGroup>

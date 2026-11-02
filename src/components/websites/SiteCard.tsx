@@ -11,10 +11,10 @@ import { sitePath } from "@/components/TopBar";
 
 type Day = { date: string; pageviews: number; visitors: number };
 
-// The dashboard chart's monochrome series: Visitors in the foreground, Pageviews grey
+// The dashboard chart's series colours
 const config = {
-  visitors: { label: "Visitors", color: "var(--chart-1)" },
-  pageviews: { label: "Pageviews", color: "var(--chart-2)" },
+  visitors: { label: "Visitors", color: "var(--series-visitors)" },
+  pageviews: { label: "Pageviews", color: "var(--series-pageviews)" },
 } satisfies ChartConfig;
 
 /**

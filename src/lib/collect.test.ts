@@ -99,6 +99,23 @@ describe("parsePayload", () => {
     expect(parsePayload(JSON.stringify({ ...ping, vid: VID, sid: SID }))).toEqual(ping);
   });
 
+  test("reads the title, collapsing whitespace and cutting it to 200 characters", () => {
+    expect(parsePayload(JSON.stringify({ ...pv, ti: "  Pricing \n\t— Picai " }))).toEqual({
+      ...pv,
+      nc: false,
+      title: "Pricing — Picai",
+    });
+    const long = parsePayload(JSON.stringify({ ...pv, ti: "x".repeat(250) }));
+    expect(long?.t === "pv" && long.title?.length).toBe(200);
+  });
+
+  test("leaves out an empty title, or one that isn't a string, and keeps the hit", () => {
+    for (const ti of ["   ", 42, null, ["a"]]) {
+      const parsed = parsePayload(JSON.stringify({ ...pv, ti }));
+      expect(parsed).toEqual({ ...pv, nc: false });
+    }
+  });
+
   test("reads campaign tags, trims them, drops empty ones and maps via to ref", () => {
     const parsed = parsePayload(
       JSON.stringify({
