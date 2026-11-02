@@ -87,7 +87,8 @@ export default function StatTile({
   );
 }
 
-function Change({ change, lowerIsBetter }: { change: number | null; lowerIsBetter?: boolean }) {
+/** A % change, green when good and red when bad, or "–" with nothing to compare. */
+export function Change({ change, lowerIsBetter }: { change: number | null; lowerIsBetter?: boolean }) {
   if (change === null) return <span className="text-xs leading-4 font-medium text-muted-foreground">–</span>;
   const rounded = Math.round(change * 1000);
   const good = lowerIsBetter ? -rounded : rounded;

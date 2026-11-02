@@ -20,6 +20,7 @@ import SiteShell from "@/components/dashboard/SiteShell";
 import { useSiteRange } from "@/components/dashboard/useSiteRange";
 import { Source } from "@/components/customers/Source";
 import VisitorAvatar from "@/components/customers/VisitorAvatar";
+import UsersOverview from "./UsersOverview";
 import { sitePath, visitorPath } from "@/components/TopBar";
 
 // The search box waits this long after the last key before asking again
@@ -93,13 +94,25 @@ function Users({
       onRange={setRange}
       filters={filters}
       onFilters={setFilters}
-      note={<p className="text-xs text-muted-foreground">Filters don&apos;t narrow the visitor table.</p>}
+      note={<p className="text-xs text-muted-foreground">Filters narrow the tiles, chart and lists, not the visitor table.</p>}
+    />
+  );
+  const overview = (
+    <UsersOverview
+      domain={domain}
+      range={range}
+      hourly={hourly}
+      hourNow={hourNow}
+      filters={filters}
+      onFilters={setFilters}
+      tracking={tracking}
     />
   );
   if (!tracking || shown?.status === "cookieless") {
     return (
       <div className="flex flex-col gap-10">
         {header}
+        {overview}
         <Cookieless domain={domain} />
       </div>
     );
@@ -114,6 +127,7 @@ function Users({
   return (
     <div className="flex flex-col gap-10">
       {header}
+      {overview}
       <section aria-labelledby="all-visitors" className="overflow-hidden rounded-lg border border-border">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
           <div className="flex items-center gap-4">

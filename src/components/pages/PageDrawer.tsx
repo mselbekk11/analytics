@@ -3,16 +3,15 @@
 import { useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { ArrowUpRight } from "lucide-react";
-import { Bar, BarChart, XAxis, YAxis } from "recharts";
 import { api } from "../../../convex/_generated/api";
 import { rankEntries, type Dim } from "../../../convex/lib/dims";
 import { MAX_FILTER_DAYS, type Filter } from "../../../convex/lib/filters";
 import type { DateRange } from "../../../convex/lib/ranges";
 import type { BreakdownResult } from "../../../convex/lib/statsShapes";
-import { formatDuration, formatNumber, formatPoint, formatShare } from "@/lib/format";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { formatDuration, formatNumber, formatShare } from "@/lib/format";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label, rowHref, rowIcon } from "@/components/dashboard/Breakdowns";
+import CountChart from "@/components/dashboard/CountChart";
 import StatsCard, { type StatsRow } from "@/components/dashboard/StatsCard";
 import type { HourPeriod } from "@/components/dashboard/useSiteRange";
 
@@ -28,10 +27,6 @@ type Props = {
   tracking: boolean;
   onClose: () => void;
 };
-
-const chartConfig = {
-  pageviews: { label: "Pageviews", color: "var(--series-pageviews)" },
-} satisfies ChartConfig;
 
 /**
  * The page drawer (design v4): one page of the Pages table over the same range and
@@ -114,7 +109,7 @@ export default function PageDrawer({ domain, path, range, hourly, hourNow, filte
                 {page === undefined ? (
                   <div className="h-44 animate-pulse rounded-md bg-muted/50" />
                 ) : (
-                  <PageviewsChart data={page.chart} />
+                  <CountChart data={page.chart} count="pageviews" />
                 )}
               </section>
               <section aria-labelledby="page-drawer-lists" className="flex flex-col gap-3">
@@ -144,50 +139,6 @@ function Tile({ label, value }: { label: string; value: string | undefined }) {
         <span className="truncate text-xl leading-7 font-semibold tracking-tight tabular-nums">{value}</span>
       )}
     </div>
-  );
-}
-
-function PageviewsChart({ data }: { data: { date: string; pageviews: number }[] }) {
-  return (
-    <ChartContainer config={chartConfig} className="aspect-auto h-44 w-full">
-      <BarChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -8 }} barCategoryGap="20%">
-        <XAxis
-          dataKey="date"
-          tickFormatter={(d: string) => formatPoint(d)}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={10}
-          minTickGap={32}
-        />
-        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} width={40} />
-        <ChartTooltip
-          cursor={{ fill: "var(--muted)", opacity: 0.5 }}
-          content={
-            <ChartTooltipContent
-              className="min-w-36 rounded-md border-border bg-popover px-3 py-2"
-              labelClassName="font-normal text-muted-foreground"
-              labelFormatter={(value) => formatPoint(String(value), true)}
-              formatter={(value) => (
-                <div className="flex w-full items-center gap-2">
-                  <span className="size-2 shrink-0 rounded-[2px] bg-(--color-pageviews)" />
-                  <span className="text-muted-foreground">Pageviews</span>
-                  <span className="ml-auto pl-4 font-medium text-foreground tabular-nums">
-                    {formatNumber(Number(value))}
-                  </span>
-                </div>
-              )}
-            />
-          }
-        />
-        <Bar
-          dataKey="pageviews"
-          fill="var(--color-pageviews)"
-          radius={[2, 2, 0, 0]}
-          maxBarSize={12}
-          isAnimationActive={false}
-        />
-      </BarChart>
-    </ChartContainer>
   );
 }
 
