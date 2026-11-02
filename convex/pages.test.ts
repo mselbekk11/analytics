@@ -205,3 +205,96 @@ test("titles: the latest non-empty one shows over its path, and old paths have n
   const search = await ok(owner, { range: { from: "2026-10-07", to: "2026-10-14" }, search: "plan" });
   expect(search.rows.map((r) => [r.path, r.title])).toEqual([["/pricing", "Plans"]]);
 });
+
+async function detail(
+  owner: Owner,
+  path: string,
+  opts: { range?: { from: string; to: string } | { period: "today" | "yesterday" | "24h"; now: number }; filters?: Filter[] } = {},
+) {
+  const { range = WEEK, filters = [] } = opts;
+  return await owner.query(api.pages.detail, { domain: "picai.so", range, filters, path });
+}
+
+async function detailOk(owner: Owner, path: string, opts: Parameters<typeof detail>[2] = {}) {
+  const result = await detail(owner, path, opts);
+  if (result.status !== "ok") throw new Error(`status ${result.status}`);
+  return result;
+}
+
+test("the page drawer belongs to the site's owner", async () => {
+  const { t } = await seed();
+  const args = { domain: "picai.so", range: WEEK, filters: [], path: "/pricing" };
+  await expect(t.query(api.pages.detail, args)).rejects.toThrow(/Not signed in/);
+  await expect(t.withIdentity(STRANGER).query(api.pages.detail, args)).rejects.toThrow(/Site not found/);
+});
+
+test("the page drawer: the page's row and the dashboard filtered by its page", async () => {
+  const { t, owner } = await seed();
+  await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: "b1", ms: 40_000 });
+  await t.mutation(api.ingest.ping, { secret: SECRET, site: "picai.so", hostname: "picai.so", pvId: "a2", ms: 20_000 });
+  const page = await detailOk(owner, "/pricing");
+  // A and B viewed it; B's session started there and went on, A's started on /
+  expect(page).toMatchObject({ title: null, visitors: 2, pageviews: 3, bounceRate: 0, durationMs: 30_000 });
+  expect(page.chart.map((p) => p.pageviews)).toEqual([0, 0, 0, 0, 0, 3, 0]);
+  expect(page.chart[0].date).toBe("2026-10-07");
+
+  const row = (await ok(owner)).rows.find((r) => r.path === "/pricing")!;
+  expect([row.views, row.bounceRate, row.durationMs]).toEqual([page.pageviews, page.bounceRate, page.durationMs]);
+
+  // The lists are the dashboard's with the page filter
+  const filters: Filter[] = [{ dim: "page", value: "/pricing" }];
+  const view = await owner.query(api.stats.filtered, { domain: "picai.so", ...WEEK, filters });
+  if (view.status !== "ok") throw new Error(view.status);
+  for (const dim of ["source", "country", "device", "browser"]) expect(page.breakdowns[dim]).toEqual(view.breakdowns[dim]);
+  expect(page.breakdowns.country.rows.map((r) => [r.key, r.visitors])).toEqual([
+    ["DE", 1],
+    ["US", 1],
+  ]);
+  expect(view.breakdowns.page.rows.find((r) => r.key === "/pricing")!.visitors).toBe(page.visitors);
+
+  // A bounce on the entry page; the title once one is sent
+  await visit(t, "2026-10-13T18:00:00Z", { vid: VID_B, sid: "s-d1", pvId: "d1", path: "/blog/hello", title: "Hello" });
+  expect(await detailOk(owner, "/blog/hello")).toMatchObject({ title: "Hello", visitors: 2, pageviews: 2, bounceRate: 1 });
+});
+
+test("the page drawer keeps the dashboard's filters, ranges and limits", async () => {
+  const { owner } = await seed();
+  const de = await detailOk(owner, "/pricing", { filters: [{ dim: "country", value: "DE" }] });
+  expect(de).toMatchObject({ visitors: 1, pageviews: 2 });
+  // The same page filter twice is one filter
+  expect(await detailOk(owner, "/pricing", { filters: [{ dim: "page", value: "/pricing" }] })).toMatchObject({
+    pageviews: 3,
+  });
+  // No views: zeros, not an error
+  expect(await detailOk(owner, "/nowhere")).toMatchObject({ visitors: 0, pageviews: 0, bounceRate: null, durationMs: null });
+
+  const today = await detailOk(owner, "/", { range: { period: "today", now: Date.parse("2026-10-13T17:00:00Z") } });
+  expect(today.chart).toHaveLength(11);
+  expect(today.chart[9]).toEqual({ date: "2026-10-13T09:00", pageviews: 1 });
+
+  expect(await detail(owner, "/", { range: { from: "2026-01-01", to: "2026-10-13" } })).toEqual({ status: "range" });
+});
+
+test("the page drawer counts cookieless pageviews of the page", async () => {
+  const { t, owner } = await seed();
+  vi.setSystemTime(new Date("2026-10-13T19:00:00Z"));
+  await t.mutation(api.ingest.pageview, {
+    secret: SECRET,
+    site: "picai.so",
+    hostname: "picai.so",
+    path: "/pricing",
+    referrer: "(direct)",
+    unique: true,
+    device: "mobile",
+    browser: "Safari",
+    country: "FR",
+    pvId: "x1",
+    cookieless: true,
+  });
+  const page = await detailOk(owner, "/pricing");
+  expect(page).toMatchObject({ visitors: 3, pageviews: 4 });
+  expect(page.breakdowns.country.rows.map((r) => r.key)).toContain("FR");
+  // Not with another filter: a pageview without a session has no country to match
+  expect(await detailOk(owner, "/pricing", { filters: [{ dim: "country", value: "FR" }] })).toMatchObject({ pageviews: 0 });
+  expect((await ok(owner)).rows.find((r) => r.path === "/pricing")!.views).toBe(4);
+});

@@ -305,7 +305,8 @@ function Breakdown({ domain, range, currency, view, metric, onMetric, card }: Pr
 
 type BreakdownRow = BreakdownResult["rows"][number];
 
-function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
+/** A list row's label: country names, device names, short referrers and links. */
+export function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
   switch (dim) {
     case "referrer":
       return referrerLabel(value);
@@ -327,13 +328,14 @@ function Label({ dim, value }: { dim: Dim; value: string }): ReactNode {
 }
 
 /** Referrers and outbound links open in a new tab. */
-function rowHref(dim: Dim, value: string): string | undefined {
+export function rowHref(dim: Dim, value: string): string | undefined {
   if (dim === "referrer" && value !== "(direct)") return `https://${value}`;
   if (dim === "outbound") return value;
   return undefined;
 }
 
-function rowIcon(dim: Dim, value: string): ReactNode {
+/** The device, browser or OS icon, flag or source favicon before a row's label. */
+export function rowIcon(dim: Dim, value: string): ReactNode {
   switch (dim) {
     case "device":
       return createElement(DEVICE_ICONS[value] ?? FiMonitor, { "aria-hidden": true });

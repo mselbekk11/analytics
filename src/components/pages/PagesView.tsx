@@ -23,6 +23,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import SiteHeader, { BlockedNotice } from "@/components/dashboard/SiteHeader";
 import SiteShell from "@/components/dashboard/SiteShell";
 import { useSiteRange } from "@/components/dashboard/useSiteRange";
+import PageDrawer from "./PageDrawer";
 
 // The search box waits this long after the last key before asking again
 const SEARCH_DELAY_MS = 200;
@@ -58,7 +59,11 @@ function Pages({
 }) {
   const tracking = trackingStartedAt !== null;
   const trackingStart = tracking ? localDate(trackingStartedAt, timezone) : null;
-  const { today, range, preset, hourly, hourNow, filters, setRange, setFilters } = useSiteRange(timezone, tracking);
+  const { today, range, preset, hourly, hourNow, filters, searchParams, navigate, setRange, setFilters } =
+    useSiteRange(timezone, tracking);
+  // The drawer's page, in `?page=` so it can be reloaded and shared
+  const openPath = searchParams.get("page") || null;
+  const openPage = (path: string | null) => navigate({ set: { page: path } });
 
   const [sort, setSort] = useState<{ by: PageSort; desc: boolean }>({ by: "views", desc: true });
   const [typed, setTyped] = useState("");
@@ -176,7 +181,14 @@ function Pages({
                   </tr>
                 ) : (
                   shown.rows.map((row) => (
-                    <Row key={row.path} row={row} total={shown.totalPageviews} currency={currency} />
+                    <Row
+                      key={row.path}
+                      row={row}
+                      total={shown.totalPageviews}
+                      currency={currency}
+                      open={row.path === openPath}
+                      onOpen={() => openPage(row.path)}
+                    />
                   ))
                 )}
               </tbody>
@@ -210,6 +222,16 @@ function Pages({
           )}
         </section>
       )}
+      <PageDrawer
+        domain={domain}
+        path={openPath}
+        range={range}
+        hourly={hourly}
+        hourNow={hourNow}
+        filters={filters}
+        tracking={tracking}
+        onClose={() => openPage(null)}
+      />
     </div>
   );
 }
@@ -300,24 +322,55 @@ function PageTile({ label, value, note }: { label: string; value: string | undef
   );
 }
 
-function Row({ row, total, currency }: { row: PageRow; total: number; currency: string | null }) {
+/**
+ * One page of the table. Clicking anywhere on it opens its drawer; the page cell is the
+ * button keyboards reach, and focus comes back to it when the drawer closes.
+ */
+function Row({
+  row,
+  total,
+  currency,
+  open,
+  onOpen,
+}: {
+  row: PageRow;
+  total: number;
+  currency: string | null;
+  /** Its drawer is open */
+  open: boolean;
+  onOpen: () => void;
+}) {
   return (
-    <tr className="border-b border-border last:border-b-0">
+    <tr
+      onClick={onOpen}
+      className={cn(
+        "cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-muted/40",
+        open && "bg-muted/40",
+      )}
+    >
       <td className="max-w-[320px] px-4 py-3 sm:pl-5">
-        {row.title === null ? (
-          <span className="block truncate" title={row.path}>
-            {row.path}
-          </span>
-        ) : (
-          <>
-            <span className="block truncate" title={row.title}>
-              {row.title}
-            </span>
-            <span className="block truncate text-xs text-muted-foreground" title={row.path}>
+        <button
+          type="button"
+          data-page-row={row.path}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className="block w-full min-w-0 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {row.title === null ? (
+            <span className="block truncate" title={row.path}>
               {row.path}
             </span>
-          </>
-        )}
+          ) : (
+            <>
+              <span className="block truncate" title={row.title}>
+                {row.title}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground" title={row.path}>
+                {row.path}
+              </span>
+            </>
+          )}
+        </button>
       </td>
       <td className="px-4 py-3">
         <Sparkline values={row.trend} />

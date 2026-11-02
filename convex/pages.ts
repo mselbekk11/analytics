@@ -3,11 +3,19 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireSite } from "./lib/auth";
 import { hourWindow as hourBounds } from "./lib/dates";
-import { dayWindow, filteredPages, hourWindow } from "./lib/filtered";
+import { dayWindow, filteredPage, filteredPages, hourWindow, type ViewWindow } from "./lib/filtered";
 import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
-import { emptyPageEntry, pageRow, pageSortValidator, pageTable, type PageEntry } from "./lib/pages";
+import {
+  avgDuration,
+  bounceRate,
+  emptyPageEntry,
+  pageRow,
+  pageSortValidator,
+  pageTable,
+  type PageEntry,
+} from "./lib/pages";
 import { eachDate, isValidRange, previousRange, rangeDays, type DateRange } from "./lib/ranges";
-import type { Totals } from "./lib/statsShapes";
+import { breakdownResult, type Totals } from "./lib/statsShapes";
 import { readDailyStats, sumTotals } from "./stats";
 
 // The Pages tab (design v4). Like the dashboard, day ranges read the page rollups, and
@@ -30,6 +38,15 @@ const pageTiles = v.object({
 });
 
 export type PageTiles = Infer<typeof pageTiles>;
+
+// Day ranges, or Today, Yesterday and 24h with the clock (snapped) from the page
+const rangeArg = v.union(
+  v.object({ from: v.string(), to: v.string() }),
+  v.object({
+    period: v.union(v.literal("today"), v.literal("yesterday"), v.literal("24h")),
+    now: v.number(),
+  }),
+);
 
 type Listed =
   | { status: "ok"; pages: PageEntry[]; totalPageviews: number; tiles: PageTiles; comparable: boolean }
@@ -58,13 +75,7 @@ function tiles(current: Totals, previous: Totals): PageTiles {
 export const list = query({
   args: {
     domain: v.string(),
-    range: v.union(
-      v.object({ from: v.string(), to: v.string() }),
-      v.object({
-        period: v.union(v.literal("today"), v.literal("yesterday"), v.literal("24h")),
-        now: v.number(),
-      }),
-    ),
+    range: rangeArg,
     filters: v.array(filterValidator),
     sort: pageSortValidator,
     desc: v.boolean(),
@@ -120,6 +131,59 @@ export const list = query({
       totalPageviews,
       tiles: result.tiles,
       comparable,
+    };
+  },
+});
+
+/**
+ * The page drawer: one page over the range, through the filtered view with `page:<path>`
+ * added to `filters` (see lib/filtered.ts filteredPage). Its title, Visitors, Pageviews,
+ * Bounce (on sessions that started there) and Avg. time, its pageviews at each point
+ * (days, or hours on Today, Yesterday and 24h), and the Sources (and Referrers),
+ * Countries, Devices and Browsers lists of the sessions that viewed it. Day ranges are
+ * limited to MAX_FILTER_DAYS, as filters are; `status` says when, or when the rows would
+ * go past the read limits.
+ */
+export const detail = query({
+  args: { domain: v.string(), range: rangeArg, filters: v.array(filterValidator), path: v.string() },
+  returns: v.union(
+    v.object({
+      status: v.literal("ok"),
+      title: v.union(v.null(), v.string()),
+      visitors: v.number(),
+      pageviews: v.number(),
+      bounceRate: v.union(v.null(), v.number()),
+      durationMs: v.union(v.null(), v.number()),
+      chart: v.array(v.object({ date: v.string(), pageviews: v.number() })),
+      breakdowns: v.record(v.string(), breakdownResult),
+    }),
+    v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
+  ),
+  handler: async (ctx, args) => {
+    const site = await requireSite(ctx, args.domain);
+    if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
+    let window: ViewWindow;
+    if ("period" in args.range) {
+      const { start, end } = hourBounds(args.range.period, args.range.now, site.timezone);
+      window = hourWindow(site, start, end);
+    } else {
+      const range = { from: args.range.from, to: args.range.to };
+      if (!isValidRange(range)) throw new ConvexError("Invalid date range");
+      if (rangeDays(range) > MAX_FILTER_DAYS) return { status: "range" as const };
+      window = dayWindow(site, range);
+    }
+    const view = await filteredPage(ctx, site, window, args.filters, args.path);
+    if (view.status !== "ok") return view;
+    const { page } = view;
+    return {
+      status: "ok" as const,
+      title: await pageTitle(ctx, site._id, args.path),
+      visitors: page.visitors,
+      pageviews: page.pageviews,
+      bounceRate: bounceRate(page),
+      durationMs: avgDuration(page),
+      chart: window.points.map((date, i) => ({ date, pageviews: page.trend[i] })),
+      breakdowns: view.breakdowns,
     };
   },
 });

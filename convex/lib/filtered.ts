@@ -193,7 +193,52 @@ export async function filteredPages(
   }
 }
 
-async function compute(ctx: QueryCtx, site: Doc<"sites">, window: ViewWindow, filters: Filter[]) {
+/** The lists the page drawer shows, besides its own counts */
+const PAGE_DETAIL_DIMS: Dim[] = ["source", "referrer", "country", "device", "browser"];
+
+/**
+ * The page drawer: the sessions that viewed `path` (and match `filters`), with that
+ * page's own counts (its pageviews per point, visitors, entries, bounces and time) and
+ * the lists of who read it. Pageviews without a session count when they are of the page
+ * and nothing else is filtered, so cookieless pages get views, time and lists.
+ */
+export async function filteredPage(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+  path: string,
+): Promise<
+{ status: "ok"; page: PageEntry; breakdowns: Record<string, BreakdownResult> } | { status: "tooMany" }
+> {
+  const withPage = filters.some((f) => f.dim === "page" && f.value === path)
+    ? filters
+    : [...filters, { dim: "page" as const, value: path }];
+  try {
+    const { pages, breakdowns } = await compute(ctx, site, window, withPage, path);
+    const page = pages.find((p) => p.key === path) ?? emptyPageEntry(path, window.points.length);
+    return {
+      status: "ok",
+      page,
+      breakdowns: Object.fromEntries(PAGE_DETAIL_DIMS.map((dim) => [dim, breakdowns[dim]])),
+    };
+  } catch (e) {
+    if (e instanceof TooManyRows) return { status: "tooMany" };
+    throw e;
+  }
+}
+
+/**
+ * Every number of a view. Pageviews without a session count when nothing is filtered,
+ * or, with `loosePath`, when they are of that page and every filter is that page.
+ */
+async function compute(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+  loosePath?: string,
+) {
   const budget = new Budget();
   const siteId = site._id;
   const { start, end } = window;
@@ -217,11 +262,13 @@ async function compute(ctx: QueryCtx, site: Doc<"sites">, window: ViewWindow, fi
   );
   // Pageviews without a session (cookieless sites, the old script) count toward
   // pageviews and the pageview lists when nothing is filtered, on their own time
+  const onlyPage = loosePath !== undefined && filters.every((f) => f.dim === "page" && f.value === loosePath);
+  const keepLoose = (p: Doc<"pageviews">) => filters.length === 0 || (onlyPage && p.path === loosePath);
   const loose: LoosePageview[] = [];
   for (const p of pageviewRows) {
     if (p.sessionId) {
       infos.get(p.sessionId)?.pageviews.push(p);
-    } else if (filters.length === 0 && p.ts < end) {
+    } else if (p.ts < end && keepLoose(p)) {
       const date = localDate(p.ts, site.timezone);
       if (inWindow(p.ts, date)) loose.push({ pageview: p, date });
     }
