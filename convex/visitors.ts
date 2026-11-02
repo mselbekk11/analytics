@@ -1,4 +1,4 @@
-import { ConvexError, v, type Infer } from "convex/values";
+import { ConvexError, v, type Infer, type ObjectType } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
@@ -211,14 +211,16 @@ export type VisitorRow = Infer<typeof visitorRow>;
  * mean on the site, empty when it has neither revenue nor a key goal. A site that never
  * sent a visitor id (cookieless, or no hits yet) gets `cookieless`.
  */
+const listArgs = {
+  domain: v.string(),
+  range: rangeArg,
+  kind: v.union(v.literal("all"), v.literal("customers")),
+  search: v.string(),
+  offset: v.number(),
+};
+
 export const list = query({
-  args: {
-    domain: v.string(),
-    range: rangeArg,
-    kind: v.union(v.literal("all"), v.literal("customers")),
-    search: v.string(),
-    offset: v.number(),
-  },
+  args: listArgs,
   returns: v.union(
     v.object({
       status: v.literal("ok"),
@@ -231,69 +233,75 @@ export const list = query({
     }),
     v.object({ status: v.literal("cookieless") }),
   ),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    if (site.trackingStartedAt === undefined) return { status: "cookieless" as const };
-    let start: number;
-    let end: number;
-    if ("period" in args.range) {
-      ({ start, end } = hourWindow(args.range.period, args.range.now, site.timezone));
-    } else {
-      const range = { from: args.range.from, to: args.range.to };
-      if (!isValidRange(range)) throw new ConvexError("Invalid date range");
-      start = zonedTime(range.from, 0, site.timezone);
-      end = zonedTime(addDays(range.to, 1), 0, site.timezone);
-    }
-
-    const kinds = availableKinds(site);
-    const customers = args.kind === "customers";
-    const goal = customers && kinds.includes("goal") ? await keyGoalVisitors(ctx, site) : null;
-    const isCustomer = (visitor: Doc<"visitors">) =>
-      (kinds.includes("revenue") && visitor.firstPaidAt !== undefined) || (goal?.ids.has(visitor.visitorId) ?? false);
-
-    const candidates = await ctx.db
-      .query("visitors")
-      .withIndex("by_site_lastSeen", (q) => q.eq("siteId", site._id).gte("lastSeen", start))
-      .order("desc")
-      .take(MAX_LISTED_VISITORS + 1);
-    const kept: Doc<"visitors">[] = [];
-    for (const visitor of candidates.slice(0, MAX_LISTED_VISITORS)) {
-      if (visitor.firstSeen >= end) continue;
-      if (customers && !isCustomer(visitor)) continue;
-      if (!visitorMatches(visitor, args.search)) continue;
-      if (!(await seenIn(ctx, visitor, start, end))) continue;
-      kept.push(visitor);
-    }
-
-    const offset = Math.max(0, Math.min(Math.floor(args.offset), Math.max(0, kept.length - 1)));
-    return {
-      status: "ok" as const,
-      rows: kept.slice(offset, offset + VISITOR_ROWS).map((visitor) => ({
-        visitorId: visitor.visitorId,
-        name: visitor.name ?? null,
-        email: visitor.email ?? null,
-        country: visitor.country ?? null,
-        region: visitor.region ?? null,
-        city: visitor.city ?? null,
-        device: visitor.device ?? null,
-        browser: visitor.browser ?? null,
-        entryPath: visitor.entryPath ?? null,
-        exitPath: visitor.exitPath ?? null,
-        firstSource: visitor.firstSource ?? null,
-        sessions: visitor.sessions,
-        pageviews: visitor.pageviews ?? 0,
-        engagedMs: visitor.engagedMs ?? 0,
-        revenueMinor: visitor.revenueMinor,
-        lastSeen: visitor.lastSeen,
-      })),
-      offset,
-      matched: kept.length,
-      truncated: candidates.length > MAX_LISTED_VISITORS || (goal?.more ?? false),
-      customerKinds: kinds,
-      currency: siteCurrency(site),
-    };
-  },
+  handler: async (ctx, args) => await visitorList(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `list` for a site already resolved to its owner; the MCP server calls it too. */
+export async function visitorList(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  args: Omit<ObjectType<typeof listArgs>, "domain">,
+) {
+  if (site.trackingStartedAt === undefined) return { status: "cookieless" as const };
+  let start: number;
+  let end: number;
+  if ("period" in args.range) {
+    ({ start, end } = hourWindow(args.range.period, args.range.now, site.timezone));
+  } else {
+    const range = { from: args.range.from, to: args.range.to };
+    if (!isValidRange(range)) throw new ConvexError("Invalid date range");
+    start = zonedTime(range.from, 0, site.timezone);
+    end = zonedTime(addDays(range.to, 1), 0, site.timezone);
+  }
+
+  const kinds = availableKinds(site);
+  const customers = args.kind === "customers";
+  const goal = customers && kinds.includes("goal") ? await keyGoalVisitors(ctx, site) : null;
+  const isCustomer = (visitor: Doc<"visitors">) =>
+    (kinds.includes("revenue") && visitor.firstPaidAt !== undefined) || (goal?.ids.has(visitor.visitorId) ?? false);
+
+  const candidates = await ctx.db
+    .query("visitors")
+    .withIndex("by_site_lastSeen", (q) => q.eq("siteId", site._id).gte("lastSeen", start))
+    .order("desc")
+    .take(MAX_LISTED_VISITORS + 1);
+  const kept: Doc<"visitors">[] = [];
+  for (const visitor of candidates.slice(0, MAX_LISTED_VISITORS)) {
+    if (visitor.firstSeen >= end) continue;
+    if (customers && !isCustomer(visitor)) continue;
+    if (!visitorMatches(visitor, args.search)) continue;
+    if (!(await seenIn(ctx, visitor, start, end))) continue;
+    kept.push(visitor);
+  }
+
+  const offset = Math.max(0, Math.min(Math.floor(args.offset), Math.max(0, kept.length - 1)));
+  return {
+    status: "ok" as const,
+    rows: kept.slice(offset, offset + VISITOR_ROWS).map((visitor) => ({
+      visitorId: visitor.visitorId,
+      name: visitor.name ?? null,
+      email: visitor.email ?? null,
+      country: visitor.country ?? null,
+      region: visitor.region ?? null,
+      city: visitor.city ?? null,
+      device: visitor.device ?? null,
+      browser: visitor.browser ?? null,
+      entryPath: visitor.entryPath ?? null,
+      exitPath: visitor.exitPath ?? null,
+      firstSource: visitor.firstSource ?? null,
+      sessions: visitor.sessions,
+      pageviews: visitor.pageviews ?? 0,
+      engagedMs: visitor.engagedMs ?? 0,
+      revenueMinor: visitor.revenueMinor,
+      lastSeen: visitor.lastSeen,
+    })),
+    offset,
+    matched: kept.length,
+    truncated: candidates.length > MAX_LISTED_VISITORS || (goal?.more ?? false),
+    customerKinds: kinds,
+    currency: siteCurrency(site),
+  };
+}
 
 /**
  * Whether the visitor was on the site in [start, end). A first or last pageview inside
@@ -412,124 +420,126 @@ export const profile = query({
       moreSessions: v.boolean(),
     }),
   ),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    if (args.visitorId.length > 100) throw new ConvexError("Invalid visitor id");
-    const visitor = await visitorById(ctx, site._id, args.visitorId);
-    if (visitor === null) return null;
-    const visitorId = visitor.visitorId;
+  handler: async (ctx, args) => await visitorProfile(ctx, await requireSite(ctx, args.domain), args),
+});
 
-    const latest = await ctx.db
-      .query("sessions")
-      .withIndex("by_site_visitor_started", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
-      .order("desc")
-      .take(MAX_PROFILE_SESSIONS + 1);
-    const sessions = latest.slice(0, MAX_PROFILE_SESSIONS).reverse();
-    const moreSessions = latest.length > MAX_PROFILE_SESSIONS;
-    const first = moreSessions
-      ? await ctx.db
-          .query("sessions")
-          .withIndex("by_site_visitor_started", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
-          .order("asc")
-          .first()
-      : sessions[0];
+/** `profile` for a site already resolved to its owner; the MCP server calls it too. */
+export async function visitorProfile(ctx: QueryCtx, site: Doc<"sites">, args: { visitorId: string }) {
+  if (args.visitorId.length > 100) throw new ConvexError("Invalid visitor id");
+  const visitor = await visitorById(ctx, site._id, args.visitorId);
+  if (visitor === null) return null;
+  const visitorId = visitor.visitorId;
 
-    const items = new Map<string, TimelineItem[]>(sessions.map((s) => [s.sessionId, []]));
-    for (const s of sessions) {
-      const pageviews = await ctx.db
-        .query("pageviews")
-        .withIndex("by_site_session", (q) => q.eq("siteId", site._id).eq("sessionId", s.sessionId))
-        .take(MAX_SESSION_PAGEVIEWS);
-      for (const pv of pageviews) {
-        items.get(s.sessionId)!.push({
-          type: "pageview",
-          ts: pv.ts,
-          path: pv.path,
-          durationMs: pv.durationMs ?? null,
-        });
-      }
-    }
+  const latest = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_visitor_started", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+    .order("desc")
+    .take(MAX_PROFILE_SESSIONS + 1);
+  const sessions = latest.slice(0, MAX_PROFILE_SESSIONS).reverse();
+  const moreSessions = latest.length > MAX_PROFILE_SESSIONS;
+  const first = moreSessions
+    ? await ctx.db
+        .query("sessions")
+        .withIndex("by_site_visitor_started", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+        .order("asc")
+        .first()
+    : sessions[0];
 
-    const events = await ctx.db
-      .query("events")
-      .withIndex("by_site_visitor_ts", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
-      .order("desc")
-      .take(MAX_PROFILE_EVENTS);
-    const sessionEvents = new Map<string, number>();
-    for (const e of events) {
-      const list = e.sessionId === undefined ? undefined : items.get(e.sessionId);
-      if (e.sessionId === undefined || list === undefined) continue;
-      list.push({ type: e.type, ts: e.ts, name: e.name, path: e.path, ...(e.props ? { props: e.props } : {}) });
-      if (isCountedEvent(e.type)) sessionEvents.set(e.sessionId, (sessionEvents.get(e.sessionId) ?? 0) + 1);
-    }
-
-    // A payment shows in the session that was open when it was made (the last one that
-    // started before it), and marks the session its revenue was credited to
-    const payments = await ctx.db
-      .query("payments")
-      .withIndex("by_site_visitor", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
-      .take(MAX_PROFILE_PAYMENTS);
-    const credited = new Set<string>();
-    for (const p of payments) {
-      if (p.sessionId !== undefined) credited.add(p.sessionId);
-      const open = sessions.findLast((s) => s.startedAt <= p.ts) ?? (moreSessions ? undefined : sessions[0]);
-      items.get(open?.sessionId ?? "")?.push({
-        type: p.kind,
-        ts: p.ts,
-        amountMinor: p.amountMinor,
-        currency: p.currency,
-        renewal: p.renewal,
-        matchedBy: p.matchedBy ?? null,
-        creditedSessionId: p.sessionId ?? null,
+  const items = new Map<string, TimelineItem[]>(sessions.map((s) => [s.sessionId, []]));
+  for (const s of sessions) {
+    const pageviews = await ctx.db
+      .query("pageviews")
+      .withIndex("by_site_session", (q) => q.eq("siteId", site._id).eq("sessionId", s.sessionId))
+      .take(MAX_SESSION_PAGEVIEWS);
+    for (const pv of pageviews) {
+      items.get(s.sessionId)!.push({
+        type: "pageview",
+        ts: pv.ts,
+        path: pv.path,
+        durationMs: pv.durationMs ?? null,
       });
     }
+  }
 
-    return {
-      visitorId,
-      name: visitor.name ?? null,
-      email: visitor.email ?? null,
-      userId: visitor.userId ?? null,
-      firstSeen: visitor.firstSeen,
-      lastSeen: visitor.lastSeen,
-      sessionCount: visitor.sessions,
-      firstSource: visitor.firstSource ?? null,
-      firstChannel: visitor.firstChannel ?? null,
-      revenueMinor: visitor.revenueMinor,
-      firstPaidAt: visitor.firstPaidAt ?? null,
-      currency: siteCurrency(site),
-      // Visitors from before the totals were kept (and not backfilled) add up their listed sessions
-      pageviews: visitor.pageviews ?? sessions.reduce((sum, s) => sum + s.pageviews, 0),
-      engagedMs: visitor.engagedMs ?? sessions.reduce((sum, s) => sum + s.engagedMs, 0),
-      events: events.filter((e) => isCountedEvent(e.type)).length,
-      moreEvents: events.length === MAX_PROFILE_EVENTS,
-      firstVisit:
-        first === undefined || first === null
-          ? null
-          : { startedAt: first.startedAt, path: first.entryPath, ...sessionSource(first) },
-      moreSessions,
-      sessions: sessions.map((s) => ({
-        sessionId: s.sessionId,
-        startedAt: s.startedAt,
-        lastSeenAt: s.lastSeenAt,
-        engagedMs: s.engagedMs,
-        pageviews: s.pageviews,
-        ...sessionSource(s),
-        referrer: s.referrer,
-        utmSource: s.utmSource ?? null,
-        utmMedium: s.utmMedium ?? null,
-        utmCampaign: s.utmCampaign ?? null,
-        refTag: s.refTag ?? null,
-        country: s.country,
-        region: s.region ?? null,
-        city: s.city ?? null,
-        device: s.device,
-        browser: s.browser,
-        os: s.os ?? null,
-        revenueMinor: s.revenueMinor,
-        credited: credited.has(s.sessionId),
-        events: sessionEvents.get(s.sessionId) ?? 0,
-        items: items.get(s.sessionId)!.sort((a, b) => a.ts - b.ts),
-      })),
-    };
-  },
-});
+  const events = await ctx.db
+    .query("events")
+    .withIndex("by_site_visitor_ts", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+    .order("desc")
+    .take(MAX_PROFILE_EVENTS);
+  const sessionEvents = new Map<string, number>();
+  for (const e of events) {
+    const list = e.sessionId === undefined ? undefined : items.get(e.sessionId);
+    if (e.sessionId === undefined || list === undefined) continue;
+    list.push({ type: e.type, ts: e.ts, name: e.name, path: e.path, ...(e.props ? { props: e.props } : {}) });
+    if (isCountedEvent(e.type)) sessionEvents.set(e.sessionId, (sessionEvents.get(e.sessionId) ?? 0) + 1);
+  }
+
+  // A payment shows in the session that was open when it was made (the last one that
+  // started before it), and marks the session its revenue was credited to
+  const payments = await ctx.db
+    .query("payments")
+    .withIndex("by_site_visitor", (q) => q.eq("siteId", site._id).eq("visitorId", visitorId))
+    .take(MAX_PROFILE_PAYMENTS);
+  const credited = new Set<string>();
+  for (const p of payments) {
+    if (p.sessionId !== undefined) credited.add(p.sessionId);
+    const open = sessions.findLast((s) => s.startedAt <= p.ts) ?? (moreSessions ? undefined : sessions[0]);
+    items.get(open?.sessionId ?? "")?.push({
+      type: p.kind,
+      ts: p.ts,
+      amountMinor: p.amountMinor,
+      currency: p.currency,
+      renewal: p.renewal,
+      matchedBy: p.matchedBy ?? null,
+      creditedSessionId: p.sessionId ?? null,
+    });
+  }
+
+  return {
+    visitorId,
+    name: visitor.name ?? null,
+    email: visitor.email ?? null,
+    userId: visitor.userId ?? null,
+    firstSeen: visitor.firstSeen,
+    lastSeen: visitor.lastSeen,
+    sessionCount: visitor.sessions,
+    firstSource: visitor.firstSource ?? null,
+    firstChannel: visitor.firstChannel ?? null,
+    revenueMinor: visitor.revenueMinor,
+    firstPaidAt: visitor.firstPaidAt ?? null,
+    currency: siteCurrency(site),
+    // Visitors from before the totals were kept (and not backfilled) add up their listed sessions
+    pageviews: visitor.pageviews ?? sessions.reduce((sum, s) => sum + s.pageviews, 0),
+    engagedMs: visitor.engagedMs ?? sessions.reduce((sum, s) => sum + s.engagedMs, 0),
+    events: events.filter((e) => isCountedEvent(e.type)).length,
+    moreEvents: events.length === MAX_PROFILE_EVENTS,
+    firstVisit:
+      first === undefined || first === null
+        ? null
+        : { startedAt: first.startedAt, path: first.entryPath, ...sessionSource(first) },
+    moreSessions,
+    sessions: sessions.map((s) => ({
+      sessionId: s.sessionId,
+      startedAt: s.startedAt,
+      lastSeenAt: s.lastSeenAt,
+      engagedMs: s.engagedMs,
+      pageviews: s.pageviews,
+      ...sessionSource(s),
+      referrer: s.referrer,
+      utmSource: s.utmSource ?? null,
+      utmMedium: s.utmMedium ?? null,
+      utmCampaign: s.utmCampaign ?? null,
+      refTag: s.refTag ?? null,
+      country: s.country,
+      region: s.region ?? null,
+      city: s.city ?? null,
+      device: s.device,
+      browser: s.browser,
+      os: s.os ?? null,
+      revenueMinor: s.revenueMinor,
+      credited: credited.has(s.sessionId),
+      events: sessionEvents.get(s.sessionId) ?? 0,
+      items: items.get(s.sessionId)!.sort((a, b) => a.ts - b.ts),
+    })),
+  };
+}

@@ -20,6 +20,7 @@ import {
 } from "../../../convex/lib/paths";
 import Snippet from "@/components/Snippet";
 import CopyButton from "@/components/CopyButton";
+import McpSetup from "@/components/McpSetup";
 import TimezoneSelect from "@/components/TimezoneSelect";
 import { normalizePath } from "@/lib/collect";
 import { appOrigin, embedSnippet, ignoreUrl } from "@/lib/snippet";
@@ -50,13 +51,13 @@ type SectionId =
   | "goals"
   | "revenue"
   | "identity"
+  | "mcp"
   | "ignore"
   | "paths"
   | "excluded"
   | "danger";
 
-// The sidebar, in order. The MCP section (a later phase) joins its group when it is
-// built; until then its id opens Tracking code.
+// The sidebar, in order
 const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
   {
     label: "Install",
@@ -73,6 +74,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
     ],
   },
   { label: "Privacy", sections: [{ id: "identity", label: "Visitor identity" }] },
+  { label: "Integrations", sections: [{ id: "mcp", label: "MCP server" }] },
   {
     label: "Filtering",
     sections: [
@@ -181,6 +183,7 @@ function Settings({ domain }: { domain: string }) {
           {section === "goals" && <GoalsSection domain={site.domain} keyGoal={site.keyGoal} />}
           {section === "revenue" && <RevenueSection domain={site.domain} />}
           {section === "identity" && <IdentitySection domain={site.domain} cookieless={site.cookieless} />}
+          {section === "mcp" && <McpSection domain={site.domain} />}
           {section === "ignore" && <IgnoreSection domain={site.domain} />}
           {section === "paths" && <PathsSection domain={site.domain} />}
           {section === "excluded" && <ExcludedSection domain={site.domain} />}
@@ -455,6 +458,29 @@ function IdentitySection({ domain, cookieless }: { domain: string; cookieless: b
           {status && <span className={status.ok ? "text-up" : "text-down"}>{status.text}</span>}
         </div>
       </form>
+    </Section>
+  );
+}
+
+/** The MCP setup for this site; keys are account-wide, so they live in account Settings. */
+function McpSection({ domain }: { domain: string }) {
+  return (
+    <Section
+      title="MCP server"
+      description={
+        <>
+          Ask Claude, Cursor or another AI assistant about {domain}&apos;s stats. The server is read-only and uses
+          an API key from your account, which reads every site you own.
+        </>
+      }
+    >
+      <p className="text-sm text-muted-foreground">
+        <Link href="/settings#mcp" className="underline hover:text-foreground">
+          Create or revoke keys in account Settings
+        </Link>
+        , then connect a client:
+      </p>
+      <McpSetup domain={domain} />
     </Section>
   );
 }

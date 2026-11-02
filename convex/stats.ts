@@ -4,7 +4,15 @@ import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
 import { requireSite } from "./lib/auth";
 import { hourWindow as hourBounds, localDate } from "./lib/dates";
-import { DIM_COUNTS, dimValidator, listChannelValidator, topEntries, type Dim, type DimEntry } from "./lib/dims";
+import {
+  DIM_COUNTS,
+  dimValidator,
+  listChannelValidator,
+  topEntries,
+  type Dim,
+  type DimEntry,
+  type ListChannel,
+} from "./lib/dims";
 import { dayWindow, filteredView, hourWindow } from "./lib/filtered";
 import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
 import { eachDate, isValidRange, previousRange, rangeDays, type DateRange } from "./lib/ranges";
@@ -148,41 +156,43 @@ function countVisitors(
 export const summary = query({
   args: rangeArgs,
   returns: summaryResult,
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const range = { from: args.from, to: args.to };
-    checkRange(range);
-    const prev = previousRange(range);
-
-    // One index read covers both ranges, since they are adjacent
-    const rows = await readDailyStats(ctx, site._id, { from: prev.from, to: range.to });
-    const current = sumTotals(rows.filter((r) => r.date >= range.from));
-    const previous = sumTotals(rows.filter((r) => r.date < range.from));
-
-    const launch =
-      site.trackingStartedAt === undefined
-        ? null
-        : localDate(site.trackingStartedAt, site.timezone);
-    let visitorsApprox = false;
-    if (launch !== null && launch <= range.to) {
-      const from = launch > prev.from ? launch : prev.from;
-      const sessions = await readSessions(ctx, site._id, { from, to: range.to });
-      if (sessions === null) {
-        visitorsApprox = true;
-      } else {
-        current.visitors = countVisitors(rows, sessions, range, launch);
-        previous.visitors = countVisitors(rows, sessions, prev, launch);
-      }
-    }
-
-    return {
-      current,
-      previous,
-      comparable: launch === null || launch <= prev.from || launch > range.to,
-      visitorsApprox,
-    };
-  },
+  handler: async (ctx, args) => await siteSummary(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `summary` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteSummary(ctx: QueryCtx, site: Doc<"sites">, args: DateRange) {
+  const range = { from: args.from, to: args.to };
+  checkRange(range);
+  const prev = previousRange(range);
+
+  // One index read covers both ranges, since they are adjacent
+  const rows = await readDailyStats(ctx, site._id, { from: prev.from, to: range.to });
+  const current = sumTotals(rows.filter((r) => r.date >= range.from));
+  const previous = sumTotals(rows.filter((r) => r.date < range.from));
+
+  const launch =
+    site.trackingStartedAt === undefined
+      ? null
+      : localDate(site.trackingStartedAt, site.timezone);
+  let visitorsApprox = false;
+  if (launch !== null && launch <= range.to) {
+    const from = launch > prev.from ? launch : prev.from;
+    const sessions = await readSessions(ctx, site._id, { from, to: range.to });
+    if (sessions === null) {
+      visitorsApprox = true;
+    } else {
+      current.visitors = countVisitors(rows, sessions, range, launch);
+      previous.visitors = countVisitors(rows, sessions, prev, launch);
+    }
+  }
+
+  return {
+    current,
+    previous,
+    comparable: launch === null || launch <= prev.from || launch > range.to,
+    visitorsApprox,
+  };
+}
 
 /**
  * One point per day in the range, with days that had no traffic filled as zero: the
@@ -192,48 +202,50 @@ export const summary = query({
 export const timeseries = query({
   args: rangeArgs,
   returns: seriesResult,
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const range = { from: args.from, to: args.to };
-    checkRange(range);
-
-    const byDate = new Map<string, Doc<"dailyStats">>();
-    for (const r of await readDailyStats(ctx, site._id, range)) byDate.set(r.date, r);
-
-    const keyGoal = site.keyGoal ?? null;
-    const goalByDate = new Map<string, { events: number; visitors: number }>();
-    if (keyGoal !== null) {
-      const rows = await ctx.db
-        .query("dailyDims")
-        .withIndex("by_site_dim_date", (q) =>
-          q.eq("siteId", site._id).eq("dim", "goal").gte("date", range.from).lte("date", range.to),
-        )
-        .take(MAX_DIM_ROWS);
-      for (const r of rows) {
-        if (r.key === keyGoal) goalByDate.set(r.date, { events: r.events ?? 0, visitors: r.visitors });
-      }
-    }
-    const converted = await convertedByDate(ctx, site, range, goalByDate);
-
-    return eachDate(range).map((date) => {
-      const r = byDate.get(date);
-      const sessions = r?.sessions ?? 0;
-      const visitors = r?.visitors ?? 0;
-      const conv = converted?.get(date) ?? 0;
-      return {
-        date,
-        pageviews: r?.pageviews ?? 0,
-        visitors,
-        revenueMinor: r?.revenueMinor ?? 0,
-        goal: goalByDate.get(date)?.events ?? 0,
-        bounceRate: sessions === 0 ? null : (r?.bounces ?? 0) / sessions,
-        sessionTimeMs: sessions === 0 ? null : Math.round((r?.sessionEngagedMs ?? 0) / sessions),
-        timeOnPageMs: !r || r.durationCount === 0 ? null : Math.round(r.durationSumMs / r.durationCount),
-        conversionRate: converted === null || visitors === 0 ? null : Math.min(1, conv / visitors),
-      };
-    });
-  },
+  handler: async (ctx, args) => await siteTimeseries(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `timeseries` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteTimeseries(ctx: QueryCtx, site: Doc<"sites">, args: DateRange) {
+  const range = { from: args.from, to: args.to };
+  checkRange(range);
+
+  const byDate = new Map<string, Doc<"dailyStats">>();
+  for (const r of await readDailyStats(ctx, site._id, range)) byDate.set(r.date, r);
+
+  const keyGoal = site.keyGoal ?? null;
+  const goalByDate = new Map<string, { events: number; visitors: number }>();
+  if (keyGoal !== null) {
+    const rows = await ctx.db
+      .query("dailyDims")
+      .withIndex("by_site_dim_date", (q) =>
+        q.eq("siteId", site._id).eq("dim", "goal").gte("date", range.from).lte("date", range.to),
+      )
+      .take(MAX_DIM_ROWS);
+    for (const r of rows) {
+      if (r.key === keyGoal) goalByDate.set(r.date, { events: r.events ?? 0, visitors: r.visitors });
+    }
+  }
+  const converted = await convertedByDate(ctx, site, range, goalByDate);
+
+  return eachDate(range).map((date) => {
+    const r = byDate.get(date);
+    const sessions = r?.sessions ?? 0;
+    const visitors = r?.visitors ?? 0;
+    const conv = converted?.get(date) ?? 0;
+    return {
+      date,
+      pageviews: r?.pageviews ?? 0,
+      visitors,
+      revenueMinor: r?.revenueMinor ?? 0,
+      goal: goalByDate.get(date)?.events ?? 0,
+      bounceRate: sessions === 0 ? null : (r?.bounces ?? 0) / sessions,
+      sessionTimeMs: sessions === 0 ? null : Math.round((r?.sessionEngagedMs ?? 0) / sessions),
+      timeOnPageMs: !r || r.durationCount === 0 ? null : Math.round(r.durationSumMs / r.durationCount),
+      conversionRate: converted === null || visitors === 0 ? null : Math.min(1, conv / visitors),
+    };
+  });
+}
 
 /**
  * Converted visitors per day for the chart: distinct paying visitors (in the site's
@@ -321,27 +333,33 @@ function onlyChannel(entries: DimEntry[], channel: Channel) {
 export const breakdown = query({
   args: { ...rangeArgs, dim: dimValidator, channel: v.optional(listChannelValidator) },
   returns: breakdownResult,
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const range = { from: args.from, to: args.to };
-    checkRange(range);
-    if (args.channel !== undefined && args.dim !== "source") {
-      throw new ConvexError("A channel limit only applies to sources");
-    }
-
-    const summed = await sumDim(ctx, site._id, args.dim, range);
-    const { entries, total } =
-      args.channel === undefined ? summed : onlyChannel(summed.entries, args.channel);
-    return {
-      rows: topEntries(args.dim, entries, MAX_BREAKDOWN_KEYS),
-      totalPageviews: total.pageviews,
-      totalVisitors: total.visitors,
-      totalSessions: total.sessions,
-      totalEvents: total.events,
-      totalRevenueMinor: total.revenueMinor,
-    };
-  },
+  handler: async (ctx, args) => await siteBreakdown(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `breakdown` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteBreakdown(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  args: DateRange & { dim: Dim; channel?: ListChannel },
+) {
+  const range = { from: args.from, to: args.to };
+  checkRange(range);
+  if (args.channel !== undefined && args.dim !== "source") {
+    throw new ConvexError("A channel limit only applies to sources");
+  }
+
+  const summed = await sumDim(ctx, site._id, args.dim, range);
+  const { entries, total } =
+    args.channel === undefined ? summed : onlyChannel(summed.entries, args.channel);
+  return {
+    rows: topEntries(args.dim, entries, MAX_BREAKDOWN_KEYS),
+    totalPageviews: total.pageviews,
+    totalVisitors: total.visitors,
+    totalSessions: total.sessions,
+    totalEvents: total.events,
+    totalRevenueMinor: total.revenueMinor,
+  };
+}
 
 /**
  * Each goal's completions and visitors over the range, most completions first, and the
@@ -353,35 +371,37 @@ export const breakdown = query({
 export const goals = query({
   args: rangeArgs,
   returns: goalsResult,
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const range = { from: args.from, to: args.to };
-    checkRange(range);
-
-    const { entries } = await sumDim(ctx, site._id, "goal", range);
-    const rows = entries
-      .filter((e) => e.events > 0)
-      .map((e) => ({ name: e.key, completions: e.events, visitors: e.visitors }));
-    const keyGoal = site.keyGoal ?? null;
-    if (keyGoal !== null && !rows.some((r) => r.name === keyGoal)) {
-      rows.push({ name: keyGoal, completions: 0, visitors: 0 });
-    }
-    rows.sort((a, b) => b.completions - a.completions || b.visitors - a.visitors || a.name.localeCompare(b.name));
-
-    const stats = await readDailyStats(ctx, site._id, range);
-    let keyGoalPrevious: number | null = null;
-    if (keyGoal !== null) {
-      const before = await sumDim(ctx, site._id, "goal", previousRange(range));
-      keyGoalPrevious = before.entries.find((e) => e.key === keyGoal)?.events ?? 0;
-    }
-    return {
-      rows: rows.slice(0, MAX_BREAKDOWN_KEYS),
-      visitors: stats.reduce((n, r) => n + r.visitors, 0),
-      keyGoal,
-      keyGoalPrevious,
-    };
-  },
+  handler: async (ctx, args) => await siteGoals(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `goals` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteGoals(ctx: QueryCtx, site: Doc<"sites">, args: DateRange) {
+  const range = { from: args.from, to: args.to };
+  checkRange(range);
+
+  const { entries } = await sumDim(ctx, site._id, "goal", range);
+  const rows = entries
+    .filter((e) => e.events > 0)
+    .map((e) => ({ name: e.key, completions: e.events, visitors: e.visitors }));
+  const keyGoal = site.keyGoal ?? null;
+  if (keyGoal !== null && !rows.some((r) => r.name === keyGoal)) {
+    rows.push({ name: keyGoal, completions: 0, visitors: 0 });
+  }
+  rows.sort((a, b) => b.completions - a.completions || b.visitors - a.visitors || a.name.localeCompare(b.name));
+
+  const stats = await readDailyStats(ctx, site._id, range);
+  let keyGoalPrevious: number | null = null;
+  if (keyGoal !== null) {
+    const before = await sumDim(ctx, site._id, "goal", previousRange(range));
+    keyGoalPrevious = before.entries.find((e) => e.key === keyGoal)?.events ?? 0;
+  }
+  return {
+    rows: rows.slice(0, MAX_BREAKDOWN_KEYS),
+    visitors: stats.reduce((n, r) => n + r.visitors, 0),
+    keyGoal,
+    keyGoalPrevious,
+  };
+}
 
 /**
  * Distinct visitors who converted in the range and in the one before it: visitors with
@@ -394,52 +414,54 @@ export const goals = query({
 export const conversions = query({
   args: rangeArgs,
   returns: conversionsResult,
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const range = { from: args.from, to: args.to };
-    checkRange(range);
-    const prev = previousRange(range);
-    // Local days run from UTC-12 to UTC+14; the stored `date` decides
-    const start = Date.parse(`${prev.from}T00:00:00Z`) - 14 * HOUR_MS;
-    const end = Date.parse(`${range.to}T00:00:00Z`) + 36 * HOUR_MS;
-    const inRange = (date: string, r: DateRange) => date >= r.from && date <= r.to;
-    const distinct = (rows: { date: string; visitorId?: string }[], r: DateRange) =>
-      new Set(rows.filter((x) => x.visitorId !== undefined && inRange(x.date, r)).map((x) => x.visitorId)).size;
+  handler: async (ctx, args) => await siteConversions(ctx, await requireSite(ctx, args.domain), args),
+});
 
-    if ((site.revenueSource ?? "none") !== "none") {
-      const rows = await ctx.db
-        .query("payments")
-        .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
-        .take(MAX_CONVERSION_ROWS + 1);
-      const currency = siteCurrency(site);
-      const paid = rows.filter((p) => p.kind === "payment" && p.currency === currency);
-      const tooMany = rows.length > MAX_CONVERSION_ROWS;
-      return {
-        kind: "revenue" as const,
-        current: tooMany ? null : distinct(paid, range),
-        previous: tooMany ? null : distinct(paid, prev),
-        otherCurrencyPayments: rows.filter((p) => p.currency !== currency && inRange(p.date, range)).length,
-      };
-    }
+/** `conversions` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteConversions(ctx: QueryCtx, site: Doc<"sites">, args: DateRange) {
+  const range = { from: args.from, to: args.to };
+  checkRange(range);
+  const prev = previousRange(range);
+  // Local days run from UTC-12 to UTC+14; the stored `date` decides
+  const start = Date.parse(`${prev.from}T00:00:00Z`) - 14 * HOUR_MS;
+  const end = Date.parse(`${range.to}T00:00:00Z`) + 36 * HOUR_MS;
+  const inRange = (date: string, r: DateRange) => date >= r.from && date <= r.to;
+  const distinct = (rows: { date: string; visitorId?: string }[], r: DateRange) =>
+    new Set(rows.filter((x) => x.visitorId !== undefined && inRange(x.date, r)).map((x) => x.visitorId)).size;
 
-    const keyGoal = site.keyGoal;
-    if (keyGoal === undefined) {
-      return { kind: null, current: null, previous: null, otherCurrencyPayments: 0 };
-    }
+  if ((site.revenueSource ?? "none") !== "none") {
     const rows = await ctx.db
-      .query("events")
+      .query("payments")
       .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
       .take(MAX_CONVERSION_ROWS + 1);
-    const done = rows.filter((e) => e.type === "goal" && e.name === keyGoal);
+    const currency = siteCurrency(site);
+    const paid = rows.filter((p) => p.kind === "payment" && p.currency === currency);
     const tooMany = rows.length > MAX_CONVERSION_ROWS;
     return {
-      kind: "goal" as const,
-      current: tooMany ? null : distinct(done, range),
-      previous: tooMany ? null : distinct(done, prev),
-      otherCurrencyPayments: 0,
+      kind: "revenue" as const,
+      current: tooMany ? null : distinct(paid, range),
+      previous: tooMany ? null : distinct(paid, prev),
+      otherCurrencyPayments: rows.filter((p) => p.currency !== currency && inRange(p.date, range)).length,
     };
-  },
-});
+  }
+
+  const keyGoal = site.keyGoal;
+  if (keyGoal === undefined) {
+    return { kind: null, current: null, previous: null, otherCurrencyPayments: 0 };
+  }
+  const rows = await ctx.db
+    .query("events")
+    .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", start).lt("ts", end))
+    .take(MAX_CONVERSION_ROWS + 1);
+  const done = rows.filter((e) => e.type === "goal" && e.name === keyGoal);
+  const tooMany = rows.length > MAX_CONVERSION_ROWS;
+  return {
+    kind: "goal" as const,
+    current: tooMany ? null : distinct(done, range),
+    previous: tooMany ? null : distinct(done, prev),
+    otherCurrencyPayments: 0,
+  };
+}
 
 /**
  * The dashboard with up to MAX_FILTERS filters: summary, chart, every list, goals and
@@ -512,15 +534,17 @@ export const hourly = query({
 export const live = query({
   args: { domain: v.string(), since: v.number() },
   returns: v.number(),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const rows = await ctx.db
-      .query("pageviews")
-      .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", args.since))
-      .take(MAX_LIVE_ROWS);
-    return rows.length;
-  },
+  handler: async (ctx, args) => await siteLive(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `live` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteLive(ctx: QueryCtx, site: Doc<"sites">, args: { since: number }) {
+  const rows = await ctx.db
+    .query("pageviews")
+    .withIndex("by_site_ts", (q) => q.eq("siteId", site._id).gte("ts", args.since))
+    .take(MAX_LIVE_ROWS);
+  return rows.length;
+}
 
 /**
  * Distinct visitors with a pageview or ping since `since` (passed in like `live`).
@@ -529,17 +553,19 @@ export const live = query({
 export const online = query({
   args: { domain: v.string(), since: v.number() },
   returns: v.number(),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const rows = await ctx.db
-      .query("sessions")
-      .withIndex("by_site_lastSeenAt", (q) =>
-        q.eq("siteId", site._id).gte("lastSeenAt", args.since),
-      )
-      .take(MAX_LIVE_ROWS);
-    return new Set(rows.map((r) => r.visitorId)).size;
-  },
+  handler: async (ctx, args) => await siteOnline(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `online` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteOnline(ctx: QueryCtx, site: Doc<"sites">, args: { since: number }) {
+  const rows = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_lastSeenAt", (q) =>
+      q.eq("siteId", site._id).gte("lastSeenAt", args.since),
+    )
+    .take(MAX_LIVE_ROWS);
+  return new Set(rows.map((r) => r.visitorId)).size;
+}
 
 // The live tab (5h): at most this many visitors on the map and rows in the feed
 const MAX_LIVE_FEED = 200;
@@ -590,162 +616,168 @@ export const liveFeed = query({
     moreVisitors: v.boolean(),
     feed: v.array(liveRow),
   }),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    const siteId = site._id;
+  handler: async (ctx, args) => await siteLiveFeed(ctx, await requireSite(ctx, args.domain), args),
+});
 
-    const visitorRows = new Map<string, Doc<"visitors"> | null>();
-    async function visitor(visitorId: string | undefined) {
-      if (visitorId === undefined) return null;
-      if (!visitorRows.has(visitorId)) {
-        const row = await ctx.db
-          .query("visitors")
-          .withIndex("by_site_visitor", (q) => q.eq("siteId", siteId).eq("visitorId", visitorId))
-          .unique();
-        visitorRows.set(visitorId, row);
-      }
-      return visitorRows.get(visitorId) ?? null;
-    }
-    const sessionRows = new Map<string, Doc<"sessions"> | null>();
-    async function session(sessionId: string | undefined) {
-      if (sessionId === undefined) return null;
-      if (!sessionRows.has(sessionId)) {
-        const row = await ctx.db
-          .query("sessions")
-          .withIndex("by_site_session", (q) => q.eq("siteId", siteId).eq("sessionId", sessionId))
-          .unique();
-        sessionRows.set(sessionId, row);
-      }
-      return sessionRows.get(sessionId) ?? null;
-    }
+/** `liveFeed` for a site already resolved to its owner; the MCP server calls it too. */
+export async function siteLiveFeed(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  args: { since: number; onlineSince: number },
+) {
+  const siteId = site._id;
 
-    // Newest first, so each visitor's first row is their latest session
-    const online = await ctx.db
-      .query("sessions")
-      .withIndex("by_site_lastSeenAt", (q) =>
-        q.eq("siteId", siteId).gte("lastSeenAt", args.onlineSince),
-      )
-      .order("desc")
-      .take(MAX_LIVE_ROWS);
-    const latest = new Map<string, Doc<"sessions">>();
-    for (const s of online) {
-      sessionRows.set(s.sessionId, s);
-      if (!latest.has(s.visitorId)) latest.set(s.visitorId, s);
+  const visitorRows = new Map<string, Doc<"visitors"> | null>();
+  async function visitor(visitorId: string | undefined) {
+    if (visitorId === undefined) return null;
+    if (!visitorRows.has(visitorId)) {
+      const row = await ctx.db
+        .query("visitors")
+        .withIndex("by_site_visitor", (q) => q.eq("siteId", siteId).eq("visitorId", visitorId))
+        .unique();
+      visitorRows.set(visitorId, row);
     }
-    const visitors = [];
-    for (const s of [...latest.values()].slice(0, MAX_LIVE_FEED)) {
-      const row = await visitor(s.visitorId);
-      const { source, channel } = sessionSource(s);
-      visitors.push({
-        visitorId: s.visitorId,
-        name: row?.name ?? null,
-        email: row?.email ?? null,
-        lat: s.lat ?? null,
-        lon: s.lon ?? null,
-        country: s.country,
-        region: s.region ?? null,
-        city: s.city ?? null,
-        device: s.device,
-        browser: s.browser,
-        os: s.os ?? null,
-        source,
-        channel,
-        path: s.exitPath,
-        lastSeenAt: s.lastSeenAt,
-      });
+    return visitorRows.get(visitorId) ?? null;
+  }
+  const sessionRows = new Map<string, Doc<"sessions"> | null>();
+  async function session(sessionId: string | undefined) {
+    if (sessionId === undefined) return null;
+    if (!sessionRows.has(sessionId)) {
+      const row = await ctx.db
+        .query("sessions")
+        .withIndex("by_site_session", (q) => q.eq("siteId", siteId).eq("sessionId", sessionId))
+        .unique();
+      sessionRows.set(sessionId, row);
     }
+    return sessionRows.get(sessionId) ?? null;
+  }
 
-    const pageviews = await ctx.db
-      .query("pageviews")
-      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
-      .order("desc")
-      .take(MAX_LIVE_FEED);
-    // Outbound clicks, identify calls and claims share the table; goals are what's shown
-    const events = await ctx.db
-      .query("events")
-      .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
-      .order("desc")
-      .take(MAX_LIVE_ROWS);
-    const goals = events.filter((e) => e.type === "goal");
-    const revenue = (site.revenueSource ?? "none") !== "none";
-    const payments = revenue
-      ? await ctx.db
-          .query("payments")
-          .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
-          .order("desc")
-          .take(MAX_LIVE_FEED)
-      : [];
+  // Newest first, so each visitor's first row is their latest session
+  const online = await ctx.db
+    .query("sessions")
+    .withIndex("by_site_lastSeenAt", (q) =>
+      q.eq("siteId", siteId).gte("lastSeenAt", args.onlineSince),
+    )
+    .order("desc")
+    .take(MAX_LIVE_ROWS);
+  const latest = new Map<string, Doc<"sessions">>();
+  for (const s of online) {
+    sessionRows.set(s.sessionId, s);
+    if (!latest.has(s.visitorId)) latest.set(s.visitorId, s);
+  }
+  const visitors = [];
+  for (const s of [...latest.values()].slice(0, MAX_LIVE_FEED)) {
+    const row = await visitor(s.visitorId);
+    const { source, channel } = sessionSource(s);
+    visitors.push({
+      visitorId: s.visitorId,
+      name: row?.name ?? null,
+      email: row?.email ?? null,
+      lat: s.lat ?? null,
+      lon: s.lon ?? null,
+      country: s.country,
+      region: s.region ?? null,
+      city: s.city ?? null,
+      device: s.device,
+      browser: s.browser,
+      os: s.os ?? null,
+      source,
+      channel,
+      path: s.exitPath,
+      lastSeenAt: s.lastSeenAt,
+    });
+  }
 
-    type Entry = { ts: number; build: () => Promise<Infer<typeof liveRow>> };
-    const entries: Entry[] = [];
-    const empty = { goal: null, amountMinor: null, currency: null };
-    // The visitor's name and where their session came from
-    const who = async (visitorId: string | undefined, sessionId: string | undefined) => {
-      const row = await visitor(visitorId);
-      const s = await session(sessionId);
-      return {
-        visitorId: visitorId ?? null,
-        name: row?.name ?? null,
-        email: row?.email ?? null,
-        country: s?.country ?? null,
-        city: s?.city ?? null,
-      };
+  const pageviews = await ctx.db
+    .query("pageviews")
+    .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+    .order("desc")
+    .take(MAX_LIVE_FEED);
+  // Outbound clicks, identify calls and claims share the table; goals are what's shown
+  const events = await ctx.db
+    .query("events")
+    .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+    .order("desc")
+    .take(MAX_LIVE_ROWS);
+  const goals = events.filter((e) => e.type === "goal");
+  const revenue = (site.revenueSource ?? "none") !== "none";
+  const payments = revenue
+    ? await ctx.db
+        .query("payments")
+        .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", args.since))
+        .order("desc")
+        .take(MAX_LIVE_FEED)
+    : [];
+
+  type Entry = { ts: number; build: () => Promise<Infer<typeof liveRow>> };
+  const entries: Entry[] = [];
+  const empty = { goal: null, amountMinor: null, currency: null };
+  // The visitor's name and where their session came from
+  const who = async (visitorId: string | undefined, sessionId: string | undefined) => {
+    const row = await visitor(visitorId);
+    const s = await session(sessionId);
+    return {
+      visitorId: visitorId ?? null,
+      name: row?.name ?? null,
+      email: row?.email ?? null,
+      country: s?.country ?? null,
+      city: s?.city ?? null,
     };
-    for (const p of pageviews) {
-      entries.push({
+  };
+  for (const p of pageviews) {
+    entries.push({
+      ts: p.ts,
+      build: async () => ({
+        kind: "pageview",
+        id: p._id,
         ts: p.ts,
-        build: async () => ({
-          kind: "pageview",
+        path: p.path,
+        ...empty,
+        ...(await who(p.visitorId, p.sessionId)),
+        country: p.country,
+      }),
+    });
+  }
+  for (const e of goals) {
+    entries.push({
+      ts: e.ts,
+      build: async () => ({
+        kind: "goal",
+        id: e._id,
+        ts: e.ts,
+        path: e.path,
+        ...empty,
+        goal: e.name,
+        ...(await who(e.visitorId, e.sessionId)),
+      }),
+    });
+  }
+  for (const p of payments) {
+    entries.push({
+      ts: p.ts,
+      build: async () => {
+        const row = await visitor(p.visitorId);
+        return {
+          kind: p.kind,
           id: p._id,
           ts: p.ts,
-          path: p.path,
-          ...empty,
-          ...(await who(p.visitorId, p.sessionId)),
-          country: p.country,
-        }),
-      });
-    }
-    for (const e of goals) {
-      entries.push({
-        ts: e.ts,
-        build: async () => ({
-          kind: "goal",
-          id: e._id,
-          ts: e.ts,
-          path: e.path,
-          ...empty,
-          goal: e.name,
-          ...(await who(e.visitorId, e.sessionId)),
-        }),
-      });
-    }
-    for (const p of payments) {
-      entries.push({
-        ts: p.ts,
-        build: async () => {
-          const row = await visitor(p.visitorId);
-          return {
-            kind: p.kind,
-            id: p._id,
-            ts: p.ts,
-            visitorId: p.visitorId ?? null,
-            name: row?.name ?? null,
-            email: row?.email ?? p.email ?? null,
-            path: null,
-            goal: null,
-            amountMinor: p.amountMinor,
-            currency: p.currency,
-            // Where the visitor paid from isn't known; the credited session may be older
-            country: null,
-            city: null,
-          };
-        },
-      });
-    }
-    entries.sort((a, b) => b.ts - a.ts);
-    const feed = [];
-    for (const entry of entries.slice(0, MAX_LIVE_FEED)) feed.push(await entry.build());
+          visitorId: p.visitorId ?? null,
+          name: row?.name ?? null,
+          email: row?.email ?? p.email ?? null,
+          path: null,
+          goal: null,
+          amountMinor: p.amountMinor,
+          currency: p.currency,
+          // Where the visitor paid from isn't known; the credited session may be older
+          country: null,
+          city: null,
+        };
+      },
+    });
+  }
+  entries.sort((a, b) => b.ts - a.ts);
+  const feed = [];
+  for (const entry of entries.slice(0, MAX_LIVE_FEED)) feed.push(await entry.build());
 
-    return { visitors, moreVisitors: latest.size > MAX_LIVE_FEED, feed };
-  },
-});
+  return { visitors, moreVisitors: latest.size > MAX_LIVE_FEED, feed };
+}

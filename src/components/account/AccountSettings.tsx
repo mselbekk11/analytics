@@ -2,8 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 import { useClerk, useUser } from "@clerk/nextjs";
+import { Authenticated } from "convex/react";
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import McpKeys from "@/components/account/McpKeys";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +20,7 @@ const THEMES = [
 // next-themes only knows the stored choice in the browser, so the server renders no selection
 const subscribeNever = () => () => {};
 
-/** Account settings: who is signed in, Clerk's profile, the theme and sign out. */
+/** Account settings: who is signed in, Clerk's profile, the theme, MCP server keys and sign out. */
 export default function AccountSettings() {
   const { user, isLoaded } = useUser();
   const clerk = useClerk();
@@ -33,7 +35,7 @@ export default function AccountSettings() {
   return (
     <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-10 px-4 pt-10 pb-20 sm:px-6 lg:px-8">
       <PageHeader title="Settings" />
-      <div className="flex max-w-xl flex-col gap-6">
+      <div className="flex max-w-2xl flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Account</CardTitle>
@@ -78,6 +80,11 @@ export default function AccountSettings() {
             </ToggleGroup>
           </div>
         </Card>
+
+        {/* Convex reads need the session, so the keys wait for it */}
+        <Authenticated>
+          <McpKeys />
+        </Authenticated>
 
         <div>
           <Button variant="destructive" onClick={() => clerk.signOut({ redirectUrl: "/" })}>

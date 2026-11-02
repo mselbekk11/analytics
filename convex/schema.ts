@@ -250,6 +250,20 @@ export default defineSchema({
     .index("by_site_checkout", ["siteId", "checkoutSessionId"])
     .index("by_site_subscription", ["siteId", "subscriptionId"]),
 
+  // Account-wide keys for the MCP server (design v4). Only the SHA-256 of a key is kept;
+  // `prefix` is its first characters, shown in Settings to tell keys apart
+  apiKeys: defineTable({
+    ownerId: v.string(), // identity.tokenIdentifier, like sites.ownerId
+    name: v.string(),
+    hash: v.string(), // SHA-256 of the key, hex
+    prefix: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()), // moved at most once a minute
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_hash", ["hash"])
+    .index("by_owner", ["ownerId"]),
+
   // Never returned by a public query
   siteSecrets: defineTable({
     siteId: v.id("sites"),

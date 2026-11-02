@@ -1,4 +1,4 @@
-import { ConvexError, v, type Infer } from "convex/values";
+import { ConvexError, v, type Infer, type ObjectType } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireSite } from "./lib/auth";
@@ -72,16 +72,18 @@ function tiles(current: Totals, previous: Totals): PageTiles {
  * left out. `status` says when a filtered range is too long, or the rows would go past
  * the read limits.
  */
+const listArgs = {
+  domain: v.string(),
+  range: rangeArg,
+  filters: v.array(filterValidator),
+  sort: pageSortValidator,
+  desc: v.boolean(),
+  search: v.string(),
+  offset: v.number(),
+};
+
 export const list = query({
-  args: {
-    domain: v.string(),
-    range: rangeArg,
-    filters: v.array(filterValidator),
-    sort: pageSortValidator,
-    desc: v.boolean(),
-    search: v.string(),
-    offset: v.number(),
-  },
+  args: listArgs,
   returns: v.union(
     v.object({
       status: v.literal("ok"),
@@ -95,45 +97,51 @@ export const list = query({
     }),
     v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
   ),
-  handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
-    if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
-    const table = { sort: args.sort, desc: args.desc, search: args.search, offset: args.offset };
-
-    let result: Listed;
-    if ("period" in args.range) {
-      const { start, end } = hourBounds(args.range.period, args.range.now, site.timezone);
-      result = filteredResult(await filteredPages(ctx, site, hourWindow(site, start, end), args.filters));
-    } else {
-      const range = { from: args.range.from, to: args.range.to };
-      if (!isValidRange(range)) throw new ConvexError("Invalid date range");
-      if (args.filters.length > 0) {
-        result =
-          rangeDays(range) > MAX_FILTER_DAYS
-            ? { status: "range" }
-            : filteredResult(await filteredPages(ctx, site, dayWindow(site, range), args.filters));
-      } else {
-        result = await rollupPages(ctx, site, range);
-      }
-    }
-    if (result.status !== "ok") return { status: result.status };
-    const { pages, totalPageviews, comparable } = result;
-    // Searching reads every title; otherwise only the rows shown are looked up
-    const titles = args.search.trim() === "" ? undefined : await siteTitles(ctx, site._id);
-    const shown = pageTable(pages, { ...table, comparable, titles });
-    const rows = titles
-      ? shown.rows
-      : await Promise.all(shown.rows.map(async (r) => ({ ...r, title: await pageTitle(ctx, site._id, r.path) })));
-    return {
-      status: "ok" as const,
-      ...shown,
-      rows,
-      totalPageviews,
-      tiles: result.tiles,
-      comparable,
-    };
-  },
+  handler: async (ctx, args) => await pageList(ctx, await requireSite(ctx, args.domain), args),
 });
+
+/** `list` for a site already resolved to its owner; the MCP server calls it too. */
+export async function pageList(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  args: Omit<ObjectType<typeof listArgs>, "domain">,
+) {
+  if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
+  const table = { sort: args.sort, desc: args.desc, search: args.search, offset: args.offset };
+
+  let result: Listed;
+  if ("period" in args.range) {
+    const { start, end } = hourBounds(args.range.period, args.range.now, site.timezone);
+    result = filteredResult(await filteredPages(ctx, site, hourWindow(site, start, end), args.filters));
+  } else {
+    const range = { from: args.range.from, to: args.range.to };
+    if (!isValidRange(range)) throw new ConvexError("Invalid date range");
+    if (args.filters.length > 0) {
+      result =
+        rangeDays(range) > MAX_FILTER_DAYS
+          ? { status: "range" }
+          : filteredResult(await filteredPages(ctx, site, dayWindow(site, range), args.filters));
+    } else {
+      result = await rollupPages(ctx, site, range);
+    }
+  }
+  if (result.status !== "ok") return { status: result.status };
+  const { pages, totalPageviews, comparable } = result;
+  // Searching reads every title; otherwise only the rows shown are looked up
+  const titles = args.search.trim() === "" ? undefined : await siteTitles(ctx, site._id);
+  const shown = pageTable(pages, { ...table, comparable, titles });
+  const rows = titles
+    ? shown.rows
+    : await Promise.all(shown.rows.map(async (r) => ({ ...r, title: await pageTitle(ctx, site._id, r.path) })));
+  return {
+    status: "ok" as const,
+    ...shown,
+    rows,
+    totalPageviews,
+    tiles: result.tiles,
+    comparable,
+  };
+}
 
 /**
  * The page drawer: one page over the range, through the filtered view with `page:<path>`

@@ -1,10 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { action, internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
 import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
+import { newKey, sha256Hex } from "./lib/keys";
 import {
   DEFAULT_PLACEHOLDER,
   MAX_EXCLUDED_PATHS,
@@ -115,16 +116,19 @@ export const list = query({
   args: {},
   returns: v.array(siteSummary),
   handler: async (ctx) => {
-    const ownerId = await requireOwnerId(ctx);
-    const sites = await ctx.db
-      .query("sites")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-      .take(MAX_SITES);
-    return sites
-      .map((s) => ({ domain: s.domain, timezone: s.timezone }))
-      .sort((a, b) => a.domain.localeCompare(b.domain));
+    const sites = await ownerSites(ctx, await requireOwnerId(ctx));
+    return sites.map((s) => ({ domain: s.domain, timezone: s.timezone }));
   },
 });
+
+/** Every site `ownerId` owns, sorted by domain (the switcher, and the MCP server's list_sites). */
+export async function ownerSites(ctx: QueryCtx, ownerId: string): Promise<Doc<"sites">[]> {
+  const sites = await ctx.db
+    .query("sites")
+    .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+    .take(MAX_SITES);
+  return sites.sort((a, b) => a.domain.localeCompare(b.domain));
+}
 
 const LIST_DAYS = "30d";
 
@@ -412,8 +416,7 @@ export const createApiKey = action({
   args: { domain: v.string() },
   returns: v.string(),
   handler: async (ctx, args) => {
-    const bytes = crypto.getRandomValues(new Uint8Array(24));
-    const key = `va_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    const key = newKey("va_");
     await ctx.runMutation(internal.sites.storeApiKeyHash, { domain: args.domain, apiKeyHash: await sha256Hex(key) });
     return key;
   },
@@ -429,11 +432,6 @@ export const storeApiKeyHash = internalMutation({
     return null;
   },
 });
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /**
  * Deletes a site. The site row goes at once, so the dashboard and ingest stop seeing

@@ -33,7 +33,19 @@ export async function findOwnedSite(
   ctx: QueryCtx | MutationCtx,
   domain: string,
 ): Promise<Doc<"sites"> | null> {
-  const ownerId = await requireOwnerId(ctx);
+  return await ownedSite(ctx, await requireOwnerId(ctx), domain);
+}
+
+/**
+ * The site with this domain if `ownerId` owns it, else null. The owner comes from the
+ * Clerk session (findOwnedSite) or from an MCP API key (mcp.ts); the stats helpers then
+ * take the site, so both paths share them.
+ */
+export async function ownedSite(
+  ctx: QueryCtx | MutationCtx,
+  ownerId: string,
+  domain: string,
+): Promise<Doc<"sites"> | null> {
   const normalized = normalizeDomain(domain);
   if (normalized === null) return null;
   const site = await ctx.db

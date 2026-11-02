@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-11-02 (design v4, Phases 1 to 16 built). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-11-02 (design v4, Phases 1 to 17 built; the plan is complete). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -46,6 +46,7 @@ Last updated: 2026-11-02 (design v4, Phases 1 to 16 built). Design v4 is planned
 | Design v4, Phase 14: page path grouping | **Built, awaiting owner review.** Settings → Filtering → Page paths has a "Group dynamic path IDs" switch (off by default), a placeholder name (`:id` by default) and an ordered list of named patterns like `/dashboard/:site_id/sites`, with a live preview of what an example path is stored as, all saved with Save changes. With grouping on, ingest rewrites each pageview's path after the excluded-paths drop: the first matching named pattern wins, otherwise UUIDs, runs of 6+ digits and 16+ character hashes become the placeholder. The grouped path is what's stored, rolled up, titled and used as entry and exit. New optional `sites.pathGrouping`, `sites.pathGrouping` / `sites.setPathGrouping`; the pure functions are in `convex/lib/paths.ts`. Applies to new hits only. |
 | Design v4, Phase 15: visitor identity | **Built, awaiting owner review.** Settings → Privacy → Visitor identity offers "Cookies (visitor and session ids)" or "Cookieless", saved as the optional `sites.cookieless` (`sites.setCookieless`; `sites.get` reports it), and says what each mode loses. With Cookieless, ingest stores every pageview without visitor or session ids, even from a snippet that sends them, so its pings, goals and identify calls get none either. `/api/collect` now answers a pageview of a known site with `200 cookieless` or `200 cookies`; the script sends pageviews by fetch to read that, deletes both `_va_` cookies and keeps a `_va_nc` flag in localStorage, so later page loads send no ids. A `cookies` reply clears the flag and the next page load sets cookies again. `data-cookieless` works as before. Script 2,200 bytes gzipped (was 2,087). |
 | Design v4, Phase 16: ignore my visits | **Built, awaiting owner review.** Settings → Filtering → Ignore my visits (first in the group) shows two links built from the domain, `https://<domain>/?_va_ignore=1` and `?_va_ignore=0`, each with Copy, and explains that the switch is per browser and per site. The script reads `?_va_ignore=1` / `=0` on any page load, sets or clears a `_va_ignore` flag in localStorage, and while it is set deletes both `_va_` cookies and sends nothing at all (no pageview, ping, goal, identify, outbound click or claim; `window.analytics` is never installed, so stub calls stay queued). The undo link clears the flag and that same page load is tracked. The old `localStorage.sa_ignore = "true"` still works. No Convex change. Script 2,259 bytes gzipped (was 2,191 by the same measure, `gzipSync` of the minified file as `script.test.ts` does). |
+| Design v4, Phase 17: MCP server | **Built, awaiting owner review.** `/api/mcp` is a stateless Streamable HTTP MCP endpoint (official SDK `@modelcontextprotocol/server` 2.4, Node.js runtime, public in the proxy) with eight read-only tools: `list_sites`, `get_summary`, `get_timeseries`, `get_breakdown`, `get_pages`, `get_visitors`, `get_visitor_journey`, `get_live`. They take a domain, the `?range=` grammar and the `?f=` filter syntax and return compact JSON echoing the range, timezone and filters. Account Settings has an MCP server card: create a named key (shown once, with Copy), list keys (name, prefix, created, last used), revoke, and setup for Claude Code, Claude Desktop and Cursor. Site Settings → Integrations → MCP server shows the setup with the domain and links to the keys. New `apiKeys` table (hashed keys); the stats queries were split into site-taking helpers that the `mcp.*` functions share. New dependencies `@modelcontextprotocol/server` and `zod`. |
 | Design v3, Phase 1: public homepage and sign-out landing | **Built, awaiting owner review.** `/` is a public, static splash page (logo and "Analytics", Log in top right; headline, one line and a Log in button in the centre). Signed-in visitors are redirected from `/` to `/websites` by the proxy. Clerk signs out to `/` and falls back to `/websites` after sign-in. |
 | Design v3, Phase 6: onboarding redirect | **Built, awaiting owner review.** When the site list loads empty, `/websites` replaces itself with `/websites/new`. That covers a new account and deleting the last site. The skeleton stays up until then, and the old empty state is gone. On `/websites/new`, Cancel only shows when you have at least one site. |
 | Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
@@ -104,6 +105,9 @@ convex/
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
   payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
+  apiKeys.ts         MCP keys (design v4): apiKeys.list, apiKeys.create (action, returns the key once), apiKeys.revoke
+  mcp.ts             the MCP server's reads (public, INGEST_SECRET + key hash): mcp.authenticate (mutation, lastUsedAt),
+                     mcp.sites / summary / timeseries / breakdown / pages / visitors / journey / live
   http.ts            Stripe webhook POST /stripe/{siteId} (Convex HTTP action, Stripe SDK signature check)
   migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches; backfillPageStats
                      (design v4 Phase 6); backfillVisitorTotals (design v4 Phase 9)
@@ -121,10 +125,12 @@ convex/
   lib/geo.ts         regionKey / cityKey ("US/CA", "US/CA/San Francisco") and parseGeoKey
   lib/stripe.ts      parseStripeEvent: verified Stripe events -> payment / refund / checkout records
   lib/revenue.ts     recordPayment, the four matching rules, credited session, late linking, rollup credit
-  lib/secret.ts      checkSecret (INGEST_SECRET), shared by ingest and payments
+  lib/secret.ts      checkSecret (INGEST_SECRET), shared by ingest, payments and mcp
+  lib/keys.ts        newKey, sha256Hex (payments and MCP keys), MCP_KEY_PREFIX
+  lib/mcp.ts         strict parsing of the MCP tools' range and filters arguments
   *.test.ts          convex-test suites
 src/
-  proxy.ts           clerkMiddleware; everything protected except /, /sign-in, /sign-up, /api/collect, /api/payments, /script.js; signed-in visitors on / go to /websites
+  proxy.ts           clerkMiddleware; everything protected except /, /sign-in, /sign-up, /api/collect, /api/payments, /api/mcp, /script.js; signed-in visitors on / go to /websites
   app/layout.tsx     ThemeProvider (outer) > ClerkProvider (afterSignOutUrl /, sign-in fallback /websites) > ConvexClientProvider
   app/billing/page.tsx          account mode, "Billing is coming soon" card (static)
   app/settings/page.tsx         account mode > client AccountSettings (email, Manage account, theme, Sign out)
@@ -138,6 +144,7 @@ src/
   app/sign-in, sign-up   Clerk components inside <Suspense>
   app/api/collect/route.ts   ingest endpoint
   app/api/payments/route.ts  payments API (Bearer key, real status codes)
+  app/api/mcp/route.ts       MCP endpoint (Bearer vamcp_ key, 401s, then the SDK's createMcpHandler); server.ts has the tools
   app/test.html/route.ts     dev-only page that loads the script for the "localhost" site
   components/        ConvexClientProvider, ThemeProvider (next-themes), ThemeToggle, AddWebsiteForm (+ Snippet),
                      CopyButton, TimezoneSelect, TopBar (sticky bar + tabs, sitePath, SiteSection),
@@ -425,6 +432,20 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **The range in words** under the title is the preset's label, or `formatRangeLabel` for custom ranges: day first as the PRD shows ("1 Oct – 14 Oct 2026"), unlike the rest of the app's "Oct 1".
 - **The Filter button** is a disabled outline Button with `focusableWhenDisabled`, so it still gets hover and focus for its "Coming soon" tooltip. `TooltipProvider` (300 ms delay) wraps the app in `layout.tsx`.
 - **Filter chips are outline Badges** under the header ("Clear all" with two or more). The 90-day and "too many" notices sit in a muted bordered block in place of the stats.
+
+### Design v4, Phase 17 (MCP server)
+
+- **SDK**: the official TypeScript SDK v2, `@modelcontextprotocol/server` 2.4.0 (with `zod` 4 for the tool schemas), rather than `mcp-handler`. `createMcpHandler` builds one server per request and serves both the 2026-07-28 revision and 2025-era clients (initialize, then tools/call) through its stateless fallback, so nothing is kept between requests and it runs as a plain Vercel function. GET and DELETE answer 405 (no sessions). There is no `export const runtime`: Cache Components forbids it, and Node.js is the default.
+- **Auth, per request**: the route reads `Authorization: Bearer vamcp_<48 hex>`, hashes it (SHA-256, `node:crypto`) and calls `mcp.authenticate` (INGEST_SECRET + hash). Missing or malformed → 401 "Missing or malformed API key"; unknown or revoked → 401 "Unknown or revoked API key" (both with `WWW-Authenticate: Bearer`). Then every tool's `mcp.*` query checks the key again, so a key revoked mid-request fails its next tool call. Only the hash ever leaves the route. `lastUsedAt` is written by `authenticate` when it's a minute or more old.
+- **Keys** are account-wide (they read every site the owner has), named, shown once, and start with `vamcp_` so they can't be confused with a site's payments key (`va_`). Settings shows the first 12 characters as the prefix. At most 20 active keys per account; names up to 60 characters. Revoking sets `revokedAt` (the row stays) and drops the key from the list. Revoke asks for a second click, not a dialog.
+- **No second copy of the maths**: `stats.summary`, `timeseries`, `breakdown`, `goals`, `conversions`, `live`, `online`, `liveFeed`, `pages.list`, `visitors.list` and `visitors.profile` are now thin queries over exported `site*` / `pageList` / `visitorList` / `visitorProfile` helpers that take the resolved site. The UI resolves it with `requireSite` (Clerk), MCP with `ownedSite(ctx, ownerId, domain)` from the key's owner (`lib/auth.ts`; `findOwnedSite` uses it too). Someone else's domain and a missing one both give "Site not found".
+- **The tools pick the same view as the dashboard**: day ranges without filters read the rollups; today, yesterday and 24h, and day ranges with filters, go through `filteredView` (hourly or daily window), with the 90-day filter limit. Sites that never sent a visitor id ignore filters, as the dashboard does, and the result says so in `note`. `get_breakdown` ranks with `rankEntries` (the cards' metric toggle; optional `metric`) and returns 20 rows by default (`limit` up to 100); `channel: "AI"` is the Sources AI tab.
+- **Stricter arguments than the URL**: an unreadable range or filter is an error naming the grammar, instead of the URL's silent fallback to 7d, so an assistant never gets numbers for a range it didn't ask for. Missing range means 7d. Hour ranges use the exact clock (the dashboard snaps it to 5 minutes).
+- **Compact results**: JSON text without whitespace, the UI's shapes trimmed: revenue fields only on sites with revenue, goal and conversion series only where they apply, no per-page sparkline in `get_pages`, and `get_live` keeps 25 feed rows. Every result echoes `domain`, `timezone`, `range` (`param`, `from`, `to`, `granularity`, plus ISO `start`/`end` for hour ranges) and `filters`. Revenue is in minor units, times are Unix ms; the server's `instructions` say so. Errors (ConvexError) come back as tool errors (`isError`) with the message.
+- **Setup snippets**: Claude Code `claude mcp add --transport http analytics <origin>/api/mcp --header "Authorization: Bearer <key>"`; Claude Desktop through `npx mcp-remote` (Desktop's config file only runs local commands), with the header in an env var; Cursor's `mcp.json` with `url` and `headers`. A key created on the page fills them in; otherwise they say `<your-key>`. The origin is `appOrigin()`, so production snippets use the Vercel production URL.
+- **Sidebar**: Integrations (MCP server) sits between Privacy and Filtering, as in piqo. The account card is below Theme; the account column grew from `max-w-xl` to `max-w-2xl` for the code blocks.
+- **Out of scope, as the PRD says**: OAuth (so claude.ai web connectors can't use it yet), write tools, per-site keys.
+- **Checks:** on dev against `next dev`: no key and a wrong key → 401; `initialize`, `tools/list` and `tools/call list_sites` → 200 with the owner's four dev domains; every tool called, and `get_summary` for 30d and for `device:mobile` matched `stats.summary` and `stats.filtered` exactly; someone else's domain → "Site not found"; a bad range or filter → a tool error. Created a key in Settings, used it (Last used <1m ago), revoked it (next request 401). Both test keys made on dev are revoked. Looked at both sections in dark and light and at 375px in an iframe (no sideways scroll; the code blocks scroll inside). Theme left on dark.
 
 ### Design v4, Phase 16 (ignore my visits)
 
@@ -747,9 +768,9 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review design v4 Phases 1 to 16
+## Next: review design v4 Phases 1 to 17 (the whole plan)
 
-Owner, in both themes and on your phone:
+This completes the design v4 plan. Owner, in both themes and on your phone, check Phases 1 to 17 below, then deploy and run the post-deploy steps at the end.
 
 1. The dashboard: near-black page and cards, every border the same dark grey (`#1f1f1f`), no Filter button, no Events or Funnels. Clicking a row still filters and the chip still removes it.
 2. The user button is just your initials, and the menu still shows your email.
@@ -786,7 +807,29 @@ Owner, in both themes and on your phone:
 
 20. Ignore my visits (Settings → Filtering), in both themes and on your phone: two links for the site, each with Copy, and the per-browser, per-site explanation. After the deploy, open the first link on a tracked site: in DevTools → Network no `/api/collect` requests go out on that load, on reloads, on other pages, or when you click a goal button or an outbound link, and `_va_ignore` is in Local Storage; Live shows nothing from you. Open the second link: the flag is gone and that page view shows up in Live. Repeat on your phone and on `www.` if your site uses it. Browsers may serve the old `/script.js` from cache for a while after the deploy, so reload once if the first link seems to do nothing.
 
-Push to `main` when happy. Phase 16 changes only the script and the Settings page; the normal Vercel build deploys it and nothing needs to be run. Phase 15 adds the optional `sites.cookieless` field, changes `ingest.pageview` (now returns the mode), `sites` functions, `/api/collect` and the script; the normal Vercel build deploys them and nothing needs to be run. Phase 14 adds the optional `sites.pathGrouping` field and changes `ingest` and `sites` functions; the normal Vercel build deploys them and nothing needs to be run. Phase 13 adds the optional `sites.excludedPaths` field and changes `ingest` and `sites` functions; the normal Vercel build deploys them and nothing needs to be run. Phases 10, 11 and 12 need nothing run (Phase 11 changes `visitors.profile`, no schema change). Phases 3, 5, 6, 7, 8 and 9 change Convex functions, Phases 6 and 9 add optional schema fields and Phase 7 the `pageTitles` table; the Vercel build deploys them (`npx convex deploy --cmd 'npm run build'`). **Then run both backfills once on production**, a few minutes after the deploy: `npx convex run migrations:backfillPageStats --prod` (Phase 6; until it runs, the new Pages columns only count hits since the deploy) and `npx convex run migrations:backfillVisitorTotals --prod` (Phase 9; until it runs, older visitors' rows show only what came in since the deploy, and their location and device are blank).
+21. The MCP server, after the deploy. In account Settings (Settings tab on `/websites`), in both themes and on your phone: the MCP server card. Create a key named e.g. "Laptop": it shows once with Copy (reload and it's gone; only the prefix stays in the list), and the setup below fills it in. Then in a terminal:
+
+    ```bash
+    claude mcp add --transport http analytics https://analytics-jet-zeta.vercel.app/api/mcp \
+      --header "Authorization: Bearer <the key>"
+    ```
+
+    (Copy it from the card instead: it uses the app's production URL, and a custom domain once you attach one.) Start Claude Code, run `/mcp` to see `analytics` connected with 8 tools, and ask "list my sites", then "visitors on advancedortholabsf.com in the last 30 days, and top sources", "top pages this week", "who's online now". Compare a few numbers with the dashboard on the same range and filter (e.g. 30d, and `country:US`). The key's "Last used" moves (at most once a minute). Ask about a domain you don't own: "Site not found". Revoke the key: the next question fails with 401 (in Claude Code, `/mcp` shows it failed). Try Claude Desktop and Cursor with their snippets if you use them (Desktop needs Node.js for `mcp-remote`). Site Settings → Integrations → MCP server shows the same setup with the domain and links to the keys. Remove the test server afterwards with `claude mcp remove analytics` if you don't want to keep it.
+
+### Deploy and post-deploy steps (Phases 1 to 17)
+
+Push to `main` when happy; Vercel runs `npx convex deploy --cmd 'npm run build'`, which deploys the Convex functions and schema (all additions are optional fields or new tables: `pageTitles`, `apiKeys`) and the Next.js app together. Then:
+
+1. **No new environment variables.** The MCP route uses `NEXT_PUBLIC_CONVEX_URL` and `INGEST_SECRET`, which Vercel Production and Convex prod already have (they must be the same value on both, as for `/api/collect`). Check `INGEST_SECRET` is set on Vercel Production if MCP calls answer 500 "Server misconfigured".
+2. **New dependencies** (`@modelcontextprotocol/server` 2.4.0, `zod` 4.6.7) are in `package.json` and `package-lock.json`; Vercel installs them. Nothing else to install.
+3. **Run both backfills once on production**, a few minutes after the deploy:
+   - `npx convex run migrations:backfillPageStats --prod` (Phase 6; until it runs, the Pages tab's Sessions, Bounce and Duration only count hits since the deploy).
+   - `npx convex run migrations:backfillVisitorTotals --prod` (Phase 9; until it runs, older visitors' Users rows show only what came in since the deploy, and their location and device are blank).
+   Each reschedules itself per site; check the Convex prod logs until they report done.
+4. **Nothing to change in the snippets on your sites**: they load `/script.js`, which picks up Phases 7, 15 and 16 on deploy (browsers may keep the old copy cached for a while).
+5. **Connect Claude Code to production**: create a key in account Settings on the live app and run the `claude mcp add` command from the card (item 21). Keys made on dev don't work on production, and the other way round.
+
+Per phase, for reference: Phase 17 adds the `apiKeys` table, `apiKeys.*` and `mcp.*` functions and `/api/mcp`, and refactors the stats, pages and visitors queries into shared helpers (no behaviour change). Phase 16 changes only the script and the Settings page. Phase 15 adds `sites.cookieless` and changes `ingest.pageview`, `sites`, `/api/collect` and the script. Phases 13 and 14 add `sites.excludedPaths` and `sites.pathGrouping` and change `ingest` and `sites`. Phases 10, 11 and 12 need nothing run. Phases 3, 5, 6, 7, 8 and 9 change Convex functions; Phases 6 and 9 add optional fields and need the backfills above, and Phase 7 adds `pageTitles`.
 
 ## Earlier: review design v3 Phases 1 to 6
 

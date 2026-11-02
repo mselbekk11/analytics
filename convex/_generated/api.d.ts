@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as apiKeys from "../apiKeys.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_attribution from "../lib/attribution.js";
@@ -18,6 +19,8 @@ import type * as lib_domain from "../lib/domain.js";
 import type * as lib_filtered from "../lib/filtered.js";
 import type * as lib_filters from "../lib/filters.js";
 import type * as lib_geo from "../lib/geo.js";
+import type * as lib_keys from "../lib/keys.js";
+import type * as lib_mcp from "../lib/mcp.js";
 import type * as lib_names from "../lib/names.js";
 import type * as lib_pages from "../lib/pages.js";
 import type * as lib_paths from "../lib/paths.js";
@@ -29,6 +32,7 @@ import type * as lib_sources from "../lib/sources.js";
 import type * as lib_statsShapes from "../lib/statsShapes.js";
 import type * as lib_stripe from "../lib/stripe.js";
 import type * as lib_visitors from "../lib/visitors.js";
+import type * as mcp from "../mcp.js";
 import type * as me from "../me.js";
 import type * as migrations from "../migrations.js";
 import type * as pages from "../pages.js";
@@ -44,6 +48,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  apiKeys: typeof apiKeys;
   http: typeof http;
   ingest: typeof ingest;
   "lib/attribution": typeof lib_attribution;
@@ -54,6 +59,8 @@ declare const fullApi: ApiFromModules<{
   "lib/filtered": typeof lib_filtered;
   "lib/filters": typeof lib_filters;
   "lib/geo": typeof lib_geo;
+  "lib/keys": typeof lib_keys;
+  "lib/mcp": typeof lib_mcp;
   "lib/names": typeof lib_names;
   "lib/pages": typeof lib_pages;
   "lib/paths": typeof lib_paths;
@@ -65,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   "lib/statsShapes": typeof lib_statsShapes;
   "lib/stripe": typeof lib_stripe;
   "lib/visitors": typeof lib_visitors;
+  mcp: typeof mcp;
   me: typeof me;
   migrations: typeof migrations;
   pages: typeof pages;
