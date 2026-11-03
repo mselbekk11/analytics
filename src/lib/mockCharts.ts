@@ -160,3 +160,16 @@ export function funnelSteps(counts: number[]): FunnelStep[] {
 function share(part: number, whole: number): number {
   return whole > 0 ? part / whole : 0;
 }
+
+/**
+ * A lower-is-better series (search position) turned upside down for drawing on a hidden
+ * axis, as Search Console draws position: the best (lowest) value becomes 2 and the worst
+ * 1, so the best day sits highest and the line keeps to the upper half of the plot.
+ * A flat series is all 1.
+ */
+export function flipValues(values: number[]): number[] {
+  const best = Math.min(...values);
+  const worst = Math.max(...values);
+  const range = worst - best;
+  return values.map((v) => r(1 + (range > 0 ? (worst - v) / range : 0)));
+}

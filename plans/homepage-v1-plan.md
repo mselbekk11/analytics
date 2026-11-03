@@ -153,8 +153,8 @@ The Search mockup in 04 Search: a header with "synced" note, a Performance | Ind
 
 ### Acceptance criteria
 
-- [ ] It fills the Fig. 6 frame, built from the shared chart helpers.
-- [ ] It reads in both themes, with no sideways scroll at 375 px.
+- [x] It fills the Fig. 6 frame, built from the shared chart helpers.
+- [x] It reads in both themes, with no sideways scroll at 375 px.
 
 ---
 

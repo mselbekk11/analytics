@@ -97,17 +97,21 @@ export function MockTopBar({
 
 const SEGMENTS = ["Today", "24h", "7d", "30d"];
 
-/** SiteHeader: the title and the range in words, then Today | 24h | 7d | 30d and the range menu. */
+/**
+ * SiteHeader: the title and the range in words, then Today | 24h | 7d | 30d and the range
+ * menu. A header with a `note` shows it under the title instead, and `segments` replace
+ * the range ones (Search's Performance | Indexing).
+ */
 export function MockHeader({ header }: { header: MockHeaderData }) {
   return (
     <div className="flex items-start justify-between gap-6">
       <div className="flex flex-col gap-1">
         <span className="text-3xl font-semibold tracking-tight">{header.title}</span>
-        <span className="text-sm text-muted-foreground">{header.rangeLabel}</span>
+        <span className="text-sm text-muted-foreground">{header.note ?? header.rangeLabel}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="flex rounded-lg border border-border p-0.5">
-          {SEGMENTS.map((s) => (
+          {(header.segments ?? SEGMENTS).map((s) => (
             <span
               key={s}
               className={cn(
@@ -166,13 +170,17 @@ export function MockChange({ change, lowerIsBetter }: { change: number | null; l
   );
 }
 
-/** The chart's key: a short stroke for each line, a square for each bar series. */
+/** The chart's key: a short stroke for each line (dashed if the line is), a square for each bar series. */
 export function MockLegend({ chart }: { chart: MockChart }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {chart.lines.map((s) => (
         <span key={s.label} className="flex items-center gap-1.5">
-          <span className="h-0.5 w-3 rounded-full" style={{ background: MOCK_COLOR[s.color] }} />
+          {s.dash ? (
+            <span className="w-3 border-t-[1.5px] border-dashed" style={{ borderColor: MOCK_COLOR[s.color] }} />
+          ) : (
+            <span className="h-0.5 w-3 rounded-full" style={{ background: MOCK_COLOR[s.color] }} />
+          )}
           {s.label}
         </span>
       ))}

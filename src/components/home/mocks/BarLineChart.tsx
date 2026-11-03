@@ -1,4 +1,4 @@
-import { areaPath, groupedBars, linePath, niceScale, slotCenter, ticks, valueY } from "@/lib/mockCharts";
+import { areaPath, flipValues, groupedBars, linePath, niceScale, slotCenter, ticks, valueY } from "@/lib/mockCharts";
 import type { MockChart } from "./fixtures";
 import { MOCK_COLOR } from "./parts";
 
@@ -12,7 +12,8 @@ const RIGHT = 4;
  * TrafficChart as inline SVG: bars side by side in each bucket, lines with an optional soft
  * fill over them, y labels for the count axis and every `labelEvery`th bucket label.
  * `id` keeps the fills' gradient ids unique on the page; `formatTick` writes the y labels
- * (plain numbers by default, `moneyTick` for a revenue axis).
+ * (plain numbers by default, `moneyTick` for a revenue axis). A `flip` line is drawn upside
+ * down (`flipValues`), so its best (lowest) value is highest.
  */
 export default function BarLineChart({
   id,
@@ -82,12 +83,13 @@ export default function BarLineChart({
         {/* The first line is drawn last, on top */}
         {chart.lines
           .map((s, i) => {
-            const box = { ...plot, max: s.axis === "count" ? scale.max : maxOf(s.values, 1.1) };
+            const values = s.flip ? flipValues(s.values) : s.values;
+            const box = { ...plot, max: s.axis === "count" ? scale.max : maxOf(values, 1.1) };
             return (
               <g key={s.label}>
-                {s.fill !== undefined && <path d={areaPath(s.values, box)} fill={`url(#${id}-fill-${i})`} />}
+                {s.fill !== undefined && <path d={areaPath(values, box)} fill={`url(#${id}-fill-${i})`} />}
                 <path
-                  d={linePath(s.values, box)}
+                  d={linePath(values, box)}
                   fill="none"
                   strokeWidth={1.5}
                   strokeLinejoin="round"

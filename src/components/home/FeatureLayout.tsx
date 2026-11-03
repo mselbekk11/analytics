@@ -8,6 +8,7 @@ import FunnelMock from "./mocks/FunnelMock";
 import GoalsMock from "./mocks/GoalsMock";
 import PagesMock from "./mocks/PagesMock";
 import RevenueMock from "./mocks/RevenueMock";
+import SearchMock from "./mocks/SearchMock";
 import Pricing from "./Pricing";
 import Quotes from "./Quotes";
 import Section from "./Section";
@@ -26,6 +27,7 @@ const MOCKS: Partial<Record<number, ReactNode>> = {
   3: <RevenueMock />,
   4: <FunnelMock />,
   5: <GoalsMock />,
+  6: <SearchMock />,
 };
 
 /**

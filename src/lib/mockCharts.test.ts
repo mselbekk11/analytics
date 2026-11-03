@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   areaPath,
   barRects,
+  flipValues,
   funnelSteps,
   groupedBars,
   linePath,
@@ -171,5 +172,16 @@ describe("funnelSteps", () => {
       { count: 0, ofFirst: 0, ofPrevious: 0, dropped: 0 },
     ]);
     expect(funnelSteps([])).toEqual([]);
+  });
+});
+
+describe("flipValues", () => {
+  test("draws the lowest value highest, from 1 for the worst to 2 for the best", () => {
+    expect(flipValues([14, 12, 10, 13])).toEqual([1, 1.5, 2, 1.25]);
+  });
+
+  test("keeps a flat series at 1, and an empty one empty", () => {
+    expect(flipValues([8, 8, 8])).toEqual([1, 1, 1]);
+    expect(flipValues([])).toEqual([]);
   });
 });

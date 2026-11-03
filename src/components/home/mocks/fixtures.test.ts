@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { formatNumber, formatRate } from "@/lib/format";
 import { funnelSteps } from "@/lib/mockCharts";
-import { funnelMock, goalsMock } from "./fixtures";
+import { funnelMock, goalsMock, searchMock } from "./fixtures";
 
 // The typed tiles must agree with the rows they summarise, so an edit to one shows up here
 
@@ -28,5 +28,41 @@ describe("funnelMock", () => {
     expect(counts.length).toBeGreaterThanOrEqual(2);
     expect(counts.length).toBeLessThanOrEqual(8);
     expect(funnelSteps(counts).map((s) => s.count)).toEqual(counts);
+  });
+});
+
+describe("searchMock", () => {
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+  const tile = (label: string) => searchMock.tiles.find((t) => t.label === label);
+  const series = (label: string) =>
+    [...searchMock.chart.bars, ...searchMock.chart.lines].find((s) => s.label === label)?.values ?? [];
+  const clicks = sum(series("Google clicks")) + sum(series("Bing clicks"));
+  const impressions = sum(series("Impressions"));
+
+  test("its tiles match the daily series", () => {
+    expect(tile("Clicks")?.value).toBe(formatNumber(clicks));
+    expect(tile("Impressions")?.value).toBe(`${(impressions / 1000).toFixed(1)}k`);
+    expect(tile("Click-through rate")?.value).toBe(formatRate(clicks / impressions));
+    const position = sum(series("Avg. position").map((p, i) => p * series("Impressions")[i])) / impressions;
+    expect(tile("Avg. position")?.value).toBe(position.toFixed(1));
+  });
+
+  test("the rate's change follows from the clicks' and impressions'", () => {
+    const change = (label: string) => tile(label)?.change ?? 0;
+    const implied = (1 + change("Clicks")) / (1 + change("Impressions")) - 1;
+    expect(change("Click-through rate")).toBeCloseTo(implied, 3);
+  });
+
+  test("every series covers each day, and the keywords fit inside the totals", () => {
+    for (const s of [...searchMock.chart.bars, ...searchMock.chart.lines]) {
+      expect(s.values).toHaveLength(searchMock.chart.labels.length);
+    }
+    const { rows, filters, total } = searchMock.keywords;
+    const counts = rows.map((r) => r.clicks);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    expect(sum(counts)).toBeLessThanOrEqual(clicks);
+    const count = (label: string) => filters.find((f) => f.label === label)?.count;
+    expect(count("All")).toBe(total);
+    expect((count("Branded") ?? 0) + (count("Non-branded") ?? 0)).toBe(total);
   });
 });

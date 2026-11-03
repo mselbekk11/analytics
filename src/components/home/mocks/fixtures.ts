@@ -34,6 +34,8 @@ export type MockSeries = {
   fill?: number;
   /** Lines only: a dashed line ("4 4") */
   dash?: string;
+  /** Lines on the hidden axis only: lower is better, so it's drawn upside down (search position) */
+  flip?: boolean;
 };
 
 /**
@@ -52,8 +54,12 @@ export type MockChart = {
 export type MockHeader = {
   title: string;
   rangeLabel: string;
-  /** "Today" | "24h" | "7d" | "30d", or null for none */
+  /** "Today" | "24h" | "7d" | "30d" (or one of `segments`), or null for none */
   segment: string | null;
+  /** Under the title in place of the range in words (the range menu still shows it) */
+  note?: string;
+  /** In place of Today | 24h | 7d | 30d */
+  segments?: string[];
 };
 
 // 24 hourly buckets, ending at 18:00
@@ -364,4 +370,110 @@ export const goalsMock = {
     { name: "/checkout/success", kind: "Page", conversions: 92, topSource: "Direct" },
     { name: "book_demo", kind: "Event", conversions: 61, topSource: "X" },
   ] satisfies MockGoalRow[],
+};
+
+/** A row of the keywords table: the query, its Google and Bing totals and the page it lands on. */
+export type MockKeywordRow = {
+  keyword: string;
+  clicks: number;
+  impressions: number;
+  /** Average position, impression-weighted; lower is better */
+  position: number;
+  page: string;
+};
+
+// 28 daily buckets, Oct 5 to Nov 1
+const DAYS_28 = DAYS.slice(2);
+
+/**
+ * Fig. 6, Acme's search traffic from Google and Bing over the last 28 days (not built yet).
+ * The tiles are worked out from the daily series (pinned in `fixtures.test.ts`): clicks are
+ * both engines' bars summed, the rate is clicks over impressions, and the position is the
+ * daily positions weighted by impressions. Position fell, which is good, so it shows green.
+ * The keywords are the top five of `keywords.total` by clicks, landing on Fig. 2's pages.
+ */
+export const searchMock = {
+  header: {
+    title: "Search",
+    rangeLabel: "Last 28 days",
+    segment: "Performance",
+    segments: ["Performance", "Indexing"],
+    note: "Google Search Console and Bing Webmaster Tools · synced 23m ago",
+  } satisfies MockHeader,
+  tiles: [
+    { label: "Clicks", value: "2,539", change: 0.114, note: "vs previous" },
+    { label: "Impressions", value: "136.3k", change: 0.062, note: "vs previous" },
+    { label: "Click-through rate", value: "1.9%", change: 0.049, note: "vs previous" },
+    { label: "Avg. position", value: "13.2", change: -0.074, lowerIsBetter: true, note: "vs previous" },
+  ] satisfies MockPageTile[],
+  chart: {
+    labels: DAYS_28,
+    labelEvery: 3,
+    bars: [
+      {
+        label: "Google clicks",
+        color: "visitors",
+        axis: "count",
+        values: [
+          62, 75, 76, 78, 77, 59, 59, 83, 83, 76, 83, 80, 63, 60, 80, 79, 91, 87, 94, 63, 67, 79, 99, 88, 98, 96, 60, 70,
+        ],
+      },
+      {
+        label: "Bing clicks",
+        color: "pageviews",
+        axis: "count",
+        values: [15, 13, 13, 12, 11, 11, 10, 16, 13, 13, 16, 14, 8, 12, 13, 15, 15, 15, 15, 10, 13, 15, 14, 17, 19, 15, 9, 12],
+      },
+    ],
+    lines: [
+      {
+        label: "Impressions",
+        color: "goal",
+        axis: "hidden",
+        fill: 0.08,
+        values: [
+          4500, 4560, 4840, 4640, 4890, 4140, 4510, 4750, 4620, 5220, 4600, 4900, 4470, 4600, 4940, 5160, 5370, 5130, 5310,
+          4620, 4490, 4960, 5370, 5000, 5630, 4950, 5010, 5090,
+        ],
+      },
+      {
+        label: "Avg. position",
+        color: "muted",
+        axis: "hidden",
+        dash: "4 4",
+        flip: true,
+        values: [
+          13.8, 14.5, 14.3, 14.3, 13.9, 13.9, 13.9, 13.5, 13.4, 13.7, 13.2, 13, 13.1, 12.8, 13.1, 12.8, 13.3, 13.3, 12.6,
+          12.7, 13.2, 12.1, 12.2, 13.2, 13.1, 12.1, 12, 11.9,
+        ],
+      },
+    ],
+  } satisfies MockChart,
+  keywords: {
+    total: 48,
+    /** The table's quick filters with their counts; All is pressed */
+    filters: [
+      { label: "All", count: 48 },
+      { label: "Rising", count: 14 },
+      { label: "Falling", count: 6 },
+      { label: "Near page one", count: 9 },
+      { label: "New", count: 5 },
+      { label: "Lost", count: 2 },
+      { label: "Branded", count: 4 },
+      { label: "Non-branded", count: 44 },
+    ],
+    rows: [
+      { keyword: "acme invoicing", clicks: 412, impressions: 2_180, position: 1.2, page: "/" },
+      { keyword: "invoice software for small teams", clicks: 236, impressions: 18_940, position: 6.8, page: "/" },
+      {
+        keyword: "how long do clients take to pay an invoice",
+        clicks: 171,
+        impressions: 9_320,
+        position: 4.1,
+        page: "/blog/invoice-time",
+      },
+      { keyword: "acme pricing", clicks: 128, impressions: 640, position: 1.0, page: "/pricing" },
+      { keyword: "simple invoicing app", clicks: 97, impressions: 12_410, position: 9.6, page: "/" },
+    ] satisfies MockKeywordRow[],
+  },
 };
