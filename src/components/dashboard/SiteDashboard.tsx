@@ -14,6 +14,9 @@ import StatRow from "./StatRow";
 import TrafficChart from "./TrafficChart";
 import { useSiteRange } from "./useSiteRange";
 
+/** Hidden for now: the "visitor tracking on" line on the chart. */
+const SHOW_TRACKING_MARKER = false;
+
 export default function SiteDashboard() {
   return (
     <SiteShell section="analytics">
@@ -150,7 +153,7 @@ function Dashboard({
                 data={series}
                 shown={shown}
                 labels={labels}
-                trackingStart={trackingStart}
+                trackingStart={SHOW_TRACKING_MARKER ? trackingStart : null}
                 currency={currency}
                 tracking={tracking}
               />
