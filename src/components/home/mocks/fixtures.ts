@@ -666,3 +666,15 @@ export const liveMock = {
     },
   ] satisfies MockLiveVisitor[],
 };
+
+/**
+ * 06 Ask AI's example card: a question someone could ask through the MCP server today
+ * (`get_breakdown` of sources ranked by revenue), a one-line answer, and the rows it
+ * draws on: Fig. 3's top three sources, so the two figures agree.
+ */
+export const askAiMock = {
+  question: "Which sources brought in the most revenue this month?",
+  answer: "Direct led with $1,412, then Google with $1,036. Hacker News was third at $684.",
+  currency: revenueMock.currency,
+  rows: revenueMock.sources.slice(0, 3) satisfies MockRevenueRow[],
+};

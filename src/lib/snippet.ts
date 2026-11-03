@@ -3,13 +3,25 @@
 // to the custom domain once one is attached; locally it is unset, so use this origin.
 // Client-only: reads window.location when the variable is unset.
 export function appOrigin(): string {
-  const host = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
-  return host ? `https://${host}` : window.location.origin;
+  return productionOrigin() ?? window.location.origin;
 }
 
-/** The one-line embed snippet for a site. */
-export function embedSnippet(domain: string): string {
-  return `<script async src="${appOrigin()}/script.js" data-site="${domain}"></script>`;
+/**
+ * appOrigin for pages rendered on the server at build time (the homepage's Setup code
+ * block): the production address on Vercel, this app's local address in a local build.
+ */
+export function buildOrigin(): string {
+  return productionOrigin() ?? "http://localhost:3000";
+}
+
+function productionOrigin(): string | undefined {
+  const host = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
+  return host ? `https://${host}` : undefined;
+}
+
+/** The one-line embed snippet for a site. Pass `origin` on the server, where appOrigin can't run. */
+export function embedSnippet(domain: string, origin: string = appOrigin()): string {
+  return `<script async src="${origin}/script.js" data-site="${domain}"></script>`;
 }
 
 /**

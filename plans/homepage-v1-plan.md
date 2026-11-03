@@ -185,7 +185,7 @@ The Live mockup in 05 Realtime and visitors: a left panel ("Acme", Live dot, "Re
 
 ### Acceptance criteria
 
-- [ ] The code block shows the same tag format the app's Snippet produces.
-- [ ] The built-in Ask AI row shows Soon, and the MCP rows name only tools the setup guide covers.
-- [ ] Both sections match the screenshots' layout in both themes and stack on phones.
-- [ ] With every figure filled, a full pass in Chrome (light and dark, 1440 / 1024 / 375 px) shows no empty frames, no sideways scroll and no console errors. PROGRESS.md gets its "Homepage v1" section finalised.
+- [x] The code block shows the same tag format the app's Snippet produces.
+- [x] The built-in Ask AI row shows Soon, and the MCP rows name only tools the setup guide covers.
+- [x] Both sections match the screenshots' layout in both themes and stack on phones.
+- [x] With every figure filled, a full pass in Chrome (light and dark, 1440 / 1024 / 375 px) shows no empty frames, no sideways scroll and no console errors. PROGRESS.md gets its "Homepage v1" section finalised.

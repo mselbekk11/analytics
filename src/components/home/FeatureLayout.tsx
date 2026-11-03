@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import { buildOrigin, embedSnippet } from "@/lib/snippet";
+import AskAi from "./AskAi";
+import CodeBlock from "./CodeBlock";
 import ContentsSidebar from "./ContentsSidebar";
 import { CONTAINER } from "./container";
-import { type HomeSection, type SectionId, sections } from "./content";
+import { type HomeSection, type SectionId, sections, setup } from "./content";
 import Faq from "./Faq";
 import Figure from "./Figure";
 import FunnelMock from "./mocks/FunnelMock";
@@ -17,6 +20,9 @@ import StatStrip from "./StatStrip";
 
 // Sections whose body is something other than figures
 const BODIES: Partial<Record<SectionId, ReactNode>> = {
+  "s-ai": <AskAi />,
+  // The same tag the dashboard's Snippet shows, for a placeholder domain
+  "s-setup": <CodeBlock comment={setup.comment} code={embedSnippet(setup.domain, buildOrigin())} />,
   "s-pricing": <Pricing />,
   "s-customers": <Quotes />,
   "s-faq": <Faq />,

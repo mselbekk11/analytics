@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { formatNumber, formatRate } from "@/lib/format";
+import { formatMoney, formatNumber, formatRate } from "@/lib/format";
 import { funnelSteps } from "@/lib/mockCharts";
-import { funnelMock, goalsMock, liveMock, searchMock } from "./fixtures";
+import { askAiMock, funnelMock, goalsMock, liveMock, searchMock } from "./fixtures";
 
 // The typed tiles must agree with the rows they summarise, so an edit to one shows up here
 
@@ -85,6 +85,20 @@ describe("liveMock", () => {
     for (const v of liveMock.visitors) {
       expect(Math.abs(v.lon)).toBeLessThanOrEqual(180);
       expect(Math.abs(v.lat)).toBeLessThanOrEqual(90);
+    }
+  });
+});
+
+describe("askAiMock", () => {
+  test("its answer names its rows, top first, with their revenue", () => {
+    const counts = askAiMock.rows.map((r) => r.revenueMinor);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    let from = 0;
+    for (const row of askAiMock.rows) {
+      const at = askAiMock.answer.indexOf(`${row.key} `, from);
+      expect(at).toBeGreaterThanOrEqual(from);
+      expect(askAiMock.answer).toContain(formatMoney(row.revenueMinor, askAiMock.currency, true));
+      from = at;
     }
   });
 });

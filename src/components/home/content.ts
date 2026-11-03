@@ -201,9 +201,14 @@ export const sections: HomeSection[] = [
     icon: Code,
     heading: ["Paste one tag,", "see your first visitor."],
     paragraph:
-      "Works on any site or framework. By default the script sets first-party cookies, so a returning visitor is counted once. Switch a site to cookieless in its settings and it stores no visitor ids at all.",
+      "Works on any site or framework. By default the script sets first-party cookies, so a returning visitor is counted once. Switch a site to cookieless under Settings\u00a0→\u00a0Privacy\u00a0→\u00a0Visitor\u00a0identity and it stores no visitor ids at all.",
     highlight: "Switch a site to cookieless",
     figures: [],
+    strip: [
+      { value: "~2 KB", label: "gzipped, loads async" },
+      { value: "30 s", label: "to your first visitor" },
+      { value: "0", label: "cookies in cookieless mode" },
+    ],
   },
   {
     id: "s-pricing",
@@ -238,6 +243,33 @@ export const sections: HomeSection[] = [
     figures: [],
   },
 ];
+
+/** One way to ask about your stats, beside the Ask AI card. `soon` shows a Soon badge in place of `via`. */
+export type Connection = { name: string; description: string; via?: string; soon?: boolean };
+
+/**
+ * 06 Ask AI's list. The MCP rows name only the clients the setup guide in Settings covers
+ * (src/components/McpSetup.tsx): Claude Code, Claude Desktop and Cursor. The card's
+ * question and answer are mockup data, in `askAiMock` (mocks/fixtures.ts).
+ */
+export const askAi = {
+  label: "Ways to connect",
+  connections: [
+    { name: "Ask AI", description: "Built into the dashboard", soon: true },
+    { name: "Claude Code", description: "In your terminal", via: "MCP" },
+    { name: "Claude Desktop", description: "The desktop app", via: "MCP" },
+    { name: "Cursor", description: "Ask while you build", via: "MCP" },
+  ] satisfies Connection[],
+};
+
+/**
+ * 07 Setup's code block: a muted comment, then the real embed tag for a placeholder
+ * domain, built with the dashboard's own snippet helper (src/lib/snippet.ts).
+ */
+export const setup = {
+  comment: "<!-- paste before </head> -->",
+  domain: "your-site.com",
+};
 
 export const sidebar = {
   title: "Contents",
