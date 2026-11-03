@@ -168,9 +168,9 @@ The Live mockup in 05 Realtime and visitors: a left panel ("Acme", Live dot, "Re
 
 ### Acceptance criteria
 
-- [ ] The map draws from the existing dot data with no extra network request beyond the page.
-- [ ] It matches the screenshot's layout in dark and reads in light.
-- [ ] It stacks or clips cleanly at 375 px with no page scroll.
+- [x] The map draws from the existing dot data with no extra network request beyond the page.
+- [x] It matches the screenshot's layout in dark and reads in light.
+- [x] It stacks or clips cleanly at 375 px with no page scroll.
 
 ---
 

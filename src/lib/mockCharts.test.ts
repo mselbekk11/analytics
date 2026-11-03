@@ -6,6 +6,7 @@ import {
   funnelSteps,
   groupedBars,
   linePath,
+  mapPoint,
   moneyTick,
   niceScale,
   sparkline,
@@ -183,5 +184,25 @@ describe("flipValues", () => {
   test("keeps a flat series at 1, and an empty one empty", () => {
     expect(flipValues([8, 8, 8])).toEqual([1, 1, 1]);
     expect(flipValues([])).toEqual([]);
+  });
+});
+
+describe("mapPoint", () => {
+  // d3-geo's geoEqualEarth fitted as `npm run build:world-map` fits it, unrounded
+  const fitted = { scale: 180.76109775261077, translate: [480, 235.93996454785622] as [number, number] };
+
+  test("matches d3-geo's Equal Earth projection", () => {
+    expect(mapPoint(-122.42, 37.77, fitted)).toEqual([181.07, 103.04]); // San Francisco
+    expect(mapPoint(-0.13, 51.51, fitted)).toEqual([479.71, 61.48]); // London
+    expect(mapPoint(139.69, 35.69, fitted)).toEqual([825.15, 109.8]); // Tokyo
+  });
+
+  test("puts 0°, 0° on the origin and mirrors east and west, north and south", () => {
+    const projection = { scale: 100, translate: [480, 200] as [number, number] };
+    expect(mapPoint(0, 0, projection)).toEqual([480, 200]);
+    const [x, y] = mapPoint(60, 40, projection);
+    const [mx, my] = mapPoint(-60, -40, projection);
+    expect(mx).toBeCloseTo(960 - x, 2);
+    expect(my).toBeCloseTo(400 - y, 2);
   });
 });

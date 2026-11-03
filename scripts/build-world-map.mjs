@@ -67,7 +67,10 @@ const centres = Object.fromEntries(
     .map(([code, { piece }]) => [code, path.centroid(piece).map(round)]),
 );
 
-const out = { width, height, dotRadius: 2.1, dots: d, centres };
+// The projection's scale and offset, so other code can place a longitude and latitude
+// on the map (`mapPoint` in src/lib/mockCharts.ts)
+const projected = { scale: round(projection.scale()), translate: projection.translate().map(round) };
+const out = { width, height, dotRadius: 2.1, ...projected, dots: d, centres };
 writeFileSync("src/components/dashboard/world-dots.json", JSON.stringify(out) + "\n");
 console.log(
   `${dots} dots, ${Object.keys(centres).length} countries, ${width}x${height}, ${JSON.stringify(out).length} bytes`,

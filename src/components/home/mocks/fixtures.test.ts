@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { formatNumber, formatRate } from "@/lib/format";
 import { funnelSteps } from "@/lib/mockCharts";
-import { funnelMock, goalsMock, searchMock } from "./fixtures";
+import { funnelMock, goalsMock, liveMock, searchMock } from "./fixtures";
 
 // The typed tiles must agree with the rows they summarise, so an edit to one shows up here
 
@@ -64,5 +64,27 @@ describe("searchMock", () => {
     const count = (label: string) => filters.find((f) => f.label === label)?.count;
     expect(count("All")).toBe(total);
     expect((count("Branded") ?? 0) + (count("Non-branded") ?? 0)).toBe(total);
+  });
+});
+
+describe("liveMock", () => {
+  const bySource = new Map<string, number>();
+  for (const v of liveMock.visitors) bySource.set(v.source, (bySource.get(v.source) ?? 0) + 1);
+
+  test("its Sources rows count the visitors online, largest first, with none left out above the last", () => {
+    for (const row of liveMock.sources) expect(row.visitors).toBe(bySource.get(row.key));
+    const counts = liveMock.sources.map((r) => r.visitors);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    const shown = new Set(liveMock.sources.map((r) => r.key));
+    const rest = [...bySource].filter(([key]) => !shown.has(key)).map(([, n]) => n);
+    expect(Math.max(0, ...rest)).toBeLessThanOrEqual(counts[counts.length - 1]);
+  });
+
+  test("covers the last 30 minutes and has a place for every visitor", () => {
+    expect(liveMock.perMinute).toHaveLength(30);
+    for (const v of liveMock.visitors) {
+      expect(Math.abs(v.lon)).toBeLessThanOrEqual(180);
+      expect(Math.abs(v.lat)).toBeLessThanOrEqual(90);
+    }
   });
 });

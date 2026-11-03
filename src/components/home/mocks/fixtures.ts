@@ -477,3 +477,192 @@ export const searchMock = {
     ] satisfies MockKeywordRow[],
   },
 };
+
+/** A visitor online now: a persona seed for the avatar, their page, place, source and setup. */
+export type MockLiveVisitor = {
+  /** Seed for the persona generator (emoji on a colour), not a real person */
+  seed: string;
+  path: string;
+  /** ISO alpha-2 */
+  country: string;
+  city: string;
+  /** Degrees, for the dot on the map */
+  lon: number;
+  lat: number;
+  /** A source name, as the dashboard's Sources card shows it */
+  source: string;
+  browser: string;
+  /** A device key, as `deviceLabel` reads it */
+  device: "desktop" | "mobile" | "tablet";
+  /** How long ago their last pageview was */
+  ago: string;
+};
+
+/** A ranked row of the live panel's lists: the dashboard's key and its visitors online now. */
+export type MockLiveRow = { key: string; visitors: number };
+
+/**
+ * Fig. 7, Acme's live view: the 12 visitors of the last 5 minutes (as Fig. 1's "12 online"),
+ * latest first, on the map and in the feed. The Sources rows are the top five of those
+ * visitors' sources (pinned in `fixtures.test.ts`). Pages are Fig. 2's.
+ */
+export const liveMock = {
+  site: "Acme",
+  /** Pageviews a minute over the last 30 minutes, oldest first */
+  perMinute: [3, 5, 4, 6, 4, 3, 5, 7, 6, 4, 5, 8, 6, 5, 7, 9, 6, 4, 6, 8, 7, 5, 6, 9, 11, 8, 7, 9, 12, 10],
+  /** The list tabs; the first is pressed */
+  tabs: ["Sources", "Countries", "Devices"],
+  sources: [
+    { key: "Google", visitors: 4 },
+    { key: "Hacker News", visitors: 3 },
+    { key: "Direct", visitors: 2 },
+    { key: "X", visitors: 1 },
+    { key: "Claude", visitors: 1 },
+  ] satisfies MockLiveRow[],
+  visitors: [
+    {
+      seed: "live-1",
+      path: "/pricing",
+      country: "US",
+      city: "San Francisco",
+      lon: -122.42,
+      lat: 37.77,
+      source: "Google",
+      browser: "Chrome",
+      device: "desktop",
+      ago: "now",
+    },
+    {
+      seed: "live-2",
+      path: "/",
+      country: "GB",
+      city: "London",
+      lon: -0.13,
+      lat: 51.51,
+      source: "Hacker News",
+      browser: "Safari",
+      device: "mobile",
+      ago: "4s ago",
+    },
+    {
+      seed: "live-3",
+      path: "/blog/invoice-time",
+      country: "IN",
+      city: "Bengaluru",
+      lon: 77.59,
+      lat: 12.97,
+      source: "X",
+      browser: "Chrome",
+      device: "mobile",
+      ago: "9s ago",
+    },
+    {
+      seed: "live-4",
+      path: "/docs",
+      country: "DE",
+      city: "Berlin",
+      lon: 13.4,
+      lat: 52.52,
+      source: "Direct",
+      browser: "Firefox",
+      device: "desktop",
+      ago: "15s ago",
+    },
+    {
+      seed: "live-5",
+      path: "/",
+      country: "CA",
+      city: "Toronto",
+      lon: -79.38,
+      lat: 43.65,
+      source: "Claude",
+      browser: "Chrome",
+      device: "desktop",
+      ago: "22s ago",
+    },
+    {
+      seed: "live-6",
+      path: "/pricing",
+      country: "FR",
+      city: "Paris",
+      lon: 2.35,
+      lat: 48.86,
+      source: "Google",
+      browser: "Edge",
+      device: "desktop",
+      ago: "31s ago",
+    },
+    {
+      seed: "live-7",
+      path: "/login",
+      country: "US",
+      city: "New York",
+      lon: -74.01,
+      lat: 40.71,
+      source: "Google",
+      browser: "Safari",
+      device: "desktop",
+      ago: "48s ago",
+    },
+    {
+      seed: "live-8",
+      path: "/",
+      country: "BR",
+      city: "São Paulo",
+      lon: -46.63,
+      lat: -23.55,
+      source: "Direct",
+      browser: "Chrome",
+      device: "mobile",
+      ago: "1m ago",
+    },
+    {
+      seed: "live-9",
+      path: "/blog/invoice-time",
+      country: "AU",
+      city: "Sydney",
+      lon: 151.21,
+      lat: -33.87,
+      source: "Hacker News",
+      browser: "Safari",
+      device: "tablet",
+      ago: "1m ago",
+    },
+    {
+      seed: "live-10",
+      path: "/changelog",
+      country: "JP",
+      city: "Tokyo",
+      lon: 139.69,
+      lat: 35.69,
+      source: "GitHub",
+      browser: "Chrome",
+      device: "desktop",
+      ago: "2m ago",
+    },
+    {
+      seed: "live-11",
+      path: "/",
+      country: "NL",
+      city: "Amsterdam",
+      lon: 4.9,
+      lat: 52.37,
+      source: "Hacker News",
+      browser: "Firefox",
+      device: "desktop",
+      ago: "3m ago",
+    },
+    {
+      seed: "live-12",
+      path: "/docs",
+      country: "US",
+      city: "Austin",
+      lon: -97.74,
+      lat: 30.27,
+      source: "Google",
+      browser: "Chrome",
+      device: "mobile",
+      ago: "4m ago",
+    },
+  ] satisfies MockLiveVisitor[],
+};

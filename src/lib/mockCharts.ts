@@ -173,3 +173,24 @@ export function flipValues(values: number[]): number[] {
   const range = worst - best;
   return values.map((v) => r(1 + (range > 0 ? (worst - v) / range : 0)));
 }
+
+/** A fitted map projection: its scale and where the origin lands, in map units. */
+export type MapProjection = { scale: number; translate: [number, number] };
+
+// Equal Earth's constants (Šavrič, Patterson and Jenny, 2018), as d3-geo's geoEqualEarth uses them
+const EE = { a1: 1.340264, a2: -0.081106, a3: 0.000893, a4: 0.003796, m: Math.sqrt(3) / 2 };
+
+/**
+ * A longitude and latitude (degrees) on the dashboard's dotted world map: the Equal Earth
+ * projection that `npm run build:world-map` fits to the map, with the `scale` and
+ * `translate` it saves in world-dots.json, so a city lands on its land dots.
+ */
+export function mapPoint(lon: number, lat: number, { scale, translate }: MapProjection): [number, number] {
+  const lambda = (lon * Math.PI) / 180;
+  const l = Math.asin(EE.m * Math.sin((lat * Math.PI) / 180));
+  const l2 = l * l;
+  const l6 = l2 * l2 * l2;
+  const x = (lambda * Math.cos(l)) / (EE.m * (EE.a1 + 3 * EE.a2 * l2 + l6 * (7 * EE.a3 + 9 * EE.a4 * l2)));
+  const y = l * (EE.a1 + EE.a2 * l2 + l6 * (EE.a3 + EE.a4 * l2));
+  return [r(translate[0] + scale * x), r(translate[1] - scale * y)];
+}
