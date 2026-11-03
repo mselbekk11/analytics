@@ -23,6 +23,7 @@ import {
   SiWebflow,
   SiWordpress,
 } from "react-icons/si";
+import type { Plan } from "@/lib/pricing";
 
 /**
  * Every word on the homepage, kept apart from the layout so it can be edited without
@@ -32,6 +33,9 @@ import {
 
 /** Every call to action goes here. Sign-up stays invite-only. */
 export const SIGN_IN = "/sign-in";
+
+/** Placeholder: the owner fills in the real address. Used by the FAQ and /privacy. */
+export const CONTACT_EMAIL = "hello@example.com";
 
 /** An in-page anchor such as "#s-pricing". */
 export type Anchor = `#${string}`;
@@ -238,7 +242,160 @@ export const finalCta = {
   note: "7 days free, then from $5/mo",
 };
 
-// /privacy joins these in Phase 2
+export type Feature = { label: string; soon?: boolean };
+
+/**
+ * The plans, in one place. Changing a price is one edit here: the "save up to N%" figure
+ * on the toggle is worked out from these (src/lib/pricing.ts). Billing isn't built, so
+ * every "Choose …" button goes to sign-in.
+ */
+export const pricing: {
+  monthly: string;
+  yearly: string;
+  eventsLabel: string;
+  choose: string;
+  popular: string;
+  plans: Plan[];
+  includesLabel: string;
+  includes: Feature[];
+} = {
+  monthly: "Monthly",
+  yearly: "Yearly, save up to", // followed by the computed percentage
+  eventsLabel: "Events / month",
+  choose: "Choose", // "Choose Growth"
+  popular: "Popular",
+  plans: [
+    { name: "Starter", audience: "Side projects and new launches", monthly: 5, yearly: 49, events: 500_000 },
+    {
+      name: "Growth",
+      audience: "Growing products and small teams",
+      monthly: 8,
+      yearly: 69,
+      events: 1_000_000,
+      popular: true,
+    },
+    { name: "Scale", audience: "Busy sites and agencies", monthly: 19, yearly: 179, events: 2_500_000 },
+  ],
+  includesLabel: "Every plan includes",
+  includes: [
+    { label: "Revenue and goal attribution" },
+    { label: "Customer journeys, session by session" },
+    { label: "Realtime map and visitor feed" },
+    { label: "MCP access for Claude and Cursor" },
+    { label: "Cookieless mode" },
+    { label: "Excluded paths and path grouping" },
+    { label: "Funnels", soon: true },
+    { label: "Search Console and Bing", soon: true },
+  ],
+};
+
+/**
+ * A quote card. While `placeholder` is set the card shows an "Example" label and the name
+ * comes from the persona generator (`seed`), so no real person is implied. To use a real
+ * quote, set `name` and `role`, replace `quote` and drop `placeholder`.
+ */
+export type Quote = {
+  seed: string; // avatar (emoji on a colour), and the name when `name` is unset
+  name?: string;
+  role: string;
+  quote: string;
+  placeholder?: boolean;
+};
+
+export const customers: { exampleLabel: string; quotes: Quote[] } = {
+  exampleLabel: "Example",
+  quotes: [
+    {
+      seed: "quote-1",
+      role: "Indie maker, newsletter tool",
+      quote: "I finally know which posts bring in paying customers, not just traffic.",
+      placeholder: true,
+    },
+    {
+      seed: "quote-2",
+      role: "Solo founder, SaaS",
+      quote: "Pasted the tag, and my first visitor was on the live map before I'd closed the tab.",
+      placeholder: true,
+    },
+    {
+      seed: "quote-3",
+      role: "Marketer, two-person studio",
+      quote: "Seeing ChatGPT and Perplexity as their own channel changed what we write about.",
+      placeholder: true,
+    },
+    {
+      seed: "quote-4",
+      role: "Developer, open-source project",
+      quote: "I ask Claude about last week's numbers from my terminal instead of opening another tab.",
+      placeholder: true,
+    },
+    {
+      seed: "quote-5",
+      role: "Small team, developer tools",
+      quote: "Switching our docs site to cookieless was one setting, and the numbers kept coming in.",
+      placeholder: true,
+    },
+    {
+      seed: "quote-6",
+      role: "Founder, online course",
+      quote: "Opening a customer and seeing every session before they paid is the part I use most.",
+      placeholder: true,
+    },
+  ],
+};
+
+/** One FAQ entry. `email` adds the contact address as a link after the answer. */
+export type FaqEntry = { question: string; answer: string; soon?: boolean; email?: boolean };
+
+// Billing isn't built: the answers on events, limits and cancelling describe the intended
+// plans, so the owner should confirm them before taking payments.
+export const faq: FaqEntry[] = [
+  {
+    question: "How is this different from Plausible or Fathom?",
+    answer:
+      "Both count visits well. Analytics also ties each payment from Stripe or the API to the visit that brought it, gives AI assistants such as ChatGPT, Claude and Perplexity their own traffic channel, and lets you ask about your stats from Claude or Cursor through an MCP server.",
+  },
+  {
+    question: "What counts as an event?",
+    answer:
+      "Each pageview counts as one, and so does each custom event, such as a signup or a click on a link to another site. The small pings that measure time on page don't count.",
+  },
+  {
+    question: "Do I need a cookie banner?",
+    answer:
+      "Not if you run it cookieless: with data-cookieless on the script tag it sets no cookies and stores nothing in the browser. By default it sets two first-party cookies to recognise returning visitors, and in the EU and UK analytics cookies generally need consent. This is general information, not legal advice.",
+  },
+  {
+    question: "What happens if I go over my plan's events?",
+    answer:
+      "Nothing stops. Every event is still counted and your dashboard keeps working. If you stay over the limit, we'll get in touch about moving up a plan.",
+  },
+  {
+    question: "Will the script slow my site down?",
+    answer:
+      "No. It's about 2\u00a0KB gzipped, loads with async so it never holds up the page, and sends small requests in the background.",
+  },
+  {
+    question: "Can I import data from another tool?",
+    answer:
+      "Not yet. Importing your history from other analytics tools is on the way. Until then, counting starts with the first visit after you add the script.",
+    soon: true,
+  },
+  {
+    question: "Can I cancel at any time?",
+    answer:
+      "Yes. There's no contract: cancel whenever you like and you won't be charged again. Deleting a site from its settings removes all of its data.",
+  },
+  {
+    question: "How do I get in touch?",
+    answer: "Email us and we'll get back to you:",
+    email: true,
+  },
+];
+
+/** Links to other pages (rather than sections), shown after the section links. */
+export type RouteLink = { label: string; href: `/${string}` };
+
 export const footer = {
   copyright: "© 2026 Analytics",
   links: [
@@ -246,4 +403,5 @@ export const footer = {
     { label: "Pricing", href: "#s-pricing" },
     { label: "FAQ", href: "#s-faq" },
   ] satisfies PageLink[],
+  pages: [{ label: "Privacy", href: "/privacy" }] satisfies RouteLink[],
 };

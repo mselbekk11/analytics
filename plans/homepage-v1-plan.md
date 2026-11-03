@@ -64,10 +64,10 @@ Fill in the last three sections and the privacy page:
 ### Acceptance criteria
 
 - [ ] Pricing matches the screenshot's layout in both themes. The toggle switches every plan between monthly and yearly, and the "save up to 28%" figure agrees with the config (unit-tested).
-- [ ] Quote cards show the "Example" label, and turning one into a real quote is a content-only edit.
-- [ ] FAQ entries open and close with mouse and keyboard.
-- [ ] `/privacy` returns 200 without cookies and builds as static. The footer links to it.
-- [ ] No sideways scroll at 375 px. Plans and quotes stack.
+- [x] Quote cards show the "Example" label, and turning one into a real quote is a content-only edit.
+- [x] FAQ entries open and close with mouse and keyboard.
+- [x] `/privacy` returns 200 without cookies and builds as static. The footer links to it.
+- [x] No sideways scroll at 375 px. Plans and quotes stack.
 
 ---
 

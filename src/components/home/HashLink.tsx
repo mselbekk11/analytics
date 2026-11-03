@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { ComponentProps, MouseEvent } from "react";
 import type { Anchor } from "./content";
 
@@ -18,8 +19,17 @@ export function goToSection(id: string): boolean {
   return true;
 }
 
-/** A plain `#anchor` link that jumps with `goToSection`. Modified clicks keep the browser's default. */
-export default function HashLink({ href, onClick, ...props }: ComponentProps<"a"> & { href: Anchor }) {
+/**
+ * A plain `#anchor` link that jumps with `goToSection`. Modified clicks keep the browser's
+ * default. On another page (`offPage`, e.g. /privacy) it links to the section on the homepage.
+ */
+export default function HashLink({
+  href,
+  offPage,
+  onClick,
+  ...props
+}: ComponentProps<"a"> & { href: Anchor; offPage?: boolean }) {
+  if (offPage) return <Link href={`/${href}`} onClick={onClick} {...props} />;
   function handleClick(e: MouseEvent<HTMLAnchorElement>) {
     onClick?.(e);
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

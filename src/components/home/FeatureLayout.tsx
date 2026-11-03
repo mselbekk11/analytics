@@ -1,8 +1,19 @@
+import type { ReactNode } from "react";
 import ContentsSidebar from "./ContentsSidebar";
 import { CONTAINER } from "./container";
-import { sections } from "./content";
+import { type SectionId, sections } from "./content";
+import Faq from "./Faq";
 import Figure from "./Figure";
+import Pricing from "./Pricing";
+import Quotes from "./Quotes";
 import Section from "./Section";
+
+// Sections whose body is something other than figures
+const BODIES: Partial<Record<SectionId, ReactNode>> = {
+  "s-pricing": <Pricing />,
+  "s-customers": <Quotes />,
+  "s-faq": <Faq />,
+};
 
 /**
  * The two-column features grid: the sticky Contents sidebar on the left (lg and up) and
@@ -18,13 +29,14 @@ export default function FeatureLayout() {
       <div className="min-w-0">
         {sections.map((s) => (
           <Section key={s.id} section={s}>
-            {s.figures.length > 0 && (
-              <div className={s.figures.length > 1 ? "grid gap-8 md:grid-cols-2 md:gap-5" : undefined}>
-                {s.figures.map((f) => (
-                  <Figure key={f.n} figure={f} />
-                ))}
-              </div>
-            )}
+            {BODIES[s.id] ??
+              (s.figures.length > 0 && (
+                <div className={s.figures.length > 1 ? "grid gap-8 md:grid-cols-2 md:gap-5" : undefined}>
+                  {s.figures.map((f) => (
+                    <Figure key={f.n} figure={f} />
+                  ))}
+                </div>
+              ))}
           </Section>
         ))}
       </div>
