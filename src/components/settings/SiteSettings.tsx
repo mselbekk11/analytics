@@ -57,8 +57,8 @@ type SectionId =
   | "excluded"
   | "danger";
 
-// The sidebar, in order
-const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] = [
+// The sidebar, in order. A hidden group is left out of the sidebar but its sections still open by URL
+const GROUPS: { label: string; hidden?: boolean; sections: { id: SectionId; label: string }[] }[] = [
   {
     label: "Install",
     sections: [
@@ -68,6 +68,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
   },
   {
     label: "Attribution",
+    hidden: true,
     sections: [
       { id: "goals", label: "Goals & conversions" },
       { id: "revenue", label: "Revenue attribution" },
@@ -86,6 +87,7 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string }[] }[] 
   { label: "Danger zone", sections: [{ id: "danger", label: "Danger zone" }] },
 ];
 const SECTION_IDS = new Set<string>(GROUPS.flatMap((g) => g.sections.map((s) => s.id)));
+const SHOWN_GROUPS = GROUPS.filter((g) => !g.hidden);
 
 function Settings({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
@@ -116,7 +118,7 @@ function Settings({ domain }: { domain: string }) {
       <PageHeader title="Settings" description={site.domain} />
       <div className="grid gap-8 md:grid-cols-[200px_minmax(0,1fr)] lg:gap-12">
         <nav aria-label="Settings sections" className="hidden flex-col gap-6 md:flex">
-          {GROUPS.map((group) => (
+          {SHOWN_GROUPS.map((group) => (
             <div key={group.label} className="flex flex-col gap-1">
               <h2 className="px-2.5 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 {group.label}
@@ -148,7 +150,7 @@ function Settings({ domain }: { domain: string }) {
           onChange={(e) => router.push(href(e.target.value as SectionId), { scroll: false })}
           className="rounded-md border border-line bg-panel px-3 py-2 text-sm md:hidden"
         >
-          {GROUPS.map((group) => (
+          {SHOWN_GROUPS.map((group) => (
             <optgroup key={group.label} label={group.label}>
               {group.sections.map((s) => (
                 <option key={s.id} value={s.id}>

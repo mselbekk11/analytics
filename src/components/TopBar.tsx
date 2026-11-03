@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Authenticated, useQuery } from "convex/react";
@@ -7,6 +8,7 @@ import { api } from "../../convex/_generated/api";
 import { formatFiltersParam, parseFiltersParam } from "../../convex/lib/filters";
 import { useNow } from "@/components/dashboard/useNow";
 import LogoMark from "@/components/LogoMark";
+import { ChartLineIcon, GearIcon, PageIcon, RadioIcon, UsersIcon } from "@/components/NavIcons";
 import SiteSwitcher from "@/components/SiteSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
@@ -15,12 +17,14 @@ import { formatNumber } from "@/lib/format";
 export type SiteSection = "analytics" | "pages" | "users" | "live" | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
 
-const SITE_TABS: { section: SiteSection; label: string }[] = [
-  { section: "analytics", label: "Analytics" },
-  { section: "pages", label: "Pages" },
-  { section: "users", label: "Users" },
-  { section: "live", label: "Live" },
-  { section: "settings", label: "Settings" },
+type Icon = ComponentType<{ className?: string }>;
+
+const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
+  { section: "analytics", label: "Analytics", icon: ChartLineIcon },
+  { section: "pages", label: "Pages", icon: PageIcon },
+  { section: "users", label: "Users", icon: UsersIcon },
+  { section: "live", label: "Live", icon: RadioIcon },
+  { section: "settings", label: "Settings", icon: GearIcon },
 ];
 
 // Views that take a range and filters, which carry over when switching between them
@@ -121,6 +125,7 @@ function SiteTabs({ domain, section }: { domain: string; section: SiteSection })
       label="Site sections"
       tabs={SITE_TABS.map((t) => ({
         label: t.label,
+        icon: t.icon,
         href: `${sitePath(domain, t.section)}${query && RANGED.includes(t.section) ? `?${query}` : ""}`,
         active: t.section === section,
       }))}
@@ -134,7 +139,7 @@ function TabStrip({
   tabs,
 }: {
   label: string;
-  tabs: { label: string; href: string; active: boolean }[];
+  tabs: { label: string; href: string; active: boolean; icon?: Icon }[];
 }) {
   return (
     <nav aria-label={label} className="-mb-px flex gap-6 overflow-x-auto text-sm [scrollbar-width:none]">
@@ -145,10 +150,11 @@ function TabStrip({
           aria-current={t.active ? "page" : undefined}
           className={
             t.active
-              ? "shrink-0 border-b-2 border-foreground pt-1 pb-3 text-foreground"
-              : "shrink-0 border-b-2 border-transparent pt-1 pb-3 text-muted-foreground transition-colors hover:text-foreground"
+              ? "flex shrink-0 items-center gap-1.5 border-b-2 border-foreground pt-1 pb-3 text-foreground"
+              : "flex shrink-0 items-center gap-1.5 border-b-2 border-transparent pt-1 pb-3 text-muted-foreground transition-colors hover:text-foreground"
           }
         >
+          {t.icon && <t.icon className="size-4 shrink-0" />}
           {t.label}
         </Link>
       ))}
