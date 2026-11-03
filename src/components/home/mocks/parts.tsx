@@ -4,7 +4,8 @@ import { cn } from "cn";
 import LogoMark from "@/components/LogoMark";
 import { ChartLineIcon, GearIcon, PageIcon, RadioIcon, UsersIcon } from "@/components/NavIcons";
 import { formatChange } from "@/lib/format";
-import type { MockChart, MockColor, MockHeader as MockHeaderData, MockTile } from "./fixtures";
+import { sparkline } from "@/lib/mockCharts";
+import type { MockChart, MockColor, MockHeader as MockHeaderData, MockPageTile, MockTile } from "./fixtures";
 
 // Static copies of the dashboard's pieces for the homepage mockups: same tokens, sizes and
 // spacing as the real components, with no state, links or hover. Drawn at desktop size
@@ -181,5 +182,49 @@ export function MockLegend({ chart }: { chart: MockChart }) {
         </span>
       ))}
     </div>
+  );
+}
+
+/** PageTiles: five joined tiles, each a muted label over the number and a note line. */
+export function MockPageTiles({ tiles }: { tiles: MockPageTile[] }) {
+  return (
+    <div className="grid auto-cols-fr grid-flow-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+      {tiles.map((t) => (
+        <div key={t.label} className="flex min-w-0 flex-col gap-2 bg-background px-6 py-6">
+          <span className="truncate text-sm text-muted-foreground">{t.label}</span>
+          <span className="truncate text-[1.625rem] leading-8 font-semibold tracking-tight tabular-nums">{t.value}</span>
+          <span className="min-h-4 truncate text-xs leading-4 text-muted-foreground tabular-nums">
+            {t.change !== undefined && (
+              <>
+                <MockChange change={t.change} />{" "}
+              </>
+            )}
+            {t.note}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const SPARK_W = 96;
+const SPARK_H = 24;
+
+/** The Pages table's trend: a small muted line with a dot on the last point. */
+export function MockSparkline({ values }: { values: number[] }) {
+  const { path, end } = sparkline(values, { width: SPARK_W, height: SPARK_H });
+  if (end === null) return <span className="text-muted-foreground">–</span>;
+  return (
+    <svg width={SPARK_W} height={SPARK_H} viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} className="block">
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={1.25}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        className="stroke-muted-foreground"
+      />
+      <circle cx={end[0]} cy={end[1]} r={2} className="fill-foreground" />
+    </svg>
   );
 }

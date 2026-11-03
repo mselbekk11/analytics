@@ -107,3 +107,134 @@ export const analyticsMock = {
     ],
   } satisfies MockChart,
 };
+
+/** A Pages tile: a label, the number, then a muted note, with a coloured change before it if given. */
+export type MockPageTile = {
+  label: string;
+  value: string;
+  /** Fraction, shown green or red ahead of the note */
+  change?: number;
+  note?: string;
+};
+
+/** A row of the All pages table, in the units the dashboard's PageRow uses. */
+export type MockPageRow = {
+  /** null shows the path alone, as for a page that never sent a title */
+  title: string | null;
+  path: string;
+  views: number;
+  /** Views per day over the range, for the sparkline; sums to `views` */
+  trend: number[];
+  sessions: number;
+  /** Fraction against the period before; null leaves it blank */
+  sessionsChange: number | null;
+  bounceRate: number | null;
+  durationMs: number | null;
+  /** In cents; 0 shows "–" */
+  revenueMinor: number;
+};
+
+/**
+ * Fig. 2, the Pages tab of Acme over the last 30 days. The rows are the top six of 14
+ * pages, ranked by views; each trend sums to the row's views and the shares are taken
+ * of `totalPageviews`, which the Pageviews tile shows.
+ */
+export const pagesMock = {
+  header: { title: "Pages", rangeLabel: "Last 30 days", segment: "30d" } satisfies MockHeader,
+  totalPageviews: 15_640,
+  pages: 14,
+  currency: "USD",
+  tiles: [
+    { label: "Pages viewed", value: "14", note: "unique paths" },
+    { label: "Pageviews", value: "15,640", change: 0.082, note: "vs previous" },
+    { label: "Sessions", value: "6,918" },
+    { label: "Avg. bounce", value: "41.3%" },
+    { label: "Avg. duration", value: "1m 43s" },
+  ] satisfies MockPageTile[],
+  rows: [
+    {
+      title: "Acme · Invoicing for small teams",
+      path: "/",
+      views: 4812,
+      trend: [
+        113, 153, 129, 128, 153, 110, 105, 161, 164, 156, 165, 165, 132, 113, 160, 179, 181, 151, 186, 133, 153, 200,
+        164, 188, 214, 203, 152, 151, 224, 226,
+      ],
+      sessions: 3906,
+      sessionsChange: 0.112,
+      bounceRate: 0.34,
+      durationMs: 81_000,
+      revenueMinor: 128_400,
+    },
+    {
+      title: "Pricing",
+      path: "/pricing",
+      views: 2236,
+      trend: [
+        56, 57, 68, 60, 58, 49, 52, 64, 79, 73, 78, 83, 52, 57, 81, 81, 80, 76, 96, 60, 68, 85, 95, 104, 94, 86, 75, 74,
+        96, 99,
+      ],
+      sessions: 1804,
+      sessionsChange: 0.186,
+      bounceRate: 0.41,
+      durationMs: 138_000,
+      revenueMinor: 214_600,
+    },
+    {
+      title: "Docs",
+      path: "/docs",
+      views: 1418,
+      trend: [
+        32, 35, 37, 34, 43, 35, 40, 43, 44, 43, 44, 47, 47, 41, 51, 45, 51, 48, 50, 47, 53, 61, 50, 63, 51, 57, 49, 48,
+        71, 58,
+      ],
+      sessions: 1127,
+      sessionsChange: 0.224,
+      bounceRate: 0.46,
+      durationMs: 69_000,
+      revenueMinor: 0,
+    },
+    {
+      title: "Changelog",
+      path: "/changelog",
+      views: 1062,
+      trend: [
+        33, 29, 32, 34, 29, 32, 32, 38, 38, 39, 38, 33, 26, 28, 32, 32, 39, 35, 41, 33, 35, 37, 45, 37, 39, 46, 31, 35,
+        36, 48,
+      ],
+      sessions: 811,
+      sessionsChange: 0.079,
+      bounceRate: 0.37,
+      durationMs: 52_000,
+      revenueMinor: 0,
+    },
+    {
+      title: "How we cut invoice time in half",
+      path: "/blog/invoice-time",
+      views: 958,
+      trend: [
+        42, 44, 33, 43, 34, 38, 34, 38, 33, 32, 31, 35, 26, 32, 35, 35, 32, 27, 27, 31, 24, 31, 32, 24, 31, 30, 27, 26,
+        27, 24,
+      ],
+      sessions: 802,
+      sessionsChange: -0.042,
+      bounceRate: 0.58,
+      durationMs: 184_000,
+      revenueMinor: 14_700,
+    },
+    {
+      title: "Log in",
+      path: "/login",
+      views: 794,
+      trend: [
+        24, 28, 29, 26, 24, 18, 21, 27, 26, 28, 29, 26, 20, 20, 26, 27, 33, 33, 31, 23, 23, 27, 31, 27, 30, 31, 23, 24,
+        31, 28,
+      ],
+      sessions: 652,
+      sessionsChange: 0.026,
+      bounceRate: 0.61,
+      durationMs: 38_000,
+      revenueMinor: 0,
+    },
+  ] satisfies MockPageRow[],
+};

@@ -106,9 +106,9 @@ The Pages mockup in 01 Traffic: a "Pages / Last 30 days" header with a range men
 
 ### Acceptance criteria
 
-- [ ] It fills the Fig. 2 frame with the caption, in both themes.
-- [ ] Sparklines come from the shared helpers and fixture data.
-- [ ] No sideways scroll at 375 px.
+- [x] It fills the Fig. 2 frame with the caption, in both themes.
+- [x] Sparklines come from the shared helpers and fixture data.
+- [x] No sideways scroll at 375 px.
 
 ---
 
