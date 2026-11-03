@@ -337,3 +337,32 @@ async function visitorTotals(ctx: MutationCtx, visitor: Doc<"visitors">) {
     exitPath: latest?.exitPath,
   };
 }
+
+// Launch v1 Phase 2: moving to the Clerk production instance gives the owner a new
+// tokenIdentifier (new issuer and new user id). This hands every site and MCP key from
+// the old id to the new one. Run once on production after the owner's first sign-in:
+//
+//   npx convex run --prod migrations:moveOwner \
+//     '{"from":"https://settling-starling-6439.clerk.accounts.dev|user_…","to":"https://clerk.simplestats.ai|user_…"}'
+//
+// Running it again finds nothing left under `from` and changes nothing.
+export const moveOwner = internalMutation({
+  args: { from: v.string(), to: v.string() },
+  returns: v.object({ sites: v.number(), apiKeys: v.number() }),
+  handler: async (ctx, { from, to }) => {
+    if (from === to || !from.includes("|") || !to.includes("|")) {
+      throw new Error("from and to must be two different tokenIdentifiers (issuer|user id)");
+    }
+    let sites = 0;
+    for await (const site of ctx.db.query("sites").withIndex("by_owner", (q) => q.eq("ownerId", from))) {
+      await ctx.db.patch("sites", site._id, { ownerId: to });
+      sites++;
+    }
+    let apiKeys = 0;
+    for await (const key of ctx.db.query("apiKeys").withIndex("by_owner", (q) => q.eq("ownerId", from))) {
+      await ctx.db.patch("apiKeys", key._id, { ownerId: to });
+      apiKeys++;
+    }
+    return { sites, apiKeys };
+  },
+});

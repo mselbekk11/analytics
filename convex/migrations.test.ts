@@ -158,3 +158,34 @@ describe("migrations.backfillSources", () => {
     expect(await snapshot(t)).toEqual(expected);
   });
 });
+
+describe("migrations.moveOwner", () => {
+  const OLD = { subject: "user_dev", tokenIdentifier: "https://dev.clerk|user_dev" };
+  const NEW = { subject: "user_prod", tokenIdentifier: "https://clerk.simplestats.ai|user_prod" };
+
+  test("moves sites and MCP keys to the new id, and a second run changes nothing", async () => {
+    const t = convexTest(schema, modules);
+    await t.withIdentity(OLD).mutation(api.sites.create, { domain: "picai.so", timezone: "UTC" });
+    await t.run((ctx) =>
+      ctx.db.insert("apiKeys", { ownerId: OLD.tokenIdentifier, name: "Claude", hash: "h", prefix: "vamcp_ab", createdAt: 0 }),
+    );
+    // Someone else's site stays put
+    await t.withIdentity({ subject: "other", tokenIdentifier: "https://dev.clerk|other" })
+      .mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
+
+    const args = { from: OLD.tokenIdentifier, to: NEW.tokenIdentifier };
+    expect(await t.mutation(internal.migrations.moveOwner, args)).toEqual({ sites: 1, apiKeys: 1 });
+    expect(await t.mutation(internal.migrations.moveOwner, args)).toEqual({ sites: 0, apiKeys: 0 });
+
+    expect((await t.withIdentity(NEW).query(api.sites.list, {})).map((s) => s.domain)).toEqual(["picai.so"]);
+    expect(await t.withIdentity(OLD).query(api.sites.list, {})).toEqual([]);
+    const keys = await t.run((ctx) => ctx.db.query("apiKeys").collect());
+    expect(keys.map((k) => k.ownerId)).toEqual([NEW.tokenIdentifier]);
+  });
+
+  test("refuses the same id twice or a value that isn't a tokenIdentifier", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.mutation(internal.migrations.moveOwner, { from: "a|1", to: "a|1" })).rejects.toThrow();
+    await expect(t.mutation(internal.migrations.moveOwner, { from: "user_1", to: "b|1" })).rejects.toThrow();
+  });
+});
