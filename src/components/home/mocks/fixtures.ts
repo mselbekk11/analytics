@@ -1,3 +1,5 @@
+import { formatDate } from "@/lib/format";
+
 // The made-up numbers behind the homepage mockups, kept apart from their layout so they
 // can be edited without touching it. Values are what the dashboard would show: tile values
 // are display strings, changes are fractions (0.124 → "+12.4%"), and chart series are one
@@ -114,6 +116,8 @@ export type MockPageTile = {
   value: string;
   /** Fraction, shown green or red ahead of the note */
   change?: number;
+  /** A fall shows green (time to convert) */
+  lowerIsBetter?: boolean;
   note?: string;
 };
 
@@ -237,4 +241,61 @@ export const pagesMock = {
       revenueMinor: 0,
     },
   ] satisfies MockPageRow[],
+};
+
+/** A row of a Sources or Countries card ranked by revenue: the dashboard's key and revenue in cents. */
+export type MockRevenueRow = { key: string; revenueMinor: number };
+
+// 30 daily buckets, Oct 3 to Nov 1
+const DAYS = Array.from({ length: 30 }, (_, i) =>
+  formatDate(new Date(Date.UTC(2026, 9, 3 + i)).toISOString().slice(0, 10)),
+);
+
+/**
+ * Fig. 3, Acme's revenue over the last 30 days. The daily bars (whole dollars) sum to the
+ * Revenue tile, Avg. order value is Revenue ÷ Conversions, and each card's rows are its top
+ * six by revenue (they sum to less than the total, as the rest are below the fold). Source
+ * keys are the dashboard's source names, country keys ISO codes.
+ */
+export const revenueMock = {
+  header: { title: "Revenue", rangeLabel: "Last 30 days", segment: "30d" } satisfies MockHeader,
+  currency: "USD",
+  tiles: [
+    { label: "Revenue", value: "$4,821", change: 0.142, note: "vs previous" },
+    { label: "Conversions", value: "92", change: 0.095, note: "vs previous" },
+    { label: "Avg. order value", value: "$52.40", change: 0.043, note: "vs previous" },
+    { label: "Avg. time to convert", value: "1d 7h", change: -0.061, lowerIsBetter: true, note: "first visit to payment" },
+  ] satisfies MockPageTile[],
+  chart: {
+    labels: DAYS,
+    labelEvery: 3,
+    lines: [],
+    bars: [
+      {
+        label: "Revenue",
+        color: "revenue",
+        axis: "count",
+        values: [
+          96, 148, 0, 49, 212, 178, 98, 147, 245, 0, 49, 196, 302, 147, 98, 245, 149, 0, 196, 98, 349, 147, 245, 98, 49,
+          196, 398, 147, 245, 294,
+        ],
+      },
+    ],
+  } satisfies MockChart,
+  sources: [
+    { key: "Direct", revenueMinor: 141_200 },
+    { key: "Google", revenueMinor: 103_600 },
+    { key: "Hacker News", revenueMinor: 68_400 },
+    { key: "Claude", revenueMinor: 45_200 },
+    { key: "X", revenueMinor: 31_800 },
+    { key: "GitHub", revenueMinor: 24_600 },
+  ] satisfies MockRevenueRow[],
+  countries: [
+    { key: "US", revenueMinor: 196_400 },
+    { key: "GB", revenueMinor: 61_200 },
+    { key: "DE", revenueMinor: 49_800 },
+    { key: "CA", revenueMinor: 37_700 },
+    { key: "IN", revenueMinor: 28_900 },
+    { key: "FR", revenueMinor: 24_100 },
+  ] satisfies MockRevenueRow[],
 };

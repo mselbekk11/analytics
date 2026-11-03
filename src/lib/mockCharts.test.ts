@@ -1,5 +1,15 @@
 import { describe, expect, test } from "vitest";
-import { areaPath, barRects, groupedBars, linePath, niceScale, sparkline, ticks, valueY } from "./mockCharts";
+import {
+  areaPath,
+  barRects,
+  groupedBars,
+  linePath,
+  moneyTick,
+  niceScale,
+  sparkline,
+  ticks,
+  valueY,
+} from "./mockCharts";
 
 const box = { width: 100, height: 50, max: 10 };
 
@@ -117,5 +127,25 @@ describe("sparkline", () => {
 
   test("keeps an all-zero trend flat on the bottom", () => {
     expect(sparkline([0, 0], { width: 10, height: 10, pad: 1 }).path).toBe("M1 9 L9 9");
+  });
+});
+
+describe("moneyTick", () => {
+  test("keeps amounts under a thousand whole", () => {
+    expect(moneyTick(0)).toBe("$0");
+    expect(moneyTick(250)).toBe("$250");
+    expect(moneyTick(499.6)).toBe("$500");
+  });
+
+  test("shortens thousands to k with at most one decimal", () => {
+    expect(moneyTick(1000)).toBe("$1k");
+    expect(moneyTick(999.6)).toBe("$1k");
+    expect(moneyTick(1500)).toBe("$1.5k");
+    expect(moneyTick(2250)).toBe("$2.3k");
+    expect(moneyTick(12_000)).toBe("$12k");
+  });
+
+  test("takes another currency symbol", () => {
+    expect(moneyTick(2000, "€")).toBe("€2k");
   });
 });

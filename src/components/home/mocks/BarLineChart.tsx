@@ -11,18 +11,21 @@ const RIGHT = 4;
 /**
  * TrafficChart as inline SVG: bars side by side in each bucket, lines with an optional soft
  * fill over them, y labels for the count axis and every `labelEvery`th bucket label.
- * `id` keeps the fills' gradient ids unique on the page.
+ * `id` keeps the fills' gradient ids unique on the page; `formatTick` writes the y labels
+ * (plain numbers by default, `moneyTick` for a revenue axis).
  */
 export default function BarLineChart({
   id,
   chart,
   width,
   height = 288,
+  formatTick = String,
 }: {
   id: string;
   chart: MockChart;
   width: number;
   height?: number;
+  formatTick?: (value: number) => string;
 }) {
   const all = [...chart.lines, ...chart.bars];
   const counted = all.filter((s) => s.axis === "count");
@@ -55,7 +58,7 @@ export default function BarLineChart({
         {counted.length > 0 &&
           ticks(scale).map((t) => (
             <text key={t} x={left - 8} y={TOP + valueY(t, { ...plot, max: scale.max })} dy="0.32em" textAnchor="end">
-              {t}
+              {formatTick(t)}
             </text>
           ))}
         {chart.labels.map(

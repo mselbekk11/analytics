@@ -122,9 +122,9 @@ The Revenue mockup in 02 Revenue: tiles (Revenue, Conversions, Avg. order value,
 
 ### Acceptance criteria
 
-- [ ] The figure and strip match the screenshot's layout in both themes.
-- [ ] The strip makes only true claims, and stacks on phones.
-- [ ] No external image requests (favicons and flags are drawn or emoji).
+- [x] The figure and strip match the screenshot's layout in both themes.
+- [x] The strip makes only true claims, and stacks on phones.
+- [x] No external image requests (favicons and flags are drawn or emoji).
 
 ---
 

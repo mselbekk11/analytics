@@ -113,3 +113,13 @@ export function sparkline(
     end: points[points.length - 1],
   };
 }
+
+/**
+ * A money axis label in whole units, short as the dashboard's chart ticks: 0 → "$0",
+ * 250 → "$250", 1000 → "$1k", 1500 → "$1.5k", 12_000 → "$12k".
+ */
+export function moneyTick(value: number, symbol = "$"): string {
+  const whole = Math.round(value);
+  if (Math.abs(whole) < 1000) return `${symbol}${whole}`;
+  return `${symbol}${Math.round(whole / 100) / 10}k`;
+}

@@ -185,10 +185,16 @@ export function MockLegend({ chart }: { chart: MockChart }) {
   );
 }
 
-/** PageTiles: five joined tiles, each a muted label over the number and a note line. */
-export function MockPageTiles({ tiles }: { tiles: MockPageTile[] }) {
+/** PageTiles: joined tiles, each a muted label over the number and a note line. */
+export function MockPageTiles({ tiles, bare }: { tiles: MockPageTile[]; bare?: boolean }) {
   return (
-    <div className="grid auto-cols-fr grid-flow-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+    <div
+      className={cn(
+        "grid auto-cols-fr grid-flow-col gap-px bg-border",
+        // Bare tiles sit in a block that draws the outer border (with the chart under them)
+        !bare && "overflow-hidden rounded-lg border border-border",
+      )}
+    >
       {tiles.map((t) => (
         <div key={t.label} className="flex min-w-0 flex-col gap-2 bg-background px-6 py-6">
           <span className="truncate text-sm text-muted-foreground">{t.label}</span>
@@ -196,7 +202,7 @@ export function MockPageTiles({ tiles }: { tiles: MockPageTile[] }) {
           <span className="min-h-4 truncate text-xs leading-4 text-muted-foreground tabular-nums">
             {t.change !== undefined && (
               <>
-                <MockChange change={t.change} />{" "}
+                <MockChange change={t.change} lowerIsBetter={t.lowerIsBetter} />{" "}
               </>
             )}
             {t.note}

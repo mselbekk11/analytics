@@ -98,6 +98,9 @@ export type SectionId =
 
 export type FigureMeta = { n: number; caption: string };
 
+/** One fact of a stat strip: a short value over a muted line. Must be true of the live product. */
+export type StatFact = { value: string; label: string };
+
 export type HomeSection = {
   id: SectionId;
   number: string; // "01"
@@ -108,6 +111,7 @@ export type HomeSection = {
   paragraph: string;
   highlight?: string; // a phrase of `paragraph` set in the foreground colour
   figures: FigureMeta[];
+  strip?: StatFact[]; // three facts under the figures, with a top rule
   soon?: boolean; // not built yet: shows a "Soon" badge in the section and the sidebar
 };
 
@@ -134,6 +138,11 @@ export const sections: HomeSection[] = [
     paragraph:
       "Connect Stripe, or send payments from your own backend through the API. Each one is tied to the visitor who paid, so you can see which sources, countries and pages bring in money, not just clicks.",
     figures: [{ n: 3, caption: "Revenue by day, with the sources and countries that brought it in." }],
+    strip: [
+      { value: "Stripe + API", label: "payments credited to a visit" },
+      { value: "Journeys", label: "every session before a payment" },
+      { value: "Key goal", label: "signups counted as conversions" },
+    ],
   },
   {
     id: "s-funnels",

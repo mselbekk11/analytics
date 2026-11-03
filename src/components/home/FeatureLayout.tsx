@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import ContentsSidebar from "./ContentsSidebar";
 import { CONTAINER } from "./container";
-import { type SectionId, sections } from "./content";
+import { type HomeSection, type SectionId, sections } from "./content";
 import Faq from "./Faq";
 import Figure from "./Figure";
 import PagesMock from "./mocks/PagesMock";
+import RevenueMock from "./mocks/RevenueMock";
 import Pricing from "./Pricing";
 import Quotes from "./Quotes";
 import Section from "./Section";
+import StatStrip from "./StatStrip";
 
 // Sections whose body is something other than figures
 const BODIES: Partial<Record<SectionId, ReactNode>> = {
@@ -19,12 +21,14 @@ const BODIES: Partial<Record<SectionId, ReactNode>> = {
 // The mockup in each figure frame, by figure number; the others stay empty until built
 const MOCKS: Partial<Record<number, ReactNode>> = {
   2: <PagesMock />,
+  3: <RevenueMock />,
 };
 
 /**
  * The two-column features grid: the sticky Contents sidebar on the left (lg and up) and
  * the ten numbered sections on the right. Below lg the sidebar is hidden and the sections
- * stack. A figure frame without a mockup in MOCKS is an empty panel.
+ * stack. A figure frame without a mockup in MOCKS is an empty panel. A section's stat
+ * strip, if it has one, follows its figures.
  */
 export default function FeatureLayout() {
   return (
@@ -35,19 +39,32 @@ export default function FeatureLayout() {
       <div className="min-w-0">
         {sections.map((s) => (
           <Section key={s.id} section={s}>
-            {BODIES[s.id] ??
-              (s.figures.length > 0 && (
-                <div className={s.figures.length > 1 ? "grid gap-8 md:grid-cols-2 md:gap-5" : undefined}>
-                  {s.figures.map((f) => (
-                    <Figure key={f.n} figure={f}>
-                      {MOCKS[f.n]}
-                    </Figure>
-                  ))}
-                </div>
-              ))}
+            {body(s)}
           </Section>
         ))}
       </div>
     </div>
+  );
+}
+
+/** A section's body, its figures or nothing, then its stat strip if it has one. */
+function body(s: HomeSection): ReactNode {
+  const main =
+    BODIES[s.id] ??
+    (s.figures.length > 0 && (
+      <div className={s.figures.length > 1 ? "grid gap-8 md:grid-cols-2 md:gap-5" : undefined}>
+        {s.figures.map((f) => (
+          <Figure key={f.n} figure={f}>
+            {MOCKS[f.n]}
+          </Figure>
+        ))}
+      </div>
+    ));
+  if (!main && !s.strip) return undefined;
+  return (
+    <>
+      {main}
+      {s.strip && <StatStrip facts={s.strip} />}
+    </>
   );
 }
