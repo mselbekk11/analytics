@@ -8,7 +8,15 @@ import { api } from "../../convex/_generated/api";
 import { formatFiltersParam, parseFiltersParam } from "../../convex/lib/filters";
 import { useNow } from "@/components/dashboard/useNow";
 import LogoMark from "@/components/LogoMark";
-import { ChartLineIcon, GearIcon, PageIcon, RadioIcon, UsersIcon } from "@/components/NavIcons";
+import {
+  ChartLineIcon,
+  CreditCardIcon,
+  GearIcon,
+  GlobeIcon,
+  PageIcon,
+  RadioIcon,
+  UsersIcon,
+} from "@/components/NavIcons";
 import SiteSwitcher from "@/components/SiteSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
@@ -30,10 +38,10 @@ const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
 // Views that take a range and filters, which carry over when switching between them
 const RANGED: SiteSection[] = ["analytics", "pages", "users"];
 
-const ACCOUNT_TABS: { section: AccountSection; label: string; href: string }[] = [
-  { section: "websites", label: "Websites", href: "/websites" },
-  { section: "billing", label: "Billing", href: "/billing" },
-  { section: "settings", label: "Settings", href: "/settings" },
+const ACCOUNT_TABS: { section: AccountSection; label: string; href: string; icon: Icon }[] = [
+  { section: "websites", label: "Websites", href: "/websites", icon: GlobeIcon },
+  { section: "billing", label: "Billing", href: "/billing", icon: CreditCardIcon },
+  { section: "settings", label: "Settings", href: "/settings", icon: GearIcon },
 ];
 
 // Same window and refresh as the Live tab's "online now"
@@ -102,7 +110,7 @@ export default function TopBar({ site, account }: TopBarProps) {
         ) : (
           <TabStrip
             label="Account"
-            tabs={ACCOUNT_TABS.map((t) => ({ label: t.label, href: t.href, active: t.section === account }))}
+            tabs={ACCOUNT_TABS.map((t) => ({ label: t.label, href: t.href, icon: t.icon, active: t.section === account }))}
           />
         )}
       </div>

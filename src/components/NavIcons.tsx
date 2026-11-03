@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * The site tabs' icons, from Nucleo's Micro Bold set (licensed; copied from nucleoapp.com).
+ * The site and account tabs' icons, from Nucleo's Micro Bold set (licensed; copied from nucleoapp.com).
  * Drawn on a 20px grid in currentColor, so they follow the tab's text colour.
  */
 type IconProps = { className?: string };
@@ -73,6 +73,29 @@ export function RadioIcon({ className }: IconProps) {
       <path d="m4.9997,14.8986c-1.237-1.2625-1.9997-2.9915-1.9997-4.8986s.7627-3.6361,1.9997-4.8986" {...stroke} />
       <path d="m15.0003,14.8986c1.237-1.2625,1.9997-2.9915,1.9997-4.8986,0-1.9071-.7627-3.6361-1.9997-4.8986" {...stroke} />
       <circle cx="10" cy="10" r="3" {...stroke} />
+    </Icon>
+  );
+}
+
+/** Nucleo "globe" */
+export function GlobeIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <ellipse cx="10" cy="10" rx="7" ry="2.5" {...stroke} />
+      <ellipse cx="10" cy="10" rx="2.5" ry="7" {...stroke} />
+      <circle cx="10" cy="10" r="7" {...stroke} />
+    </Icon>
+  );
+}
+
+/** Nucleo "credit-card" */
+export function CreditCardIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <line x1="3" y1="8" x2="17" y2="8" {...stroke} />
+      <line x1="6" y1="12" x2="9" y2="12" {...stroke} />
+      <line x1="13.75" y1="12" x2="14" y2="12" {...stroke} />
+      <rect x="3" y="4" width="14" height="12" rx="3" ry="3" {...stroke} />
     </Icon>
   );
 }
