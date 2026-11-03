@@ -143,6 +143,7 @@ export const sections: HomeSection[] = [
       { value: "Journeys", label: "every session before a payment" },
       { value: "Key goal", label: "signups counted as conversions" },
     ],
+    soon: true,
   },
   {
     id: "s-funnels",
@@ -190,7 +191,7 @@ export const sections: HomeSection[] = [
     icon: Sparkles,
     heading: ["Ask about your stats", "in plain English."],
     paragraph:
-      "Connect Claude Code, Claude Desktop or Cursor through the MCP server and ask about visitors, pages, sources and revenue. It works today. An assistant built into the dashboard is coming soon.",
+      "Connect Claude Code, Claude Desktop or Cursor through the MCP server and ask about visitors, pages, sources and revenue. It works today.",
     figures: [],
   },
   {
@@ -244,8 +245,11 @@ export const sections: HomeSection[] = [
   },
 ];
 
-/** One way to ask about your stats, beside the Ask AI card. `soon` shows a Soon badge in place of `via`. */
-export type Connection = { name: string; description: string; via?: string; soon?: boolean };
+/**
+ * One way to ask about your stats, beside the Ask AI card. `soon` shows a Soon badge in place
+ * of `via`; `hidden` keeps a row in the content but off the page.
+ */
+export type Connection = { name: string; description: string; via?: string; soon?: boolean; hidden?: boolean };
 
 /**
  * 06 Ask AI's list. The MCP rows name only the clients the setup guide in Settings covers
@@ -255,7 +259,8 @@ export type Connection = { name: string; description: string; via?: string; soon
 export const askAi = {
   label: "Ways to connect",
   connections: [
-    { name: "Ask AI", description: "Built into the dashboard", soon: true },
+    // Hidden until it's decided whether a built-in assistant gets built.
+    { name: "Ask AI", description: "Built into the dashboard", soon: true, hidden: true },
     { name: "Claude Code", description: "In your terminal", via: "MCP" },
     { name: "Claude Desktop", description: "The desktop app", via: "MCP" },
     { name: "Cursor", description: "Ask while you build", via: "MCP" },
@@ -319,7 +324,7 @@ export const pricing: {
   ],
   includesLabel: "Every plan includes",
   includes: [
-    { label: "Revenue and goal attribution" },
+    { label: "Revenue and goal attribution", soon: true },
     { label: "Customer journeys, session by session" },
     { label: "Realtime map and visitor feed" },
     { label: "MCP access for Claude and Cursor" },

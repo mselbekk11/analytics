@@ -11,7 +11,7 @@ export default function AskAi() {
     <div className="grid items-start gap-8 md:grid-cols-2 md:gap-5">
       <AskAiCard />
       <ul aria-label={askAi.label} className="border-t border-line text-sm">
-        {askAi.connections.map((c) => (
+        {askAi.connections.filter((c) => !c.hidden).map((c) => (
           <li key={c.name} className="flex items-baseline gap-3 border-b border-line py-3.5">
             <span className="w-32 shrink-0 font-medium">{c.name}</span>
             <span className="min-w-0 flex-1 text-muted-foreground">{c.description}</span>
