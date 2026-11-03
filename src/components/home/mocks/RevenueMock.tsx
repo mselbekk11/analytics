@@ -1,13 +1,12 @@
-import type { ComponentType, ReactNode } from "react";
-import { ArrowUpDownIcon, ChevronDownIcon, CircleSlashIcon, GlobeIcon } from "lucide-react";
-import { SiClaude, SiGithub, SiGoogle, SiX, SiYcombinator } from "react-icons/si";
+import type { ReactNode } from "react";
+import { ArrowUpDownIcon, ChevronDownIcon } from "lucide-react";
 import { cn } from "cn";
 import { countryFlag, countryName, formatMoney } from "@/lib/format";
 import { moneyTick } from "@/lib/mockCharts";
 import BarLineChart from "./BarLineChart";
 import { revenueMock as data, type MockRevenueRow } from "./fixtures";
 import MockViewport from "./MockViewport";
-import { MockHeader, MockPageTiles } from "./parts";
+import { MockHeader, MockPageTiles, MockSourceIcon } from "./parts";
 
 // Drawn at the same width as Fig. 2; the frame cuts the cards off partway down their
 // fifth row, as if the lists go on.
@@ -15,17 +14,6 @@ const WIDTH = 1040;
 const HEIGHT = 760;
 // The chart's width inside the block: 1040 − 2 × 32 padding − 2 × 1 border − 2 × 24 padding
 const CHART_WIDTH = 926;
-
-// Source "favicons" drawn from brand marks, so the figure loads no images (the dashboard
-// fetches each source's own favicon.ico)
-const SOURCE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
-  Direct: CircleSlashIcon,
-  Google: SiGoogle,
-  "Hacker News": SiYcombinator,
-  Claude: SiClaude,
-  X: SiX,
-  GitHub: SiGithub,
-};
 
 /**
  * Fig. 3: a site's revenue over 30 days: the header with the range controls, four joined
@@ -54,10 +42,7 @@ export default function RevenueMock() {
           <Card
             tabs={["Sources", "Channels", "Referrers", "AI"]}
             rows={data.sources}
-            icon={(key) => {
-              const Icon = SOURCE_ICONS[key] ?? GlobeIcon;
-              return <Icon className="size-3.5" />;
-            }}
+            icon={(key) => <MockSourceIcon source={key} className="size-3.5" />}
             label={(key) => key}
           />
           <Card

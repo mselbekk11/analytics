@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   areaPath,
   barRects,
+  funnelSteps,
   groupedBars,
   linePath,
   moneyTick,
@@ -147,5 +148,28 @@ describe("moneyTick", () => {
 
   test("takes another currency symbol", () => {
     expect(moneyTick(2000, "€")).toBe("€2k");
+  });
+});
+
+describe("funnelSteps", () => {
+  test("gives each step's share of the first and previous step, and the drop-off", () => {
+    expect(funnelSteps([200, 80, 20])).toEqual([
+      { count: 200, ofFirst: 1, ofPrevious: 1, dropped: 0 },
+      { count: 80, ofFirst: 0.4, ofPrevious: 0.4, dropped: 120 },
+      { count: 20, ofFirst: 0.1, ofPrevious: 0.25, dropped: 60 },
+    ]);
+  });
+
+  test("caps a step at the one before and never goes below zero", () => {
+    expect(funnelSteps([50, 60, -3]).map((s) => s.count)).toEqual([50, 50, 0]);
+    expect(funnelSteps([50, 60])[1]).toEqual({ count: 50, ofFirst: 1, ofPrevious: 1, dropped: 0 });
+  });
+
+  test("gives zero shares after an empty step, and nothing for no steps", () => {
+    expect(funnelSteps([0, 0])).toEqual([
+      { count: 0, ofFirst: 1, ofPrevious: 1, dropped: 0 },
+      { count: 0, ofFirst: 0, ofPrevious: 0, dropped: 0 },
+    ]);
+    expect(funnelSteps([])).toEqual([]);
   });
 });

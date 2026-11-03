@@ -299,3 +299,69 @@ export const revenueMock = {
     { key: "FR", revenueMinor: 24_100 },
   ] satisfies MockRevenueRow[],
 };
+
+/** A funnel step: a page path or a goal name, and how many visitors reached it. */
+export type MockFunnelStep = {
+  label: string;
+  kind: "Page" | "Goal";
+  /** The path or the goal name, as the step is set up */
+  target: string;
+  visitors: number;
+};
+
+/**
+ * Fig. 4, a signup funnel on Acme over the last 24 hours: four steps from the home page
+ * to the signup goal, each completed within the window. Shares and drop-offs are worked
+ * out from the counts (`funnelSteps`), so only the counts are typed here.
+ */
+export const funnelMock = {
+  title: "Funnels",
+  note: "Last 24 hours · 3 funnels",
+  range: "Last 24 hours",
+  action: "New funnel",
+  funnel: "Signup funnel",
+  window: "4 steps · completed within 24 hours",
+  steps: [
+    { label: "Visited the home page", kind: "Page", target: "/", visitors: 612 },
+    { label: "Viewed pricing", kind: "Page", target: "/pricing", visitors: 274 },
+    { label: "Opened sign-up", kind: "Page", target: "/signup", visitors: 88 },
+    { label: "Signed up", kind: "Goal", target: "signup", visitors: 41 },
+  ] satisfies MockFunnelStep[],
+  /** Median time from the first step to the last, for those who finished */
+  medianTime: "14m",
+};
+
+/** A goal row: its name, how it's counted, conversions, and the source that brought the most. */
+export type MockGoalRow = {
+  name: string;
+  kind: "Event" | "Page";
+  conversions: number;
+  /** A source name, as the dashboard's Sources card shows it */
+  topSource: string;
+  key?: boolean;
+};
+
+/**
+ * Fig. 5, Acme's goals over the last 30 days, by conversions. A goal's rate is its
+ * conversions over the site's visitors; the tiles are the count of goals, the sum of
+ * conversions and the mean of the rates (pinned in `fixtures.test.ts`).
+ */
+export const goalsMock = {
+  title: "Goals",
+  note: "Last 30 days",
+  range: "Last 30 days",
+  action: "New goal",
+  visitors: 5_410,
+  tiles: [
+    { label: "Goals tracked", value: "5", note: "4 events, 1 page" },
+    { label: "Conversions", value: "1,137", change: 0.118, note: "vs previous" },
+    { label: "Avg. rate", value: "4.2%", change: 0.036, note: "vs previous" },
+  ] satisfies MockPageTile[],
+  rows: [
+    { name: "signup", kind: "Event", conversions: 412, topSource: "Google", key: true },
+    { name: "newsletter", kind: "Event", conversions: 318, topSource: "Hacker News" },
+    { name: "start_trial", kind: "Event", conversions: 254, topSource: "Google" },
+    { name: "/checkout/success", kind: "Page", conversions: 92, topSource: "Direct" },
+    { name: "book_demo", kind: "Event", conversions: 61, topSource: "X" },
+  ] satisfies MockGoalRow[],
+};

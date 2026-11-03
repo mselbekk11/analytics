@@ -123,3 +123,40 @@ export function moneyTick(value: number, symbol = "$"): string {
   if (Math.abs(whole) < 1000) return `${symbol}${whole}`;
   return `${symbol}${Math.round(whole / 100) / 10}k`;
 }
+
+/** One step of a funnel, worked out from the visitors who reached it. */
+export type FunnelStep = {
+  count: number;
+  /** Share of the first step's visitors who reached this one (the first is 1) */
+  ofFirst: number;
+  /** Share of the previous step's visitors who reached this one (the first is 1) */
+  ofPrevious: number;
+  /** Visitors lost since the previous step (the first is 0) */
+  dropped: number;
+};
+
+/**
+ * A funnel's steps from the number of visitors who reached each one, in order: each
+ * step's share of the first and of the previous step, and how many left in between.
+ * A step can't hold more visitors than the one before, so a larger count is capped at
+ * it. Shares of an empty step are 0.
+ */
+export function funnelSteps(counts: number[]): FunnelStep[] {
+  const steps: FunnelStep[] = [];
+  for (const raw of counts) {
+    const prev = steps[steps.length - 1];
+    const count = Math.max(0, prev ? Math.min(raw, prev.count) : raw);
+    const first = steps[0]?.count ?? count;
+    steps.push({
+      count,
+      ofFirst: prev ? share(count, first) : 1,
+      ofPrevious: prev ? share(count, prev.count) : 1,
+      dropped: prev ? prev.count - count : 0,
+    });
+  }
+  return steps;
+}
+
+function share(part: number, whole: number): number {
+  return whole > 0 ? part / whole : 0;
+}

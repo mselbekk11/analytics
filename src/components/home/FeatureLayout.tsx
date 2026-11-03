@@ -4,6 +4,8 @@ import { CONTAINER } from "./container";
 import { type HomeSection, type SectionId, sections } from "./content";
 import Faq from "./Faq";
 import Figure from "./Figure";
+import FunnelMock from "./mocks/FunnelMock";
+import GoalsMock from "./mocks/GoalsMock";
 import PagesMock from "./mocks/PagesMock";
 import RevenueMock from "./mocks/RevenueMock";
 import Pricing from "./Pricing";
@@ -22,6 +24,8 @@ const BODIES: Partial<Record<SectionId, ReactNode>> = {
 const MOCKS: Partial<Record<number, ReactNode>> = {
   2: <PagesMock />,
   3: <RevenueMock />,
+  4: <FunnelMock />,
+  5: <GoalsMock />,
 };
 
 /**

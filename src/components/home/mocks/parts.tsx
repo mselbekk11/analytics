@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
-import { ChevronDownIcon, ChevronsUpDownIcon, MoonIcon, SunIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronsUpDownIcon, CircleSlashIcon, GlobeIcon, MoonIcon, SunIcon } from "lucide-react";
+import { SiClaude, SiGithub, SiGoogle, SiX, SiYcombinator } from "react-icons/si";
 import { cn } from "cn";
 import LogoMark from "@/components/LogoMark";
 import { ChartLineIcon, GearIcon, PageIcon, RadioIcon, UsersIcon } from "@/components/NavIcons";
@@ -233,4 +234,55 @@ export function MockSparkline({ values }: { values: number[] }) {
       <circle cx={end[0]} cy={end[1]} r={2} className="fill-foreground" />
     </svg>
   );
+}
+
+/**
+ * A compact view header for the half-width figures, where the range segments don't fit:
+ * the title over a muted note, then the range menu and a primary button.
+ */
+export function MockPanelHeader({
+  title,
+  note,
+  range,
+  action,
+}: {
+  title: string;
+  note: string;
+  range: string;
+  action: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-2xl font-semibold tracking-tight">{title}</span>
+        <span className="truncate text-sm text-muted-foreground">{note}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-[0.8rem] font-medium dark:bg-input/30">
+          {range}
+          <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+        </span>
+        <span className="flex h-8 items-center rounded-lg bg-primary px-3 text-[0.8rem] font-medium text-primary-foreground">
+          {action}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Source "favicons" drawn from brand marks, so a figure loads no images (the dashboard
+// fetches each source's own favicon.ico)
+const SOURCE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  Direct: CircleSlashIcon,
+  Google: SiGoogle,
+  "Hacker News": SiYcombinator,
+  Claude: SiClaude,
+  X: SiX,
+  GitHub: SiGithub,
+};
+
+/** A source's mark by its dashboard name, a globe for any other. */
+export function MockSourceIcon({ source, className }: { source: string; className?: string }) {
+  const Icon = SOURCE_ICONS[source] ?? GlobeIcon;
+  return <Icon className={className} />;
 }

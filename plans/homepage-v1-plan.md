@@ -138,8 +138,8 @@ Two mockups side by side in 03 Funnels and goals (stacked below `md`). A signup 
 
 ### Acceptance criteria
 
-- [ ] Both figures have captions, side by side on desktop and stacked on phones.
-- [ ] They read in both themes, and the Soon badge is visible.
+- [x] Both figures have captions, side by side on desktop and stacked on phones.
+- [x] They read in both themes, and the Soon badge is visible.
 
 ---
 
