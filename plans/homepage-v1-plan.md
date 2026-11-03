@@ -88,11 +88,11 @@ The frame fades into the page so the fold cuts it off. This phase sets up the sh
 
 ### Acceptance criteria
 
-- [ ] The mockup reads as our dashboard in light and dark, using the dashboard's own tokens. Changing a token (e.g. `--line`) changes it.
-- [ ] It isn't interactive and is hidden from assistive tech.
-- [ ] It scales or clips inside its frame at 375 px with no page scroll, and causes no layout shift on load.
-- [ ] No new client JS for the mockup (it renders on the server).
-- [ ] Unit tests cover the chart path and bar helpers.
+- [x] The mockup reads as our dashboard in light and dark, using the dashboard's own tokens. Changing a token (e.g. `--line`) changes it.
+- [x] It isn't interactive and is hidden from assistive tech.
+- [x] It scales or clips inside its frame at 375 px with no page scroll, and causes no layout shift on load.
+- [x] No new client JS for the mockup (it renders on the server).
+- [x] Unit tests cover the chart path and bar helpers.
 
 ---
 

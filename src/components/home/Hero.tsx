@@ -4,6 +4,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { hero, SIGN_IN } from "./content";
 import Figure from "./Figure";
 import HashLink from "./HashLink";
+import AnalyticsMock from "./mocks/AnalyticsMock";
 import { CONTAINER, LINK_FOCUS } from "./container";
 
 /** Pill, headline, paragraph, buttons, avatars, integrations, then the framed dashboard (Fig. 1). */
@@ -68,12 +69,12 @@ export default function Hero() {
           ))}
         </ul>
       </div>
-      {/* Fig. 1: the dashboard mockup arrives in Phase 3; the fold cuts the frame off */}
+      {/* Fig. 1: the dashboard mockup, fading out at the bottom so the fold cuts it off */}
       <div className="relative mt-16 text-left">
         <Figure figure={hero.figure} captionHidden>
-          <div className="h-[280px] sm:h-[460px]" />
+          <AnalyticsMock />
         </Figure>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-background" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-b from-transparent to-background" />
       </div>
     </section>
   );
