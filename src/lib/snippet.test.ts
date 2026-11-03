@@ -12,12 +12,23 @@ describe("embedSnippet", () => {
 
   // The homepage's Setup code block passes buildOrigin(); the dashboard's Snippet uses the default
   test("the homepage's tag matches the dashboard's on a Vercel build", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
     vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "analytics.example.com");
     expect(embedSnippet("your-site.com", buildOrigin())).toBe(embedSnippet("your-site.com"));
     expect(buildOrigin()).toBe("https://analytics.example.com");
   });
 
+  test("NEXT_PUBLIC_APP_URL wins over Vercel's shortest-domain pick", () => {
+    vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "simplestats.ai");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://www.simplestats.ai/");
+    expect(buildOrigin()).toBe("https://www.simplestats.ai");
+    expect(embedSnippet("your-site.com")).toBe(
+      '<script async src="https://www.simplestats.ai/script.js" data-site="your-site.com"></script>',
+    );
+  });
+
   test("a local build points at the local app", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
     vi.stubEnv("NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL", "");
     expect(buildOrigin()).toBe("http://localhost:3000");
   });

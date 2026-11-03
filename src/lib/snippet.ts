@@ -1,7 +1,9 @@
 // Snippets must point at the stable production address, never a deployment-specific
-// URL (those sit behind Vercel's login). Vercel sets this at build time and switches it
-// to the custom domain once one is attached; locally it is unset, so use this origin.
-// Client-only: reads window.location when the variable is unset.
+// URL (those sit behind Vercel's login). NEXT_PUBLIC_APP_URL names the canonical
+// address (https://www.simplestats.ai); Vercel's own variable is the fallback, but it
+// picks the shortest custom domain, which is the apex that only redirects to www.
+// Locally both are unset, so use this origin.
+// Client-only: reads window.location when the variables are unset.
 export function appOrigin(): string {
   return productionOrigin() ?? window.location.origin;
 }
@@ -15,6 +17,8 @@ export function buildOrigin(): string {
 }
 
 function productionOrigin(): string | undefined {
+  const url = process.env.NEXT_PUBLIC_APP_URL;
+  if (url) return url.replace(/\/+$/, "");
   const host = process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
   return host ? `https://${host}` : undefined;
 }
