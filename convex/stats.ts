@@ -2,7 +2,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
-import { requireSite } from "./lib/auth";
+import { requireReadableSite } from "./lib/auth";
 import { hourWindow as hourBounds, localDate } from "./lib/dates";
 import {
   DIM_COUNTS,
@@ -26,7 +26,7 @@ import {
   summaryResult,
 } from "./lib/statsShapes";
 
-// Dashboard reads. Every query checks ownership with requireSite, takes the date range
+// Dashboard reads. Every query checks access and ownership with requireReadableSite, takes the date range
 // as "YYYY-MM-DD" strings in the site's timezone (the page computes them, because
 // queries must not read the clock), and reads the daily rollups, except for the
 // distinct-visitor count in `summary` and the live counts, which read raw rows.
@@ -156,7 +156,7 @@ function countVisitors(
 export const summary = query({
   args: rangeArgs,
   returns: summaryResult,
-  handler: async (ctx, args) => await siteSummary(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteSummary(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `summary` for a site already resolved to its owner; the MCP server calls it too. */
@@ -202,7 +202,7 @@ export async function siteSummary(ctx: QueryCtx, site: Doc<"sites">, args: DateR
 export const timeseries = query({
   args: rangeArgs,
   returns: seriesResult,
-  handler: async (ctx, args) => await siteTimeseries(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteTimeseries(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `timeseries` for a site already resolved to its owner; the MCP server calls it too. */
@@ -333,7 +333,7 @@ function onlyChannel(entries: DimEntry[], channel: Channel) {
 export const breakdown = query({
   args: { ...rangeArgs, dim: dimValidator, channel: v.optional(listChannelValidator) },
   returns: breakdownResult,
-  handler: async (ctx, args) => await siteBreakdown(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteBreakdown(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `breakdown` for a site already resolved to its owner; the MCP server calls it too. */
@@ -371,7 +371,7 @@ export async function siteBreakdown(
 export const goals = query({
   args: rangeArgs,
   returns: goalsResult,
-  handler: async (ctx, args) => await siteGoals(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteGoals(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `goals` for a site already resolved to its owner; the MCP server calls it too. */
@@ -414,7 +414,7 @@ export async function siteGoals(ctx: QueryCtx, site: Doc<"sites">, args: DateRan
 export const conversions = query({
   args: rangeArgs,
   returns: conversionsResult,
-  handler: async (ctx, args) => await siteConversions(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteConversions(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `conversions` for a site already resolved to its owner; the MCP server calls it too. */
@@ -483,7 +483,7 @@ export const filtered = query({
     v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
   ),
   handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
+    const site = await requireReadableSite(ctx, args.domain);
     const range = { from: args.from, to: args.to };
     checkRange(range);
     if (args.filters.length === 0 || args.filters.length > MAX_FILTERS) {
@@ -520,7 +520,7 @@ export const hourly = query({
   },
   returns: v.union(viewResult, v.object({ status: v.literal("tooMany") })),
   handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
+    const site = await requireReadableSite(ctx, args.domain);
     if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
     const { start, end } = hourBounds(args.period, args.now, site.timezone);
     return await filteredView(ctx, site, hourWindow(site, start, end), args.filters);
@@ -534,7 +534,7 @@ export const hourly = query({
 export const live = query({
   args: { domain: v.string(), since: v.number() },
   returns: v.number(),
-  handler: async (ctx, args) => await siteLive(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteLive(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `live` for a site already resolved to its owner; the MCP server calls it too. */
@@ -553,7 +553,7 @@ export async function siteLive(ctx: QueryCtx, site: Doc<"sites">, args: { since:
 export const online = query({
   args: { domain: v.string(), since: v.number() },
   returns: v.number(),
-  handler: async (ctx, args) => await siteOnline(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteOnline(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `online` for a site already resolved to its owner; the MCP server calls it too. */
@@ -616,7 +616,7 @@ export const liveFeed = query({
     moreVisitors: v.boolean(),
     feed: v.array(liveRow),
   }),
-  handler: async (ctx, args) => await siteLiveFeed(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await siteLiveFeed(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `liveFeed` for a site already resolved to its owner; the MCP server calls it too. */

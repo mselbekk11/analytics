@@ -4,6 +4,7 @@ import type { FunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { z } from "zod";
 import { api } from "../../../../convex/_generated/api";
+import { errorText } from "../../../../convex/lib/access";
 import { dimValidator, type Dim } from "../../../../convex/lib/dims";
 import { FILTER_HELP, RANGE_HELP } from "../../../../convex/lib/mcp";
 import { PAGE_SORTS } from "../../../../convex/lib/pages";
@@ -29,6 +30,7 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: t
 
 type Key = { secret: string; keyHash: string };
 
+
 /** A fresh server for one request, bound to the caller's key hash (checked by the route). */
 export function buildServer(keyHash: string, secret: string): McpServer {
   const server = new McpServer({ name: "analytics", version: "1.0.0" }, { instructions: INSTRUCTIONS });
@@ -43,7 +45,7 @@ export function buildServer(keyHash: string, secret: string): McpServer {
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
       if (error instanceof ConvexError) {
-        return { content: [{ type: "text", text: String(error.data) }], isError: true };
+        return { content: [{ type: "text", text: errorText(error.data) }], isError: true };
       }
       console.error("[mcp]", error);
       return { content: [{ type: "text", text: "Could not read the stats" }], isError: true };

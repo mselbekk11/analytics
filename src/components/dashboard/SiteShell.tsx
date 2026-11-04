@@ -6,13 +6,15 @@ import { useParams } from "next/navigation";
 import { Authenticated, AuthLoading, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
+import AccessGate from "@/components/account/AccessGate";
 import TopBar, { type SiteSection } from "@/components/TopBar";
 
 export type SiteDoc = NonNullable<FunctionReturnType<typeof api.sites.get>>;
 
 /**
  * A site view's frame: the top bar on `section`, and once signed in and the site has
- * loaded, `children` with it. A missing site, or someone else's, says so.
+ * loaded, `children` with it. A missing site, or someone else's, says so, and a locked
+ * account gets the paywall.
  */
 export default function SiteShell({
   section,
@@ -51,5 +53,5 @@ function Site({ domain, children }: { domain: string; children: (site: SiteDoc) 
       </p>
     );
   }
-  return children(site);
+  return <AccessGate>{children(site)}</AccessGate>;
 }

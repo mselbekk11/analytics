@@ -21,6 +21,7 @@ import SiteSwitcher from "@/components/SiteSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import { formatNumber } from "@/lib/format";
+import { trialLabel } from "@/lib/trial";
 
 export type SiteSection = "analytics" | "pages" | "users" | "live" | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
@@ -65,8 +66,8 @@ type TopBarProps =
 /**
  * The sticky bar on every signed-in page, in one of two modes. Site mode (a site's pages):
  * logo, site switcher, online count and the site's section tabs. Account mode (websites,
- * billing, settings): logo and "Analytics" and the account tabs. Both have the theme toggle
- * and the user menu. The current tab is a link too, so a visitor profile (under
+ * billing, settings): logo and "Analytics" and the account tabs. Both have the trial pill
+ * (while trialing), the theme toggle and the user menu. The current tab is a link too, so a visitor profile (under
  * Users) can go back.
  */
 export default function TopBar({ site, account }: TopBarProps) {
@@ -96,11 +97,10 @@ export default function TopBar({ site, account }: TopBarProps) {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {site && (
-              <Authenticated>
-                <OnlineNow domain={site.domain} />
-              </Authenticated>
-            )}
+            <Authenticated>
+              <TrialPill />
+              {site && <OnlineNow domain={site.domain} />}
+            </Authenticated>
             <ThemeToggle />
             <UserMenu />
           </div>
@@ -170,11 +170,34 @@ function TabStrip({
   );
 }
 
-/** Green dot and "N online", linking to Live; nothing for cookieless sites (no visitor ids). */
+// The pill's day count only needs to move a few times a day
+const TRIAL_REFRESH_MS = 60 * 1000;
+
+/** "Trial · N days left", linking to Billing; nothing once subscribed, comped or locked. */
+function TrialPill() {
+  const now = useNow(TRIAL_REFRESH_MS);
+  const account = useQuery(api.accounts.me);
+  if (account?.access !== "trialing") return null;
+  return (
+    <Link
+      href="/billing"
+      className="mr-1 flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap text-foreground transition-colors hover:bg-accent"
+    >
+      {/* useNow snaps down a step, which made a fresh 7-day trial read "8 days"; round up instead */}
+      {trialLabel(account.trialEndsAt, now + TRIAL_REFRESH_MS)}
+    </Link>
+  );
+}
+
+/**
+ * Green dot and "N online", linking to Live; nothing for cookieless sites (no visitor ids)
+ * or a locked account (the server would refuse the count).
+ */
 function OnlineNow({ domain }: { domain: string }) {
   const now = useNow(ONLINE_REFRESH_MS);
   const site = useQuery(api.sites.get, { domain });
-  const tracking = site != null && site.trackingStartedAt !== null;
+  const account = useQuery(api.accounts.me);
+  const tracking = site != null && site.trackingStartedAt !== null && account != null && account.access !== "locked";
   const online = useQuery(api.stats.online, tracking ? { domain, since: now - ONLINE_WINDOW_MS } : "skip");
   if (!tracking) return null;
   return (

@@ -264,6 +264,28 @@ export default defineSchema({
     .index("by_hash", ["hash"])
     .index("by_owner", ["ownerId"]),
 
+  // One per signed-in user, the billing unit (launch v1 Phase 3): every site of the owner
+  // shares it. Created by accounts.ensure on the first signed-in request, with a 7-day
+  // trial. See lib/access.ts for how a row turns into an access state.
+  accounts: defineTable({
+    ownerId: v.string(), // identity.tokenIdentifier, like sites.ownerId
+    trialEndsAt: v.number(),
+    // Set once trialEndsAt has passed, by the job scheduled for it or the next ensure:
+    // queries can't read the clock, so the lock is stored
+    trialEnded: v.optional(v.boolean()),
+    comped: v.optional(v.boolean()), // free forever, set by accounts.setComped
+    // Stripe (Phase 4)
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    plan: v.optional(v.union(v.literal("starter"), v.literal("growth"), v.literal("scale"))),
+    interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
+    status: v.optional(v.string()), // the subscription's status as Stripe reports it
+    currentPeriodEnd: v.optional(v.number()),
+    cancelAtPeriodEnd: v.optional(v.boolean()),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_stripeCustomerId", ["stripeCustomerId"]),
+
   // Never returned by a public query
   siteSecrets: defineTable({
     siteId: v.id("sites"),

@@ -101,6 +101,8 @@ afterEach(() => {
 test("hourly views belong to the site's owner", async () => {
   const { t } = await seed();
   const args = { domain: "picai.so", period: "today" as const, now: NOW, filters: [] };
+  // The stranger has an account of their own, so only ownership refuses them
+  await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
   await expect(t.query(api.stats.hourly, args)).rejects.toThrow(/Not signed in/);
   await expect(t.withIdentity(STRANGER).query(api.stats.hourly, args)).rejects.toThrow(/Site not found/);
 });

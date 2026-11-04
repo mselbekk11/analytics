@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { ensureAccount } from "./accounts";
 import { findOwnedSite, requireOwnerId, requireSite } from "./lib/auth";
 import { isValidTimeZone, localDate } from "./lib/dates";
 import { normalizeDomain } from "./lib/domain";
@@ -48,6 +49,8 @@ export const create = mutation({
       timezone: args.timezone,
       createdAt: Date.now(),
     });
+    // Also done by accounts.ensure on page load; here too so a site never lacks an account
+    await ensureAccount(ctx, ownerId);
     return { siteId, domain };
   },
 });

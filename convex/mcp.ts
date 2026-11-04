@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { mutation, query, type QueryCtx } from "./_generated/server";
+import { requireAccess } from "./lib/access";
 import { ownedSite } from "./lib/auth";
 import { hourWindow as hourBounds, localDate } from "./lib/dates";
 import { breakdownKey, CARD_METRICS, dimValidator, listChannelValidator, rankEntries } from "./lib/dims";
@@ -29,7 +30,7 @@ import { visitorList, visitorProfile } from "./visitors";
 // these public functions with INGEST_SECRET and the SHA-256 of the caller's Bearer key.
 // Each resolves the key to its owner, the domain to one of the owner's sites (someone
 // else's reads as "Site not found", like a missing one), then calls the same helpers as
-// the dashboard's queries. Nothing here writes, except `authenticate`'s lastUsedAt.
+// the dashboard's queries. A locked account is refused before anything is read. Nothing here writes, except `authenticate`'s lastUsedAt.
 //
 // Results are what the dashboard shows, trimmed to what an assistant needs, with the
 // domain, timezone, range and filters echoed back. Revenue is in the currency's smallest
@@ -57,10 +58,14 @@ async function activeKey(ctx: QueryCtx, secret: string, keyHash: string): Promis
   return key === null || key.revokedAt !== undefined ? null : key;
 }
 
-/** The key's owner; a revoked or unknown key is refused at once. */
+/**
+ * The key's owner; a revoked or unknown key is refused at once, and a locked account
+ * gets "subscription required" (lib/access.ts), so every tool goes through the check.
+ */
 async function keyOwner(ctx: QueryCtx, args: { secret: string; keyHash: string }): Promise<string> {
   const key = await activeKey(ctx, args.secret, args.keyHash);
   if (key === null) throw new ConvexError("Unauthorized");
+  await requireAccess(ctx, key.ownerId);
   return key.ownerId;
 }
 

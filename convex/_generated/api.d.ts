@@ -8,9 +8,11 @@
  * @module
  */
 
+import type * as accounts from "../accounts.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
+import type * as lib_access from "../lib/access.js";
 import type * as lib_attribution from "../lib/attribution.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dates from "../lib/dates.js";
@@ -48,9 +50,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accounts: typeof accounts;
   apiKeys: typeof apiKeys;
   http: typeof http;
   ingest: typeof ingest;
+  "lib/access": typeof lib_access;
   "lib/attribution": typeof lib_attribution;
   "lib/auth": typeof lib_auth;
   "lib/dates": typeof lib_dates;

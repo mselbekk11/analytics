@@ -93,6 +93,8 @@ test("customers and profiles belong to the site's owner", async () => {
     (c: T) => c.query(api.visitors.customers, { domain: "picai.so" }),
     (c: T) => c.query(api.visitors.profile, { domain: "picai.so", visitorId: VID_A }),
   ];
+  // The stranger has an account of their own, so only ownership refuses them
+  await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
   for (const call of calls) {
     await expect(call(t)).rejects.toThrow(/Not signed in/);
     await expect(call(t.withIdentity(STRANGER) as T)).rejects.toThrow(/Site not found/);

@@ -121,6 +121,8 @@ test("the visitor table belongs to the site's owner", async () => {
   const { t } = await setup();
   await visit(t, "2026-10-13T17:00:00Z", { vid: VID_A, sid: "a1", pvId: "pv-1" });
   const args = { domain: "picai.so", range: WEEK, kind: "all" as const, search: "", offset: 0 };
+  // The stranger has an account of their own, so only ownership refuses them
+  await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
   await expect(t.query(api.visitors.list, args)).rejects.toThrow(/Not signed in/);
   await expect(t.withIdentity(STRANGER).query(api.visitors.list, args)).rejects.toThrow(/Site not found/);
   await expect(t.withIdentity(OWNER).query(api.visitors.list, args)).resolves.toMatchObject({ status: "ok" });

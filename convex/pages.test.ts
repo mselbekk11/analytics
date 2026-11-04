@@ -92,6 +92,8 @@ afterEach(() => {
 test("the pages table belongs to the site's owner", async () => {
   const { t } = await seed();
   const args = { domain: "picai.so", range: WEEK, filters: [], ...TABLE };
+  // The stranger has an account of their own, so only ownership refuses them
+  await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
   await expect(t.query(api.pages.list, args)).rejects.toThrow(/Not signed in/);
   await expect(t.withIdentity(STRANGER).query(api.pages.list, args)).rejects.toThrow(/Site not found/);
   const filtered = { ...args, filters: [{ dim: "country" as const, value: "DE" }] };
@@ -224,6 +226,8 @@ async function detailOk(owner: Owner, path: string, opts: Parameters<typeof deta
 test("the page drawer belongs to the site's owner", async () => {
   const { t } = await seed();
   const args = { domain: "picai.so", range: WEEK, filters: [], path: "/pricing" };
+  // The stranger has an account of their own, so only ownership refuses them
+  await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
   await expect(t.query(api.pages.detail, args)).rejects.toThrow(/Not signed in/);
   await expect(t.withIdentity(STRANGER).query(api.pages.detail, args)).rejects.toThrow(/Site not found/);
 });

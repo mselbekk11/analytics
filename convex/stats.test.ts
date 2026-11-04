@@ -77,6 +77,8 @@ describe("access control", () => {
       (c: typeof t) => c.query(api.stats.liveFeed, { domain: "picai.so", since: 0, onlineSince: 0 }),
       (c: typeof t) => c.query(api.stats.goals, range),
     ];
+    // The stranger has an account of their own, so only ownership refuses them
+    await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
     for (const call of calls) {
       await expect(call(t)).rejects.toThrow(/Not signed in/);
       await expect(call(t.withIdentity(STRANGER) as typeof t)).rejects.toThrow(/Site not found/);

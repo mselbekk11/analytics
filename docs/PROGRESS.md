@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-11-03 (launch v1 Phases 1 and 2 live, see [plans/launch-v1-plan.md](../plans/launch-v1-plan.md), PRD `plans/launch-v1.md`; homepage v1 Phases 1 to 9 built, that plan is complete; design v4 Phases 1 to 17 built, that plan is complete). Homepage v1 is planned in [plans/homepage-v1-plan.md](../plans/homepage-v1-plan.md) (PRD: `plans/homepage-v1.md`, owner's brief `plans/homepage-v1-brief.md`, screenshots in `public/homepage/`, reference https://piqo.app/). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-11-03 (launch v1 Phases 1 and 2 live, Phase 3 built and awaiting review, see [plans/launch-v1-plan.md](../plans/launch-v1-plan.md), PRD `plans/launch-v1.md`; homepage v1 Phases 1 to 9 built, that plan is complete; design v4 Phases 1 to 17 built, that plan is complete). Homepage v1 is planned in [plans/homepage-v1-plan.md](../plans/homepage-v1-plan.md) (PRD: `plans/homepage-v1.md`, owner's brief `plans/homepage-v1-brief.md`, screenshots in `public/homepage/`, reference https://piqo.app/). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -59,6 +59,7 @@ Last updated: 2026-11-03 (launch v1 Phases 1 and 2 live, see [plans/launch-v1-pl
 | Homepage v1, Phase 9: Ask AI and Setup | **Built, awaiting owner review.** 06 Ask AI holds `AskAiCard` beside the ways to connect, side by side from `md` (stacked below): the card has the question "Which sources brought in the most revenue this month?" in a bubble, a one-line answer and Fig. 3's top three sources with share bars, marks and revenue; the list has Ask AI / Built into the dashboard / Soon, then Claude Code, Claude Desktop and Cursor with MCP, between rules. 07 Setup holds a `CodeBlock`: the muted `<!-- paste before </head> -->` comment over the real embed tag for `your-site.com`, built by the dashboard's own `embedSnippet` (now server-safe with an `origin` argument and a new `buildOrigin()`), then the strip "~2 KB" / "30 s" / "0". The Setup paragraph names Settings → Privacy → Visitor identity. Every figure is now filled. Server-rendered, the card `aria-hidden` and `inert`, both themes, no images. No Convex or Clerk calls, no new dependency. |
 | Launch v1, Phase 1: simplestats.ai on Vercel | **Live in production since 2026-11-03** (commit `c12b6b7`). simplestats.ai is attached in Vercel; `www.simplestats.ai` is the primary domain and the apex 308s to it (the plan said apex; www kept because Vercel set it and Stripe has it). Snippets, onboarding, tracking code, the MCP instructions and the homepage Setup block take their origin from the new `NEXT_PUBLIC_APP_URL` (`https://www.simplestats.ai`), ahead of Vercel's production URL, which picks the shortest custom domain (the redirecting apex). The script posts to the origin it was loaded from, so installs on the old `vercel.app` URL keep working. Clerk is still the dev instance. |
 | Launch v1, Phase 2: Clerk production and owner migration | **Live in production since 2026-11-03.** Clerk production instance "Simple Stats" on `clerk.simplestats.ai` (DNS at Namecheap), access mode Open, Google sign-in with our own Google OAuth client (External, published). Vercel Production has the `pk_live` (Config) and `sk_live` (Secret) keys, Preview keeps the dev keys; Convex prod's `CLERK_JWT_ISSUER_DOMAIN` is `https://clerk.simplestats.ai`. `migrations:moveOwner` (commit `33aeb8c`) moved the owner's 5 sites and 1 MCP key on prod to `https://clerk.simplestats.ai|user_3LcJFiWoORY1j9WKqb4pojhKn6G`. Owner confirmed all 5 sites show. |
+| Launch v1, Phase 3: Accounts, trial and lock | **Built, awaiting owner review** (not committed; Convex dev only). New `accounts` table (the plan's shape plus `trialEnded`, see Decisions). `accounts.ensure` runs on every signed-in page load (and in `sites.create`) and starts a 7-day trial once. Internal `accounts.setComped` and `accounts.setTrialEnd`. `lib/access.ts` works out comped / trialing / active / past_due / locked; every `stats.*`, `pages.*` and `visitors.*` read (through `requireReadableSite`) and all 8 MCP tools (through `keyOwner`) refuse a locked account with `ConvexError({ code: "subscription_required" })`, and MCP shows it as "Subscription required: pick a plan at https://www.simplestats.ai/billing". Ingest, `/websites`, site Settings, `/billing`, `/settings` and MCP keys are untouched. The top bar has a "Trial · N days left" pill linking to `/billing`; Analytics, Pages, Users and Live show "Pick a plan to continue" with a button to `/billing` when locked. Checked on dev in the browser: a new trial (pill at 7 days), a trial forced to expire (paywall on all four tabs, no pill or online count, Settings and /websites still work, `/test.html` still recorded), and comped (no pill or paywall). The owner's dev account is left comped. Prod comping is a command for the owner (see Next). |
 | Design v3, Phase 6: onboarding redirect | **Built, awaiting owner review.** When the site list loads empty, `/websites` replaces itself with `/websites/new`. That covers a new account and deleting the last site. The skeleton stays up until then, and the old empty state is gone. On `/websites/new`, Cancel only shows when you have at least one site. |
 | Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
 | Design v3, Phase 4: add website, step 1 | **Built, awaiting owner review.** `/websites/new` has the stepper, an "Add your website" card with one Domain field, and a "How it works" panel. As you type, the card previews "We'll track …" using the server's normaliser and shows the browser's timezone. Create site stores the site and replaces the URL with `?site=<domain>`. Step 2 for now is the snippet and "Go to dashboard"; Phase 5 fills in the rest. "Add website" and the switcher's "Add site" link here, and `?add=1` and the old inline form are gone. |
@@ -100,8 +101,10 @@ Vercel build command: `npx convex deploy --cmd 'npm run build'`.
 
 ```text
 convex/
-  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a), events (5d), and payments,
-                     checkouts and siteSecrets (5e)
+  schema.ts          PLAN.md's four tables, plus visitors and sessions (5a), events (5d), payments,
+                     checkouts and siteSecrets (5e), and accounts (launch v1 Phase 3)
+  accounts.ts        accounts.ensure (trial on first signed-in request), accounts.me (access state + trial end),
+                     internal endTrial (scheduled at trialEndsAt), setComped, setTrialEnd (launch v1 Phase 3)
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
   me.ts              whoami test query (Phase 0 check)
   sites.ts           sites.create (normalises the domain, rejects duplicates, validates the timezone),
@@ -113,7 +116,7 @@ convex/
   visitors.ts        visitors.list (Users table, design v4), visitors.customers (paying or key-goal visitors),
                      visitors.profile (journey timeline, 5f; the visitor drawer, design v4)
   stats.ts           stats.summary, stats.timeseries, stats.breakdown, stats.goals, stats.conversions, stats.live,
-                     stats.online, stats.filtered (5g), stats.liveFeed (5h) (all behind requireSite)
+                     stats.online, stats.filtered (5g), stats.liveFeed (5h) (all behind requireReadableSite: access, then ownership)
   ingest.ts          ingest.pageview / ingest.ping / ingest.event / ingest.duration (legacy) (public, guarded by INGEST_SECRET),
                      internal ingest.retryEvent
   payments.ts        payments.recordApi (public, INGEST_SECRET + key hash), internal recordStripe and stripeSecret
@@ -307,6 +310,18 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **Deleting a site** needs the domain typed to confirm (no browser `confirm()`). The `sites` row is deleted at once, so ingest and the dashboard stop seeing it; `deleteSiteData` then removes pageviews, dailyDims and dailyStats 1,000 rows per table per run and reschedules itself until done. Re-adding the same domain later starts fresh.
 - **Changing the timezone** affects only new hits; stored days keep their dates (as PLAN.md says).
 - **Removed the Phase 0/1 placeholders** (`WhoAmI`, `SiteLinks`, the old home page). `convex/me.ts` (`me.whoami`) is still deployed and tested but no longer used by the UI.
+
+### Launch v1, Phase 3 (accounts, trial and lock)
+
+- **`accounts.trialEnded` is new** (not in the plan's shape). Queries can't read the clock, so the guard can't compare `trialEndsAt` with now. A job scheduled at `trialEndsAt` (`accounts.endTrial`) sets `trialEnded`, and `accounts.ensure` sets it on any signed-in load past `trialEndsAt` (which covers an end moved by hand). Setting it re-runs every subscribed query, so an open dashboard locks live. The Stripe fields from the plan are in the schema already, unused until Phase 4.
+- **Access state** (`lib/access.ts`): `comped` wins; Stripe status `active` or `trialing` is `active`; `past_due` is allowed; otherwise trialing until `trialEnded`; anything else, and no account row at all, is `locked`.
+- **The lock is checked before ownership** (`requireReadableSite`, MCP's `keyOwner`), so a locked account gets "subscription required" for any domain and learns nothing about which exist. An unlocked user asking for someone else's site still gets "Site not found". `list_sites` is locked too.
+- **The error is `ConvexError({ code: "subscription_required", message })`**, not a string. `errorText` in `lib/access.ts` turns it into the sentence for MCP tool output; other ConvexErrors still show their string.
+- **Left open when locked** (owner approved): ingest and payments, `mcp.authenticate` (a locked key isn't a 401), the `/websites` cards (30-day totals and sparklines stay), the site Settings tab (snippet, goals, revenue settings, delete; the key-goal picker still lists goal names), `/billing`, `/settings`, MCP keys and sign-out.
+- **`sites.create` also runs `ensureAccount`**, so a site never exists without an account.
+- **The UI doesn't wait for errors.** `AccessGate` (in `SiteShell` and Live) reads `accounts.me` and shows the paywall instead of mounting the views; the top bar's online count is skipped when locked. A new user sees "Loading…" until `ensure` has made the account, never a paywall flash.
+- **The trial pill counts days in the browser** (`src/lib/trial.ts`, rounded up, never below 1), using the clock rounded up to the minute: `useNow` snaps down, which made a fresh trial read "8 days left".
+- **The paywall copy** is "Pick a plan to continue" / "Your free trial has ended. Your sites are still collecting data, so nothing is lost: pick a plan to see it again." It says "trial", which will need a second wording once subscriptions can lapse (Phase 5).
 
 ### Phase 5a (visitors and sessions)
 
@@ -911,7 +926,13 @@ Read production data with `npx convex data <table> --prod`.
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: review homepage v1 (the whole plan)
+## Next: review launch v1 Phase 3, then deploy and comp the owner
+
+1. On dev (the owner's dev account is comped): open a site and check nothing changed. To see the other states, run `npx convex run accounts:setComped '{"ownerId":"https://settling-starling-6439.clerk.accounts.dev|user_3KfD0YVkIuHN4GhrrrVRMCYBbPO","comped":false}'`. That account's trial has ended, so its site pages show the paywall. Then `npx convex run accounts:setTrialEnd '{"ownerId":"…same…","trialEndsAt":<ms a few days ahead>}'` shows the pill. Comp it again afterwards.
+2. After commit and push (Vercel deploys Convex prod), comp the owner on prod right away. Until then the prod account starts a 7-day trial on first load, so nothing locks in the meantime: `npx convex run --prod accounts:setComped '{"ownerId":"https://clerk.simplestats.ai|user_3LcJFiWoORY1j9WKqb4pojhKn6G","comped":true}'`.
+3. Other prod users from the Phase 2 sign-up checks get a 7-day trial on their next sign-in.
+
+## Earlier: review homepage v1 (the whole plan)
 
 Owner, signed out (a private window), on a local production build or after deploying:
 
@@ -1120,9 +1141,12 @@ Then 5b.
 
 Owner: review `/websites` and the settings page against `public/SA-websites.png`, then add each remaining site under Add website (production) and paste its snippet (Settings → Embed snippet) into mselbekk.com and the other six sites, next to the SA snippet. Phase 4 is then the two-week side-by-side run.
 
-## Launch v1 gotchas (Phases 1 and 2)
+## Launch v1 gotchas (Phases 1 to 3)
 
 - **`vercel link --yes` creates a project when it can't find one.** The CLI was first logged in to an account that only sees the Hobby team, and it made an empty `analytics` project there. The real project is on `mselbekk11s-projects` (Pro). Link without `--yes`.
 - **Convex full backups and `npx convex export --prod` both failed** on 2026-11-03 (the dashboard said to contact support). The Clerk switch went ahead with a copy of the 5 `sites` and 1 `apiKeys` rows instead, since the migration only rewrote `ownerId`.
 - **Negative DNS caching:** looking up a Clerk host before its record existed made the owner's AT&T router cache "doesn't exist" for up to an hour (Namecheap's SOA negative TTL is 3601 s), so `/sign-in` rendered blank on the owner's network only. Don't look up DNS names before they're added; `dig @1.1.1.1` or `@dns1.registrar-servers.com` shows the real state.
 - **The redeploy after changing a `NEXT_PUBLIC_` variable must rebuild**: the key is inlined into the client bundle. Check it with a grep for `pk_live_` in the page's scripts.
+- **Tests that check "Site not found" for a second user must give that user an account first** (`accounts.ensure`), or the lock answers before ownership does. Users who create a site get one through `sites.create`.
+- **To lock or unlock an account by hand**, use `accounts:setTrialEnd` (a past time locks at once, a future one unlocks and schedules the end) or `accounts:setComped`. Editing `trialEndsAt` in the dashboard only locks on the user's next page load.
+- **A curl pageview without `vid` and `sid` to the dev `localhost` site answered 200 but didn't show up in `pageviews`**, while the same hit with ids did (2026-11-03). Not related to the lock; send ids when testing by hand.

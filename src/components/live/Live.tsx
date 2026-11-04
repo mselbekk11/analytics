@@ -6,6 +6,7 @@ import { Authenticated, AuthLoading, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../convex/_generated/api";
 import VisitorAvatar from "@/components/customers/VisitorAvatar";
+import AccessGate from "@/components/account/AccessGate";
 import TopBar, { visitorPath } from "@/components/TopBar";
 import { useNow } from "@/components/dashboard/useNow";
 import { countryFlag, countryName, formatMoney, formatNumber, formatTime } from "@/lib/format";
@@ -53,7 +54,11 @@ function Site({ domain }: { domain: string }) {
       </p>
     );
   }
-  return <LiveView domain={site.domain} timezone={site.timezone} tracking={site.trackingStartedAt !== null} />;
+  return (
+    <AccessGate>
+      <LiveView domain={site.domain} timezone={site.timezone} tracking={site.trackingStartedAt !== null} />
+    </AccessGate>
+  );
 }
 
 function LiveView({ domain, timezone, tracking }: { domain: string; timezone: string; tracking: boolean }) {

@@ -2,7 +2,7 @@ import { ConvexError, v, type Infer, type ObjectType } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { sessionSource } from "./lib/attribution";
-import { requireSite } from "./lib/auth";
+import { requireReadableSite } from "./lib/auth";
 import { hourWindow, zonedTime } from "./lib/dates";
 import { addDays, isValidRange } from "./lib/ranges";
 import { siteCurrency } from "./lib/revenue";
@@ -121,7 +121,7 @@ export const customers = query({
     more: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
+    const site = await requireReadableSite(ctx, args.domain);
     const kinds = availableKinds(site);
     const kind = args.kind !== undefined && kinds.includes(args.kind) ? args.kind : (kinds[0] ?? null);
     const base = { kinds, kind, keyGoal: site.keyGoal ?? null, currency: siteCurrency(site) };
@@ -233,7 +233,7 @@ export const list = query({
     }),
     v.object({ status: v.literal("cookieless") }),
   ),
-  handler: async (ctx, args) => await visitorList(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await visitorList(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `list` for a site already resolved to its owner; the MCP server calls it too. */
@@ -420,7 +420,7 @@ export const profile = query({
       moreSessions: v.boolean(),
     }),
   ),
-  handler: async (ctx, args) => await visitorProfile(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await visitorProfile(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `profile` for a site already resolved to its owner; the MCP server calls it too. */

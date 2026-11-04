@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { requireAccess } from "./access";
 import { normalizeDomain } from "./domain";
 
 /** The signed-in user's stable id, used as `sites.ownerId`. Throws when signed out. */
@@ -22,6 +23,24 @@ export async function requireSite(
   domain: string,
 ): Promise<Doc<"sites">> {
   const site = await findOwnedSite(ctx, domain);
+  if (site === null) {
+    throw new ConvexError("Site not found");
+  }
+  return site;
+}
+
+/**
+ * requireSite for the stats reads (stats.*, pages.*, visitors.*): the owner's account
+ * must allow reading first (lib/access.ts), so a locked account gets "subscription
+ * required" for any domain, its own or not.
+ */
+export async function requireReadableSite(
+  ctx: QueryCtx | MutationCtx,
+  domain: string,
+): Promise<Doc<"sites">> {
+  const ownerId = await requireOwnerId(ctx);
+  await requireAccess(ctx, ownerId);
+  const site = await ownedSite(ctx, ownerId, domain);
   if (site === null) {
     throw new ConvexError("Site not found");
   }

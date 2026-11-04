@@ -1,7 +1,7 @@
 import { ConvexError, v, type Infer, type ObjectType } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
-import { requireSite } from "./lib/auth";
+import { requireReadableSite } from "./lib/auth";
 import { hourWindow as hourBounds } from "./lib/dates";
 import { dayWindow, filteredPage, filteredPages, hourWindow, type ViewWindow } from "./lib/filtered";
 import { filterValidator, MAX_FILTER_DAYS, MAX_FILTERS } from "./lib/filters";
@@ -97,7 +97,7 @@ export const list = query({
     }),
     v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
   ),
-  handler: async (ctx, args) => await pageList(ctx, await requireSite(ctx, args.domain), args),
+  handler: async (ctx, args) => await pageList(ctx, await requireReadableSite(ctx, args.domain), args),
 });
 
 /** `list` for a site already resolved to its owner; the MCP server calls it too. */
@@ -168,7 +168,7 @@ export const detail = query({
     v.object({ status: v.union(v.literal("range"), v.literal("tooMany")) }),
   ),
   handler: async (ctx, args) => {
-    const site = await requireSite(ctx, args.domain);
+    const site = await requireReadableSite(ctx, args.domain);
     if (args.filters.length > MAX_FILTERS) throw new ConvexError(`At most ${MAX_FILTERS} filters`);
     let window: ViewWindow;
     if ("period" in args.range) {
