@@ -13,7 +13,7 @@ export default function HomeNav({ offPage }: { offPage?: boolean }) {
       <div className={`${CONTAINER} flex h-14 items-center gap-1 sm:gap-6`}>
         <Link href="/" className={`flex shrink-0 items-center gap-2.5 font-semibold tracking-tight ${LINK_FOCUS}`}>
           <LogoMark />
-          <span className="max-sm:sr-only">Analytics</span>
+          <span className="max-sm:sr-only">Simple Stats</span>
         </Link>
         <nav aria-label="Main" className="flex items-center">
           {nav.links.map((l) => (

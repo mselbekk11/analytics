@@ -66,7 +66,7 @@ type TopBarProps =
 /**
  * The sticky bar on every signed-in page, in one of two modes. Site mode (a site's pages):
  * logo, site switcher, online count and the site's section tabs. Account mode (websites,
- * billing, settings): logo and "Analytics" and the account tabs. Both have the trial pill
+ * billing, settings): logo and "Simple Stats" and the account tabs. Both have the trial pill
  * (while trialing), the theme toggle and the user menu. The current tab is a link too, so a visitor profile (under
  * Users) can go back.
  */
@@ -93,7 +93,7 @@ export default function TopBar({ site, account }: TopBarProps) {
                 </Authenticated>
               </>
             ) : (
-              <span className="pl-1 font-semibold tracking-tight">Analytics</span>
+              <span className="pl-1 font-semibold tracking-tight">Simple Stats</span>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1">

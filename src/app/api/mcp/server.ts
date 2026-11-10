@@ -33,7 +33,7 @@ type Key = { secret: string; keyHash: string };
 
 /** A fresh server for one request, bound to the caller's key hash (checked by the route). */
 export function buildServer(keyHash: string, secret: string): McpServer {
-  const server = new McpServer({ name: "analytics", version: "1.0.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "simplestats", version: "1.0.0" }, { instructions: INSTRUCTIONS });
 
   // Runs one mcp.* query and turns its result, or its ConvexError, into a tool result
   async function run<Args extends Key>(

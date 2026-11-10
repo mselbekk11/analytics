@@ -21,10 +21,10 @@ export const privacy: {
   sections: PrivacySection[];
 } = {
   title: "Privacy",
-  description: "What Analytics collects about the visitors of the sites it measures and about its own customers.",
+  description: "What Simple Stats collects about the visitors of the sites it measures and about its own customers.",
   updated: "Last updated 2 November 2026",
   intro:
-    "Analytics is a website analytics service. Site owners add our script to their sites, and we count visits for them. This page explains what we collect about the people who visit those sites, what we keep about our own customers, and what we never do.",
+    "Simple Stats is a website analytics service. Site owners add our script to their sites, and we count visits for them. This page explains what we collect about the people who visit those sites, what we keep about our own customers, and what we never do.",
   sections: [
     {
       heading: "The short version",
@@ -41,11 +41,11 @@ export const privacy: {
       ],
     },
     {
-      heading: "Visitors to sites that use Analytics",
+      heading: "Visitors to sites that use Simple Stats",
       blocks: [
         {
           kind: "p",
-          text: "When you visit a site that uses Analytics, the site's owner decides to measure it and is responsible for telling you so. We collect the data on their behalf and use it only to show them statistics about their own site. With each page you view, the script records:",
+          text: "When you visit a site that uses Simple Stats, the site's owner decides to measure it and is responsible for telling you so. We collect the data on their behalf and use it only to show them statistics about their own site. With each page you view, the script records:",
         },
         {
           kind: "list",
@@ -90,7 +90,7 @@ export const privacy: {
       blocks: [
         {
           kind: "p",
-          text: "A site owner can run Analytics without cookies. With data-cookieless on the script tag, the script sets no cookies and stores nothing on your device, and nothing it records is linked to you or to your other visits.",
+          text: "A site owner can run Simple Stats without cookies. With data-cookieless on the script tag, the script sets no cookies and stores nothing on your device, and nothing it records is linked to you or to your other visits.",
         },
         {
           kind: "p",
@@ -116,7 +116,7 @@ export const privacy: {
       blocks: [
         {
           kind: "p",
-          text: "If you have an Analytics account, signing in is handled by Clerk, which holds your email address and name. We use them only to run your account and to contact you about it. Signing in sets the cookies Clerk needs to keep you signed in.",
+          text: "If you have a Simple Stats account, signing in is handled by Clerk, which holds your email address and name. We use them only to run your account and to contact you about it. Signing in sets the cookies Clerk needs to keep you signed in.",
         },
         {
           kind: "p",
@@ -143,11 +143,11 @@ export const privacy: {
       blocks: [
         {
           kind: "p",
-          text: "Analytics data is kept for as long as the site's owner keeps the site in Analytics. Deleting a site deletes all of its data, including visits, visitors, events and payments. To close your account and delete everything in it, email us.",
+          text: "Simple Stats data is kept for as long as the site's owner keeps the site in Simple Stats. Deleting a site deletes all of its data, including visits, visitors, events and payments. To close your account and delete everything in it, email us.",
         },
         {
           kind: "p",
-          text: "If you visited a site that uses Analytics and want your data removed, contact that site's owner, who controls it, or email us.",
+          text: "If you visited a site that uses Simple Stats and want your data removed, contact that site's owner, who controls it, or email us.",
         },
       ],
     },

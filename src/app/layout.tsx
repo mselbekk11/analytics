@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Analytics",
-  description: "Privacy-friendly analytics for my sites",
+  title: "Simple Stats",
+  description: "Privacy-friendly website analytics",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -1,4 +1,4 @@
-/* Analytics. Sets a first-party visitor and session cookie, unless the snippet has data-cookieless
+/* Simple Stats. Sets a first-party visitor and session cookie, unless the snippet has data-cookieless
    or the site's Visitor identity setting is Cookieless. */
 (function (w, d) {
   try {

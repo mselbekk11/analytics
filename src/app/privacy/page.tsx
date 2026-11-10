@@ -5,7 +5,7 @@ import HomeFooter from "@/components/home/HomeFooter";
 import HomeNav from "@/components/home/HomeNav";
 import { type PrivacyBlock, privacy } from "@/components/home/privacy";
 
-export const metadata: Metadata = { title: `${privacy.title} · Analytics`, description: privacy.description };
+export const metadata: Metadata = { title: `${privacy.title} · Simple Stats`, description: privacy.description };
 
 function Block({ block }: { block: PrivacyBlock }) {
   switch (block.kind) {

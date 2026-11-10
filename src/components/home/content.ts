@@ -42,7 +42,7 @@ export type Anchor = `#${string}`;
 export type PageLink = { label: string; href: Anchor };
 
 export const meta = {
-  title: "Analytics: website analytics that ties revenue to traffic",
+  title: "Simple Stats: website analytics that ties revenue to traffic",
   description:
     "See where your visitors come from and which visits turn into payments. One small script, Stripe and API revenue, a live map, a cookieless mode and an MCP server.",
 };
@@ -62,7 +62,7 @@ export const hero = {
   pill: { label: "New", text: "MCP server: ask Claude or Cursor about your stats", href: "#s-ai" as Anchor },
   heading: ["Know which visits", "turn into revenue."] as [string, string],
   paragraph:
-    "Analytics counts your visitors, shows where they came from, and ties each payment to the visit that brought it. One script of about 2\u00a0KB, with a cookieless mode when you need one.",
+    "Simple Stats counts your visitors, shows where they came from, and ties each payment to the visit that brought it. One script of about 2\u00a0KB, with a cookieless mode when you need one.",
   primary: "Go to dashboard",
   secondary: { label: "See features", href: "#s-traffic" as Anchor },
   // Seeds for the persona generator (emoji on a colour), not real people
@@ -81,7 +81,7 @@ export const hero = {
     { name: "Shopify", icon: SiShopify },
     { name: "Webflow", icon: SiWebflow },
   ] satisfies Integration[],
-  figure: { n: 1, caption: "The Analytics dashboard: visitors, pageviews, revenue and signups over the last 24 hours." },
+  figure: { n: 1, caption: "The Simple Stats dashboard: visitors, pageviews, revenue and signups over the last 24 hours." },
 };
 
 export type SectionId =
@@ -399,7 +399,7 @@ export const faq: FaqEntry[] = [
   {
     question: "How is this different from Plausible or Fathom?",
     answer:
-      "Both count visits well. Analytics also ties each payment from Stripe or the API to the visit that brought it, gives AI assistants such as ChatGPT, Claude and Perplexity their own traffic channel, and lets you ask about your stats from Claude or Cursor through an MCP server.",
+      "Both count visits well. Simple Stats also ties each payment from Stripe or the API to the visit that brought it, gives AI assistants such as ChatGPT, Claude and Perplexity their own traffic channel, and lets you ask about your stats from Claude or Cursor through an MCP server.",
   },
   {
     question: "What counts as an event?",
@@ -443,7 +443,7 @@ export const faq: FaqEntry[] = [
 export type RouteLink = { label: string; href: `/${string}` };
 
 export const footer = {
-  copyright: "© 2026 Analytics",
+  copyright: "© 2026 Simple Stats",
   links: [
     { label: "Features", href: "#s-traffic" },
     { label: "Pricing", href: "#s-pricing" },
