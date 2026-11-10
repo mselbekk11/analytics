@@ -11,9 +11,10 @@ Durable decisions that apply across all phases:
 - **Domain**: `https://simplestats.ai` serves everything. `/` is the homepage, `/websites` and `/sites/[domain]/...` the app, `/billing` and `/settings` the account, `/script.js` the snippet, and `/api/collect`, `/api/payments` and `/api/mcp` the APIs. `www.simplestats.ai` redirects to the apex. The old `analytics-jet-zeta.vercel.app` stays served so existing installs keep sending.
 - **Auth**: Clerk production instance on simplestats.ai with open sign-up (Convex prod). Convex dev keeps the Clerk dev instance. Owner ids stay `identity.tokenIdentifier`.
 - **Billing unit**: one account per signed-in Clerk user. All their sites share one subscription and one usage count. There are no teams.
-- **Schema, new `accounts` table** (index by owner id; by Stripe customer id): `ownerId`, `trialEndsAt`, `comped?`, `stripeCustomerId?`, `stripeSubscriptionId?`, `plan?` (`starter` \| `growth` \| `scale`), `interval?` (`month` \| `year`), `status?` (Stripe subscription status), `currentPeriodEnd?`, `cancelAtPeriodEnd?`. Stretch phases add the email preferences.
+- **Schema, new `accounts` table** (index by owner id; by Stripe customer id): `ownerId`, `trialEndsAt`, `comped?`, `stripeCustomerId?`, `stripeSubscriptionId?`, `events?` (the chosen tier's monthly event limit, e.g. `500000`; replaces Phase 3's unused `plan` union), `interval?` (`month` \| `year`), `status?` (Stripe subscription status), `currentPeriodEnd?`, `cancelAtPeriodEnd?`. Stretch phases add the email preferences.
 - **Access state**: worked out in one shared server helper from the account row: `comped`, `trialing`, `active`, `past_due` (allowed) or `locked`. Every dashboard read and MCP tool goes through it, and locked accounts get a typed "subscription required" error. **Ingest is never gated.**
-- **Stripe boundary**: platform billing (our customers paying us) is separate from per-site revenue attribution (our customers' customers paying them). It has its own Convex HTTP webhook route and signing secret, test mode on dev and live mode on prod, and price ids in env vars per environment. The homepage `pricing` object stays the source of display prices.
+- **Pricing (decided 2026-11-10)**: one plan with every feature, priced by monthly events on a slider, like Simple Analytics. Tiers: 500k $5/mo, 1M $8, 2.5M $15, 5M $25, 10M $39; yearly is 10× monthly ("2 months free": $50, $80, $150, $250, $390). Above 10M is "Get in touch". 7-day trial with no card on every account (built in Phase 3). No free tier for launch. The tier list lives in one place (`src/lib/pricing.ts` / the homepage `pricing` object) and drives the homepage slider, `/billing`, the Stripe prices and the usage meter.
+- **Stripe boundary**: platform billing (our customers paying us) is separate from per-site revenue attribution (our customers' customers paying them). It has its own Convex HTTP webhook route and signing secret, test mode on dev and live mode on prod. One Stripe Product ("Simple Stats") with one Price per tier and interval (10), found by `lookup_key` (`events_500k_month`, `events_500k_year`, …) rather than 10 price-id env vars. The homepage `pricing` object stays the source of display prices.
 - **Usage**: pageviews plus custom events (goals, outbound, `track`) per account per UTC calendar month, from the daily rollups, with no hot per-account counter and no enforcement.
 - **Site tabs**: Analytics \| Pages \| Users \| Revenue \| Goals \| Outbound \| Funnels \| Live \| Settings. Revenue only shows on sites with a payments provider, and Funnels only once built. Routes are `/sites/[domain]/revenue`, `/goals`, `/outbound`, `/funnels` and `/signups`. `?range=`, `?f=` and `?metric=` carry across tabs.
 - **Stretch schema**: `funnels` table (site id, name, ordered steps of `{ kind: "page", pattern } | { kind: "event", name }`, window in hours). `visitors.identifiedAt?` for signups. Email cadence switches on `accounts`.
@@ -82,12 +83,13 @@ Add the `accounts` table. An idempotent "ensure account" runs on a user's first 
 
 ### What to build
 
-Create Starter, Growth and Scale products in Stripe test mode, each with a monthly and a yearly price matching the homepage, and put the price ids in env vars. `/billing` shows the plan picker with a Monthly \| Yearly toggle and the same prices as the homepage. Choosing a plan runs an action that creates (or reuses) the Stripe customer and a subscription-mode Checkout Session, then redirects. A new platform billing webhook route, verified with its own signing secret, handles `checkout.session.completed` and `customer.subscription.created/updated/deleted`, re-reads the subscription and writes plan, interval, status and period end onto the account. Returning to `/billing?checkout=success` shows "Finishing up…" until the reactive account query flips to active, then the dashboard is unlocked.
+Replace the three plan cards with the event-tier slider: `pricing.plans` becomes a list of tiers (events, monthly, yearly), the homepage pricing section shows one card with a slider over the five tiers plus "10M+ · Get in touch", a Monthly \| Yearly ("2 months free") toggle and one "Start free trial" button, and `/billing` reuses the same component with "Subscribe" instead. Replace `accounts.plan` with `accounts.events` (nothing has written `plan` yet, so no migration). Create the "Simple Stats" product and its 10 prices in Stripe test mode with a script, each with a `lookup_key` and `metadata.events`. Subscribing runs an action that looks up the price by key, creates (or reuses) the Stripe customer and a subscription-mode Checkout Session, then redirects. The slider starts at the tier that fits this month's events, and on 500k when there's no traffic yet. A new platform billing webhook route, verified with its own signing secret, handles `checkout.session.completed` and `customer.subscription.created/updated/deleted`, re-reads the subscription and writes the tier (from the price's `metadata.events`), interval, status and period end onto the account. Returning to `/billing?checkout=success` shows "Finishing up…" until the reactive account query flips to active, then the dashboard is unlocked.
 
 ### Acceptance criteria
 
 - [ ] On dev, a locked test account pays with Stripe's test card and is unlocked within seconds of returning, with no manual reload.
-- [ ] `/billing` prices match the homepage for all six plan and interval pairs (a test checks the price config against `pricing`).
+- [ ] `/billing` prices match the homepage for all ten tier and interval pairs, and the Stripe setup script reads the same tier list (a test checks it against `pricing`).
+- [ ] The homepage slider shows the right price and event count at every step, in both intervals, and works by keyboard and at phone width.
 - [ ] A trialing account can subscribe early, and the trial pill goes away.
 - [ ] Webhook events with a bad signature are refused, and replayed or out-of-order events leave the account correct.
 - [ ] Tests cover the webhook handler's state updates.
@@ -100,11 +102,11 @@ Create Starter, Growth and Scale products in Stripe test mode, each with a month
 
 ### What to build
 
-`/billing` shows the current plan, interval, status and next renewal (or end) date for subscribed accounts. "Manage subscription" opens the Stripe customer portal (configured to switch plans and intervals, update the card, view invoices and cancel at period end). The webhook also handles `invoice.payment_failed` and the cancel flag. `/billing` shows a "Cancels on <date>" banner when cancelling, and a "Payment failed, update your card" banner plus a top-bar pill when past due. When a subscription ends, the account falls back to locked, with tracking still running.
+`/billing` shows the current tier (e.g. "1M events / month"), interval, status and next renewal (or end) date for subscribed accounts. "Manage subscription" opens the Stripe customer portal (configured with the Simple Stats product and all 10 prices so the customer can move between tiers and intervals, update the card, view invoices and cancel at period end). The webhook also handles `invoice.payment_failed` and the cancel flag. `/billing` shows a "Cancels on <date>" banner when cancelling, and a "Payment failed, update your card" banner plus a top-bar pill when past due. When a subscription ends, the account falls back to locked, with tracking still running.
 
 ### Acceptance criteria
 
-- [ ] On dev, switching Growth monthly to Scale yearly in the portal is reflected on `/billing`.
+- [ ] On dev, switching 1M monthly to 2.5M yearly in the portal is reflected on `/billing`, and the usage meter's limit follows.
 - [ ] After cancelling in the portal, access continues and the banner shows the end date. Once the period ends (simulated with a Stripe test clock or a deleted-subscription event), the account is locked.
 - [ ] A failed renewal (Stripe test card for declines) shows the past-due banner and pill, and access is kept.
 - [ ] Tests cover the cancelling, past-due and ended state transitions.
@@ -117,13 +119,14 @@ Create Starter, Growth and Scale products in Stripe test mode, each with a month
 
 ### What to build
 
-Count events per account for the current UTC month: pageviews plus custom events across all the account's sites, with engagement pings excluded. Use the daily rollups, adding a per-day custom-event count to the existing rollup row if it isn't there already, with a backfill for the current month. `/billing` shows "X of Y events this month" with a bar against the plan's limit (and against Starter's limit while trialing). Going over changes nothing for the customer. An internal query lists accounts over their limit.
+Count events per account for the current UTC month: pageviews plus custom events across all the account's sites, with engagement pings excluded. Use the daily rollups, adding a per-day custom-event count to the existing rollup row if it isn't there already, with a backfill for the current month. `/billing` shows "X of Y events this month" with a bar against the tier's limit. While trialing it shows the count and the tier it fits ("You'd be on 1M · $8/mo"), which is also where the slider starts. Going over changes nothing for the customer: `/billing` shows "Over your tier this month" with a link to the portal to move up. An internal query lists accounts over their limit.
 
 ### Acceptance criteria
 
 - [ ] On dev, sending a known number of pageviews and events moves the meter by exactly that amount, and pings don't move it.
 - [ ] An account with several sites sees the sum across them.
-- [ ] An account over its limit still tracks and reads normally, and appears in the internal over-limit list.
+- [ ] An account over its limit still tracks and reads normally, sees the "over your tier" note, and appears in the internal over-limit list.
+- [ ] A trialing account sees the tier that fits its traffic, and an account over 10M is pointed to "Get in touch".
 - [ ] Tests cover the count across sites, month boundaries, and the exclusion of pings.
 
 ---
@@ -200,7 +203,7 @@ The site tab strip gains Revenue (only on sites with payments; the page itself l
 
 ### What to build
 
-Drop "Soon" from Revenue and goal attribution on the homepage (Funnels and Search Console keep it until they ship). Point every "Start free trial" button at sign-up, and make the FAQ's billing answers (what counts as an event, going over, cancelling, the 7-day trial with no card) match how Phases 3–6 work. Then switch production billing to Stripe live mode: activate the account, create the live products and prices, set live env vars and the live webhook, and configure the portal. Do one real purchase with a live card and refund it.
+Drop "Soon" from Revenue and goal attribution on the homepage (Funnels and Search Console keep it until they ship). Point every "Start free trial" button at sign-up, and make the FAQ's billing answers (what counts as an event, going over, cancelling, the 7-day trial with no card) match how Phases 3–6 work. Then switch production billing to Stripe live mode: activate the account, run the Stripe setup script in live mode (product and 10 prices), set live env vars and the live webhook, and configure the portal. Do one real purchase with a live card and refund it.
 
 ### Acceptance criteria
 

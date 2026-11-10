@@ -311,6 +311,14 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **Changing the timezone** affects only new hits; stored days keep their dates (as PLAN.md says).
 - **Removed the Phase 0/1 placeholders** (`WhoAmI`, `SiteLinks`, the old home page). `convex/me.ts` (`me.whoami`) is still deployed and tested but no longer used by the UI.
 
+### Launch v1 pricing (decided 2026-11-10, before Phase 4)
+
+- **One plan priced by events on a slider**, like Simple Analytics, instead of the Starter/Growth/Scale cards copied from Piqo. Every tier has every feature and up to 20 sites. Tiers: 500k $5/mo, 1M $8, 2.5M $15, 5M $25, 10M $39. Yearly is 10× monthly ("2 months free"): $50, $80, $150, $250, $390. Above 10M is "Get in touch". This matches Piqo up to 1M and is cheaper above that. Plausible, DataFast and Databull start at $9 for 10k–50k, and Simple Analytics at $20 for 100k.
+- **7-day trial with no card**, as built in Phase 3. No free tier for launch; it can come later because locked accounts keep tracking.
+- **`accounts.plan` becomes `accounts.events`** (the tier's monthly limit). Nothing writes `plan` yet, so no migration.
+- **Stripe: one product, 10 prices found by `lookup_key`** (`events_500k_month` …), with `metadata.events`, created by a script from the `pricing` tier list. No price-id env vars.
+- Plan and PRD updated to match (Phases 4, 5, 6 and 11).
+
 ### Launch v1, Phase 3 (accounts, trial and lock)
 
 - **`accounts.trialEnded` is new** (not in the plan's shape). Queries can't read the clock, so the guard can't compare `trialEndsAt` with now. A job scheduled at `trialEndsAt` (`accounts.endTrial`) sets `trialEnded`, and `accounts.ensure` sets it on any signed-in load past `trialEndsAt` (which covers an end moved by hand). Setting it re-runs every subscribed query, so an open dashboard locks live. The Stripe fields from the plan are in the schema already, unused until Phase 4.
@@ -924,6 +932,7 @@ Read production data with `npx convex data <table> --prod`.
 - Done 2026-11-03 (launch v1 Phase 2): Clerk production on simplestats.ai, keys and issuer swapped, owner ids moved with `migrations:moveOwner`.
 - Add the snippet to mselbekk.com and the other six sites (planned for Phase 3).
 - Decide whether to upgrade Next.js for the security notice (`next upgrade --agent=security`, ideally in a separate worktree).
+- Decide on data retention before launch: raw pageviews are kept forever, so a full 500k-tier account adds about 6M rows a year. Check the Convex bill against that, or keep raw rows for a fixed window (e.g. 2 years) and the daily rollups forever.
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
 ## Next: launch v1 Phase 4 (checkout and billing webhook)

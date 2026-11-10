@@ -15,7 +15,9 @@ The owner wants to launch publicly within a few days of full-time work, with as 
 Launch as a public, self-serve SaaS on a custom domain:
 
 1. **Real accounts.** Clerk runs as a production instance on the custom domain with open sign-up. The owner's existing sites and data carry over.
-2. **Billing.** Every new account gets a 7-day trial with no card. After that, the customer picks Starter, Growth or Scale, monthly or yearly, through Stripe Checkout, and manages the subscription through the Stripe customer portal from `/billing`. When a trial or subscription lapses, tracking keeps going but the dashboard (and MCP) lock behind a "pick a plan" screen. Usage counts events per account per month and shows them on the billing page, with no hard limit, as the FAQ promises. The owner's account is comped forever.
+2. **Billing.** Every new account gets a 7-day trial with no card. After that, the customer picks a tier of monthly events on a slider (500k, 1M, 2.5M, 5M or 10M), monthly or yearly, through Stripe Checkout, and manages the subscription through the Stripe customer portal from `/billing`. When a trial or subscription lapses, tracking keeps going but the dashboard (and MCP) lock behind a "pick a plan" screen. Usage counts events per account per month and shows them on the billing page, with no hard limit, as the FAQ promises. The owner's account is comped forever.
+
+   **Pricing (decided 2026-11-10):** one plan with every feature, priced by events like Simple Analytics. 500k $5/mo, 1M $8, 2.5M $15, 5M $25, 10M $39, yearly 10× monthly (2 months free), above 10M "Get in touch". This matches Piqo up to 1M and undercuts it above that, and costs much less than Plausible, DataFast, Databull and Simple Analytics at every volume. No free tier for launch.
 3. **MCP verified.** The existing MCP server is tested end-to-end on the new domain with Claude.
 4. **Data that's already collected, now visible.** New site tabs, in the style of piqo: **Revenue** (only on sites with payments), **Goals** (goals and custom events) and **Outbound** (external link clicks). The Revenue flow is proven with a real Stripe test-mode payment, and the homepage drops its "Soon" badges for what ships.
 5. **Stretch, in this order:** **Funnels** (ordered steps of pages or events with drop-off), **Signups** (people identified through `identify()`, with Free vs Paying from payments), and **Insight emails** (weekly and monthly summaries through Resend).
@@ -45,11 +47,11 @@ Search Console is deferred until after launch because Google's OAuth verificatio
 
 ### Subscribing and managing billing
 
-14. As a customer, I want to pick Starter, Growth or Scale with a monthly or yearly toggle on `/billing`, so that I can choose what fits.
+14. As a customer, I want to pick how many events a month I need on a slider, with a monthly or yearly toggle, on `/billing` and the homepage, so that I pay for my traffic and nothing else.
 15. As a customer, I want the prices on `/billing` to match the homepage, so that I'm not confused.
 16. As a customer, I want to pay through Stripe Checkout, so that my card details are handled securely.
 17. As a customer, I want the dashboard to unlock right after a successful checkout, without a reload loop or a wait, so that it feels instant.
-18. As a customer, I want to see my current plan, billing interval, next renewal date and status on `/billing`, so that I know where I stand.
+18. As a customer, I want to see my current tier, billing interval, next renewal date and status on `/billing`, so that I know where I stand.
 19. As a customer, I want a "Manage subscription" button that opens the Stripe customer portal, so that I can change my plan or card, download invoices or cancel.
 20. As a customer who cancelled, I want access until the end of the period I paid for, so that I get what I paid for.
 21. As a customer whose payment failed, I want to be told on `/billing` and keep access during Stripe's retry period, so that a card hiccup doesn't lock me out at once.
@@ -61,10 +63,10 @@ Search Console is deferred until after launch because Google's OAuth verificatio
 
 ### Usage
 
-27. As a customer, I want to see "X of Y events this month" on `/billing`, so that I know whether I'm on the right plan.
+27. As a customer, I want to see "X of Y events this month" on `/billing`, so that I know whether I'm on the right tier.
 28. As a customer, I want pageviews and custom events to count, but not engagement pings, so that the count matches the FAQ.
 29. As a customer over my plan's events, I want tracking and the dashboard to keep working, so that nothing breaks, as the FAQ promises.
-30. As the owner, I want to see which accounts are over their plan, so that I can get in touch about moving up a plan.
+30. As the owner, I want to see which accounts are over their tier, so that I can get in touch about moving up.
 
 ### Locking
 
@@ -162,15 +164,15 @@ Search Console is deferred until after launch because Google's OAuth verificatio
 ### Accounts and billing model
 
 - **The billing unit is the account**, meaning one signed-in Clerk user. There are no teams or organizations in V1. All of a user's sites share one subscription and one usage count.
-- **New `accounts` table**, keyed by owner id: trial start and end, Stripe customer id, subscription id, plan (starter, growth or scale), interval (month or year), subscription status as Stripe reports it, current period end, cancel-at-period-end, and a `comped` flag. The row is created lazily on the user's first signed-in request, through an idempotent "ensure account" mutation. Existing users get one too: the owner's row is set to comped by an internal mutation.
+- **New `accounts` table**, keyed by owner id: trial start and end, Stripe customer id, subscription id, tier (its monthly event limit), interval (month or year), subscription status as Stripe reports it, current period end, cancel-at-period-end, and a `comped` flag. The row is created lazily on the user's first signed-in request, through an idempotent "ensure account" mutation. Existing users get one too: the owner's row is set to comped by an internal mutation.
 - **Access state** is worked out in one place from the account row: `comped`, `trialing` (now < trial end), `active` (status active or trialing in Stripe), `past_due` (still allowed: Stripe's retry window), and `locked` (anything else). One shared server helper returns whether data reads are allowed.
 - **Server-side enforcement:** every dashboard stats, pages, users, visitors, payments and goals query, and every MCP tool, checks access through the shared helper. Locked accounts get a typed "subscription required" error that the UI turns into the paywall screen. Account-level pages (`/billing`, `/settings`, sign-out) and site management (snippet, delete) stay usable. **Ingest is never gated.**
-- **Stripe objects:** one Product per plan and two Prices each (monthly and yearly), matching the homepage `pricing` object. Price ids live in env vars per environment (test on dev, live on prod), and the homepage `pricing` object stays the source of display prices. A test fails if they diverge where it can check.
+- **Stripe objects:** one Product ("Simple Stats") with a monthly and a yearly Price for each of the five tiers, made by a script from the homepage `pricing` tier list. Each Price has a `lookup_key` (`events_1m_year`) and `metadata.events`, so the code finds prices by key in either mode and no price ids go in env vars. The homepage `pricing` object stays the source of display prices. A test fails if they diverge where it can check.
 - **Checkout:** a Convex action creates a Stripe Checkout Session in subscription mode for the chosen price. It reuses or creates the Stripe customer, with the account's owner id in metadata and `client_reference_id`. Success returns to `/billing?checkout=success`, which shows a pending state until the webhook updates the account reactively. There's no polling: the account query is reactive.
-- **Customer portal:** a Convex action creates a Billing Portal session for the account's customer and returns its URL. The portal is configured in the Stripe dashboard to allow switching plans and intervals, updating the card, viewing invoices and cancelling at period end.
+- **Customer portal:** a Convex action creates a Billing Portal session for the account's customer and returns its URL. The portal is configured in the Stripe dashboard to allow switching between all tiers and intervals, updating the card, viewing invoices and cancelling at period end.
 - **Billing webhook:** a new Convex HTTP route, separate from the per-site revenue webhook (which stays keyed by site). It's verified with the platform's own Stripe signing secret. It handles `checkout.session.completed`, `customer.subscription.created/updated/deleted` and `invoice.payment_failed`, and writes plan, interval, status, period end and cancel flag to the account. It is idempotent: it always re-reads the subscription state from the event rather than applying deltas.
 - **Stripe SDK in Convex:** reuse the approach already proven for the revenue webhook (the SDK in the default runtime with the subtle-crypto provider). Actions that call the Stripe API use the same SDK.
-- **`/billing` page** replaces the "coming soon" card: current plan and status, renewal or end date, usage meter, plan picker (shown when there's no active subscription, or as "Change plan" through the portal), and a Manage subscription button. Payment-failed and cancelling states show a banner.
+- **`/billing` page** replaces the "coming soon" card: current plan and status, renewal or end date, usage meter, tier slider (shown when there's no active subscription, or as "Change tier" through the portal), and a Manage subscription button. Payment-failed and cancelling states show a banner.
 - **Top bar:** a "Trial · N days left" pill links to `/billing` while trialing, and a "Payment failed" pill shows when past due.
 - **Comping:** an internal mutation sets or clears `comped` for an account, run from the Convex dashboard or CLI. There's no admin UI in V1.
 
@@ -178,7 +180,7 @@ Search Console is deferred until after launch because Google's OAuth verificatio
 
 - Usage is the number of pageviews plus custom events (goals, outbound, any `track` call) across all the account's sites, in the current calendar month (UTC). Engagement pings are excluded.
 - Work it out from the existing daily rollups where they already hold these counts, rather than adding a hot per-account counter at ingest, to avoid write contention on one document. If the rollups can't give custom events per day cheaply, add a per-site per-day event count to the existing daily rollup row, not a new per-account document.
-- There's no enforcement. An internal query lists accounts over their plan's limit for the owner.
+- There's no enforcement. An internal query lists accounts over their tier's limit for the owner.
 
 ### MCP
 
