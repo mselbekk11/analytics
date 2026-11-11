@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
@@ -20,6 +20,7 @@ import CopyButton from "@/components/CopyButton";
 import { Label, rowIcon } from "@/components/dashboard/Breakdowns";
 import SiteHeader, { BlockedNotice } from "@/components/dashboard/SiteHeader";
 import SiteShell from "@/components/dashboard/SiteShell";
+import { Tile } from "@/components/dashboard/TableParts";
 import { useSiteRange } from "@/components/dashboard/useSiteRange";
 import { sitePath } from "@/components/TopBar";
 
@@ -159,22 +160,6 @@ function GoalTiles({ view }: { view: Overview | undefined }) {
         value={tiles && (tiles.avgRate === null ? "–" : formatRate(tiles.avgRate))}
         note={tiles && tiles.tracked > 0 ? "the goals' rates, averaged" : undefined}
       />
-    </div>
-  );
-}
-
-function Tile({ label, value, note }: { label: string; value: string | undefined; note?: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-2 bg-background px-6 py-6">
-      <span className="truncate text-sm text-muted-foreground">{label}</span>
-      {value === undefined ? (
-        <span className="h-8 w-20 animate-pulse rounded bg-muted" />
-      ) : (
-        <span className="truncate text-[1.625rem] leading-8 font-semibold tracking-tight tabular-nums">{value}</span>
-      )}
-      <span className="min-h-4 truncate text-xs leading-4 text-muted-foreground tabular-nums">
-        {value === undefined ? null : note}
-      </span>
     </div>
   );
 }

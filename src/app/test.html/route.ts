@@ -18,6 +18,7 @@ const html = `<!doctype html>
   <p><button id="goal">analytics("goal", "test-code", { plan: "pro" })</button></p>
   <p><button id="identify">analytics("identify", { id: "u_test", email: "test@example.com", name: "Test" })</button></p>
   <p><a href="https://github.com/mselbekk11" target="_blank">github.com/mselbekk11</a> is an outbound link.</p>
+  <p>More outbound links: <a href="https://docs.stripe.com/" target="_blank">docs.stripe.com</a> and <a href="https://www.npmjs.com/package/convex" target="_blank">npmjs.com/package/convex</a>.</p>
   <p><button id="attribution">analytics("attribution")</button> <code id="ids"></code></p>
   <p><a href="/test.html?session_id=cs_test_localclaim0001">Back from Stripe Checkout</a> sends a claim for cs_test_localclaim0001.</p>
   <script>

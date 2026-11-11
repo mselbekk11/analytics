@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
-import { ArrowDownIcon, ArrowUpIcon, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 import { cn } from "cn";
 import { api } from "../../../convex/_generated/api";
 import { localDate } from "../../../convex/lib/dates";
@@ -10,7 +10,6 @@ import { PAGE_ROWS, type PageRow, type PageSort } from "../../../convex/lib/page
 import type { PageTiles as PageTilesData } from "../../../convex/pages";
 import { percentChange } from "../../../convex/lib/ranges";
 import {
-  formatChange,
   formatDate,
   formatDuration,
   formatMoney,
@@ -22,6 +21,15 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import SiteHeader, { BlockedNotice } from "@/components/dashboard/SiteHeader";
 import SiteShell from "@/components/dashboard/SiteShell";
+import {
+  ChangeNote,
+  LoadingRows,
+  RowChange,
+  SortHeader,
+  Sparkline,
+  Tile,
+  type Column as TableColumn,
+} from "@/components/dashboard/TableParts";
 import { useSiteRange } from "@/components/dashboard/useSiteRange";
 import PageDrawer from "./PageDrawer";
 
@@ -43,7 +51,7 @@ export default function PagesView() {
   );
 }
 
-type Column = { sort: PageSort; label: string; numeric: boolean };
+type Column = TableColumn<PageSort>;
 
 function Pages({
   domain,
@@ -236,88 +244,25 @@ function Pages({
   );
 }
 
-function SortHeader({
-  column,
-  sort,
-  onSort,
-}: {
-  column: Column;
-  sort: { by: PageSort; desc: boolean };
-  onSort: (by: PageSort) => void;
-}) {
-  const active = sort.by === column.sort;
-  const Arrow = sort.desc ? ArrowDownIcon : ArrowUpIcon;
-  return (
-    <th
-      scope="col"
-      aria-sort={active ? (sort.desc ? "descending" : "ascending") : undefined}
-      className={cn(
-        "px-4 py-3 font-normal sm:first:pl-5 sm:last:pr-5",
-        column.numeric ? "text-right" : "text-left",
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(column.sort)}
-        className={cn(
-          "inline-flex items-center gap-1 rounded-sm transition-colors outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-          active && "text-foreground",
-        )}
-      >
-        {column.label}
-        {active && <Arrow aria-hidden className="size-3" />}
-      </button>
-    </th>
-  );
-}
-
 /**
  * Pages viewed, Pageviews (with its change), Sessions, Avg. bounce and Avg. duration over
  * the range, in one joined block. Without props, the loading state.
  */
 function PageTiles({ pages, tiles }: { pages?: number; tiles?: PageTilesData }) {
-  const change = tiles && percentChange(tiles.pageviews, tiles.previousPageviews);
-  const direction = change ? Math.sign(Math.round(change * 1000)) : 0;
+  const change = tiles ? percentChange(tiles.pageviews, tiles.previousPageviews) : null;
   const dash = (n: number | null | undefined, format: (n: number) => string) =>
     tiles && (n === null || n === undefined ? "–" : format(n));
   return (
     <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-5 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
-      <PageTile label="Pages viewed" value={tiles && formatNumber(pages ?? 0)} note="unique paths" />
-      <PageTile
+      <Tile label="Pages viewed" value={tiles && formatNumber(pages ?? 0)} note="unique paths" />
+      <Tile
         label="Pageviews"
         value={tiles && formatNumber(tiles.pageviews)}
-        note={
-          change === null || change === undefined ? (
-            "–"
-          ) : (
-            <>
-              <span className={cn("font-medium", direction > 0 && "text-up", direction < 0 && "text-down")}>
-                {formatChange(change)}
-              </span>{" "}
-              vs previous
-            </>
-          )
-        }
+        note={<ChangeNote change={change} />}
       />
-      <PageTile label="Sessions" value={dash(tiles?.sessions || null, formatNumber)} />
-      <PageTile label="Avg. bounce" value={dash(tiles?.bounceRate, formatRate)} />
-      <PageTile label="Avg. duration" value={dash(tiles?.timeOnPageMs, formatDuration)} />
-    </div>
-  );
-}
-
-function PageTile({ label, value, note }: { label: string; value: string | undefined; note?: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-2 bg-background px-6 py-6">
-      <span className="truncate text-sm text-muted-foreground">{label}</span>
-      {value === undefined ? (
-        <span className="h-8 w-20 animate-pulse rounded bg-muted" />
-      ) : (
-        <span className="truncate text-[1.625rem] leading-8 font-semibold tracking-tight tabular-nums">{value}</span>
-      )}
-      <span className="min-h-4 truncate text-xs leading-4 text-muted-foreground tabular-nums">
-        {value === undefined ? null : note}
-      </span>
+      <Tile label="Sessions" value={dash(tiles?.sessions || null, formatNumber)} />
+      <Tile label="Avg. bounce" value={dash(tiles?.bounceRate, formatRate)} />
+      <Tile label="Avg. duration" value={dash(tiles?.timeOnPageMs, formatDuration)} />
     </div>
   );
 }
@@ -387,7 +332,7 @@ function Row({
         ) : (
           <>
             {formatNumber(row.sessions)}
-            <SessionsChange change={row.sessionsChange} />
+            <RowChange change={row.sessionsChange} />
           </>
         )}
       </td>
@@ -412,61 +357,4 @@ function Row({
 
 function Dash() {
   return <span className="text-muted-foreground">–</span>;
-}
-
-/** The sessions change against the period before, green up and red down; empty without one. */
-function SessionsChange({ change }: { change: number | null }) {
-  const rounded = change === null ? 0 : Math.round(change * 1000);
-  return (
-    <span
-      className={cn(
-        "ml-2 inline-block w-14 text-left text-xs",
-        rounded > 0 ? "text-up" : rounded < 0 ? "text-down" : "text-muted-foreground",
-      )}
-    >
-      {change === null ? "" : formatChange(change)}
-    </span>
-  );
-}
-
-const SPARK_W = 96;
-const SPARK_H = 24;
-
-/** The page's views over the range as a small line, with a dot on the last point. */
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return <span className="text-muted-foreground">–</span>;
-  const max = Math.max(1, ...values);
-  const x = (i: number) => 1 + (i * (SPARK_W - 4)) / (values.length - 1);
-  const y = (v: number) => SPARK_H - 3 - (v / max) * (SPARK_H - 6);
-  const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const last = values.length - 1;
-  return (
-    <svg width={SPARK_W} height={SPARK_H} viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} aria-hidden className="block">
-      <polyline
-        points={points}
-        fill="none"
-        strokeWidth={1.25}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        className="stroke-muted-foreground"
-      />
-      <circle cx={x(last)} cy={y(values[last])} r={2} className="fill-foreground" />
-    </svg>
-  );
-}
-
-function LoadingRows({ columns }: { columns: number }) {
-  return (
-    <>
-      {Array.from({ length: 6 }, (_, i) => (
-        <tr key={i} className="border-b border-border last:border-b-0" aria-hidden>
-          {Array.from({ length: columns }, (_, j) => (
-            <td key={j} className="px-4 py-3.5 sm:first:pl-5 sm:last:pr-5">
-              <div className={cn("h-4 animate-pulse rounded bg-muted", j === 0 ? "w-40" : "ml-auto w-12")} />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  );
 }

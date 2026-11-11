@@ -4,13 +4,20 @@ import { Bar, BarChart, XAxis, YAxis } from "recharts";
 import { formatNumber, formatPoint } from "@/lib/format";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
-type Count = "visitors" | "pageviews";
+type Count = "visitors" | "pageviews" | "clicks";
 
-const LABELS: Record<Count, string> = { visitors: "Visitors", pageviews: "Pageviews" };
+const LABELS: Record<Count, string> = { visitors: "Visitors", pageviews: "Pageviews", clicks: "Clicks" };
+// Outbound clicks have no series of their own; they take the bar colour of visitors
+const COLORS: Record<Count, string> = {
+  visitors: "var(--series-visitors)",
+  pageviews: "var(--series-pageviews)",
+  clicks: "var(--series-visitors)",
+};
 
 /**
  * Bars of one count per day (or hour, for points like "2026-11-02T14"), in its series
- * colour, with a tooltip. The page drawer's pageviews and the Users tab's visitors.
+ * colour, with a tooltip. The page drawer's pageviews, the Users tab's visitors and the
+ * Outbound tab's clicks.
  */
 export default function CountChart({
   data,
@@ -22,7 +29,7 @@ export default function CountChart({
   /** Sets the height; h-44 by default */
   className?: string;
 }) {
-  const config = { [count]: { label: LABELS[count], color: `var(--series-${count})` } };
+  const config = { [count]: { label: LABELS[count], color: COLORS[count] } };
   return (
     <ChartContainer config={config} className={className ?? "aspect-auto h-44 w-full"}>
       <BarChart data={data} margin={{ top: 4, right: 16, bottom: 0, left: -8 }} barCategoryGap="20%">

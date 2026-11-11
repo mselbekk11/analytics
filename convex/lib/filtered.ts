@@ -3,6 +3,7 @@ import type { QueryCtx } from "../_generated/server";
 import { sessionSource, sourceDims } from "./attribution";
 import { breakdownKey, dimValidator, topEntries, type Dim, type DimEntry } from "./dims";
 import { goalRows, SourceTally, type GoalRow, type OtherEvent } from "./goals";
+import { linkKey, type LinkEntry, type LinkTotals } from "./outbound";
 import { emptyPageEntry, type PageEntry } from "./pages";
 import type { Filter } from "./filters";
 import { localDate, localHour } from "./dates";
@@ -489,7 +490,87 @@ async function compute(
   for (const l of currentLoose) viewed(l.pageview, window.point(l.pageview.ts, l.date));
   const pages = [...byPath.values()];
 
-  return { summary, timeseries, breakdowns, goals, conversions, pages, current, currentLoose };
+  return { summary, timeseries, breakdowns, goals, conversions, pages, current, currentLoose, previous: sessionsIn(prev) };
+}
+
+/**
+ * The Outbound tab over the same rows: the matching sessions' outbound clicks, grouped by
+ * host and path (lib/outbound.ts linkKey), each link's clicks at the point its session
+ * counts on (as the chart and the Pages tab count), its distinct visitors in this period
+ * and the one before, and the totals for the tiles. Clicks without a session (cookieless)
+ * aren't in the filtered view, as on the Analytics Outbound list.
+ */
+export async function filteredOutbound(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+): Promise<{ status: "ok"; links: LinkEntry[]; totals: LinkTotals; chart: number[] } | { status: "tooMany" }> {
+  try {
+    const { current, previous } = await compute(ctx, site, window, filters);
+    const pointIndex = new Map(window.points.map((point, i) => [point, i]));
+    const chart = window.points.map(() => 0);
+    const byKey = new Map<string, LinkEntry & { ids: Set<string>; urls: Map<string, number> }>();
+    for (const { session: s, events } of current) {
+      const at = window.point(s.startedAt, s.date);
+      const i = at === undefined ? undefined : pointIndex.get(at);
+      for (const e of events) {
+        if (e.type !== "outbound") continue;
+        const key = linkKey(e.name);
+        let link = byKey.get(key);
+        if (!link) {
+          link = {
+            key,
+            url: e.name,
+            clicks: 0,
+            visitors: 0,
+            previousVisitors: 0,
+            trend: window.points.map(() => 0),
+            ids: new Set(),
+            urls: new Map(),
+          };
+          byKey.set(key, link);
+        }
+        link.clicks++;
+        link.ids.add(s.visitorId);
+        link.urls.set(e.name, (link.urls.get(e.name) ?? 0) + 1);
+        if (i !== undefined) {
+          link.trend[i]++;
+          chart[i]++;
+        }
+      }
+    }
+    // The period before: clicks, and each link's distinct visitors
+    let previousClicks = 0;
+    const before = new Map<string, Set<string>>();
+    for (const { session: s, events } of previous) {
+      for (const e of events) {
+        if (e.type !== "outbound") continue;
+        previousClicks++;
+        const key = linkKey(e.name);
+        const ids = before.get(key) ?? new Set<string>();
+        ids.add(s.visitorId);
+        before.set(key, ids);
+      }
+    }
+    const links = [...byKey.values()].map(({ ids, urls, ...link }) => {
+      // The URL clicked most, ties A to Z
+      const [url] = [...urls].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+      return { ...link, url, visitors: ids.size, previousVisitors: before.get(link.key)?.size ?? 0 };
+    });
+    const totals: LinkTotals = {
+      clicks: links.reduce((n, l) => n + l.clicks, 0),
+      previousClicks,
+      unique: links.reduce((n, l) => n + l.visitors, 0),
+      previousUnique: [...before.values()].reduce((n, ids) => n + ids.size, 0),
+      links: links.length,
+      previousLinks: before.size,
+    };
+    return { status: "ok", links, totals, chart };
+  } catch (e) {
+    if (e instanceof TooManyRows) return { status: "tooMany" };
+    throw e;
+  }
 }
 
 /**

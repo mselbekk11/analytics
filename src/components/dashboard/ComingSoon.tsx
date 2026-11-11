@@ -7,8 +7,8 @@ import SiteShell from "./SiteShell";
 import { sitePath, type SiteSection } from "@/components/TopBar";
 
 /**
- * A site tab whose page isn't built yet (Revenue lands in launch v1 Phase 10, Outbound in
- * Phase 9): its title and where the numbers are for now. The tab bar keeps the range and
+ * A site tab whose page isn't built yet (Revenue lands in launch v1 Phase 10): its title
+ * and where the numbers are for now. The tab bar keeps the range and
  * filters in the URL, so leaving it goes back to the same view.
  */
 export default function ComingSoon({
@@ -16,7 +16,7 @@ export default function ComingSoon({
   title,
   text,
 }: {
-  section: Extract<SiteSection, "revenue" | "outbound">;
+  section: Extract<SiteSection, "revenue">;
   title: string;
   text: string;
 }) {
