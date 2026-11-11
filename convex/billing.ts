@@ -113,6 +113,50 @@ export const checkout = action({
   },
 });
 
+/** Tags the portal configuration scripts/stripe-setup.mjs makes (metadata.app). */
+const PORTAL_APP = "simple-stats";
+
+/**
+ * Opens the Stripe customer portal for the signed-in user's customer and returns its URL
+ * (Phase 5): switch tier or interval, update the card, see invoices, cancel at period
+ * end. `flow: "payment_method_update"` goes straight to the card form (the past-due
+ * banner). Changes come back through the billing webhook like any other.
+ */
+export const portal = action({
+  args: { flow: v.optional(v.literal("payment_method_update")) },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity === null) throw new ConvexError("Not signed in");
+    const appUrl = process.env.APP_URL;
+    if (!appUrl) throw new Error("APP_URL is not set on this Convex deployment");
+    const account = await ctx.runQuery(internal.billing.checkoutAccount, { ownerId: identity.tokenIdentifier });
+    if (account?.customerId == null) throw new ConvexError("No subscription yet");
+
+    const stripe = stripeApi();
+    // The setup script's configuration, found by tag so it needn't be the account default
+    const configs = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
+    const configuration = configs.data.find((c) => c.metadata?.app === PORTAL_APP);
+    if (configuration === undefined) throw new Error("No portal configuration: run scripts/stripe-setup.mjs");
+
+    const returnUrl = `${appUrl}/billing`;
+    const session = await stripe.billingPortal.sessions.create({
+      customer: account.customerId,
+      configuration: configuration.id,
+      return_url: returnUrl,
+      ...(args.flow === "payment_method_update"
+        ? {
+            flow_data: {
+              type: "payment_method_update",
+              after_completion: { type: "redirect", redirect: { return_url: returnUrl } },
+            },
+          }
+        : {}),
+    });
+    return session.url;
+  },
+});
+
 /**
  * Writes a subscription, as just re-read from Stripe, onto its account. Idempotent: it
  * sets the stored state from the subscription itself rather than applying the event, so
@@ -139,6 +183,7 @@ export const applySubscription = internalMutation({
       interval: r.interval,
       currentPeriodEnd: r.currentPeriodEnd,
       cancelAtPeriodEnd: r.cancelAtPeriodEnd ? true : undefined,
+      cancelAt: r.cancelAt,
     });
     return "applied";
   },

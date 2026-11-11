@@ -149,7 +149,7 @@ describe("accounts", () => {
     vi.setSystemTime(NOW + 60_000);
     await asOwner.mutation(api.accounts.ensure, {});
 
-    expect(await asOwner.query(api.accounts.me, {})).toEqual({ access: "trialing", trialEndsAt: NOW + TRIAL_MS, events: null, interval: null });
+    expect(await asOwner.query(api.accounts.me, {})).toMatchObject({ access: "trialing", trialEndsAt: NOW + TRIAL_MS, events: null, interval: null });
     const rows = await t.run((ctx) => ctx.db.query("accounts").collect());
     expect(rows).toHaveLength(1);
   });
@@ -187,7 +187,7 @@ describe("accounts", () => {
     await lock(t, OWNER.tokenIdentifier);
     expect((await asOwner.query(api.accounts.me, {}))?.access).toBe("locked");
     await t.mutation(internal.accounts.setTrialEnd, { ownerId: OWNER.tokenIdentifier, trialEndsAt: NOW + 3_600_000 });
-    expect(await asOwner.query(api.accounts.me, {})).toEqual({ access: "trialing", trialEndsAt: NOW + 3_600_000, events: null, interval: null });
+    expect(await asOwner.query(api.accounts.me, {})).toMatchObject({ access: "trialing", trialEndsAt: NOW + 3_600_000, events: null, interval: null });
     // The first trial's job, still scheduled for a week out, finds the later end passed and locks again
     vi.setSystemTime(NOW + 3_600_000);
     await t.finishAllScheduledFunctions(vi.runAllTimers);

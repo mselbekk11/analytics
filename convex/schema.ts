@@ -283,6 +283,7 @@ export default defineSchema({
     status: v.optional(v.string()), // the subscription's status as Stripe reports it
     currentPeriodEnd: v.optional(v.number()),
     cancelAtPeriodEnd: v.optional(v.boolean()),
+    cancelAt: v.optional(v.number()), // when a cancelled subscription ends (Phase 5)
   })
     .index("by_owner", ["ownerId"])
     .index("by_stripeCustomerId", ["stripeCustomerId"]),

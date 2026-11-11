@@ -11,6 +11,7 @@ export const BILLING_EVENTS = [
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  "invoice.payment_failed", // Phase 5: past due shows at once, not on the next subscription update
 ] as const;
 
 /** Statuses that keep the dashboard open (lib/access.ts). */
@@ -25,6 +26,8 @@ export const subscriptionRecordValidator = v.object({
   interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
   currentPeriodEnd: v.optional(v.number()), // ms
   cancelAtPeriodEnd: v.boolean(),
+  // When a cancelled subscription ends (ms): cancel_at, else the period end
+  cancelAt: v.optional(v.number()),
 });
 
 export type SubscriptionRecord = Infer<typeof subscriptionRecordValidator>;
@@ -47,6 +50,11 @@ export function billingSubscriptionId(event: { type: string; data: { object: unk
     return o.mode === "subscription" ? (idOf(o.subscription) ?? null) : null;
   }
   if (event.type.startsWith("customer.subscription.")) return str(o.id) ?? null;
+  if (event.type.startsWith("invoice.")) {
+    // On the invoice's parent since API 2025-03-31, on the invoice before
+    const parent = obj(obj(o.parent)?.subscription_details);
+    return idOf(parent?.subscription) ?? idOf(o.subscription) ?? null;
+  }
   return null;
 }
 
@@ -64,6 +72,9 @@ export function subscriptionRecord(sub: unknown): SubscriptionRecord | null {
   const interval = obj(price?.recurring)?.interval;
   // On the item since API 2025-03-31, on the subscription before
   const periodEnd = typeof item?.current_period_end === "number" ? item.current_period_end : s.current_period_end;
+  const currentPeriodEnd = typeof periodEnd === "number" ? periodEnd * 1000 : undefined;
+  // The portal's "cancel at period end" may set cancel_at instead of the flag
+  const cancelAtPeriodEnd = s.cancel_at_period_end === true || typeof s.cancel_at === "number";
 
   return {
     subscriptionId,
@@ -72,9 +83,9 @@ export function subscriptionRecord(sub: unknown): SubscriptionRecord | null {
     status,
     events: Number.isInteger(events) && events > 0 ? events : undefined,
     interval: interval === "month" || interval === "year" ? interval : undefined,
-    currentPeriodEnd: typeof periodEnd === "number" ? periodEnd * 1000 : undefined,
-    // The portal's "cancel at period end" may set cancel_at instead of the flag
-    cancelAtPeriodEnd: s.cancel_at_period_end === true || typeof s.cancel_at === "number",
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+    cancelAt: typeof s.cancel_at === "number" ? s.cancel_at * 1000 : cancelAtPeriodEnd ? currentPeriodEnd : undefined,
   };
 }
 

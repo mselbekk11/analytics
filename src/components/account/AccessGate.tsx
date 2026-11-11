@@ -16,11 +16,12 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 export default function AccessGate({ children }: { children: ReactNode }) {
   const account = useQuery(api.accounts.me);
   if (account == null) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (account.access === "locked") return <Paywall />;
+  if (account.access === "locked") return <Paywall lapsed={account.lapsed} />;
   return children;
 }
 
-function Paywall() {
+/** The wording depends on what ended: the free trial, or a subscription (Phase 5). */
+function Paywall({ lapsed }: { lapsed: boolean }) {
   return (
     <Card className="mx-auto mt-10 w-full max-w-md text-center">
       <CardHeader className="items-center gap-2">
@@ -29,8 +30,8 @@ function Paywall() {
         </div>
         <CardTitle>Pick a plan to continue</CardTitle>
         <CardDescription>
-          Your free trial has ended. Your sites are still collecting data, so nothing is lost: pick a plan to see it
-          again.
+          {lapsed ? "Your subscription has ended." : "Your free trial has ended."} Your sites are still collecting
+          data, so nothing is lost: pick a plan to see it again.
         </CardDescription>
         <Button className="mx-auto mt-4" render={<Link href="/billing" />} nativeButton={false}>
           Pick a plan

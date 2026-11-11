@@ -387,3 +387,153 @@ describe("this month's pageviews", () => {
     await expect(owner.query(api.billing.monthPageviews, { month: "Nov" })).rejects.toThrow(/Bad month/);
   });
 });
+
+describe("managing a subscription (Phase 5)", () => {
+  const CANCEL_AT = Math.floor(Date.parse("2026-12-01T00:00:00Z") / 1000);
+
+  test("a failed invoice names its subscription, in both API shapes", () => {
+    const parent = { parent: { type: "subscription_details", subscription_details: { subscription: "sub_1" } } };
+    expect(billingSubscriptionId({ type: "invoice.payment_failed", data: { object: { id: "in_1", ...parent } } })).toBe(
+      "sub_1",
+    );
+    expect(
+      billingSubscriptionId({ type: "invoice.payment_failed", data: { object: { id: "in_1", subscription: "sub_2" } } }),
+    ).toBe("sub_2");
+    // A one-off invoice has no subscription
+    expect(billingSubscriptionId({ type: "invoice.payment_failed", data: { object: { id: "in_1" } } })).toBeNull();
+  });
+
+  test("the end date of a cancellation: cancel_at, else the period end", () => {
+    expect(subscriptionRecord(sub({ cancel_at: CANCEL_AT }))!.cancelAt).toBe(CANCEL_AT * 1000);
+    expect(subscriptionRecord(sub({ cancel_at_period_end: true }))!.cancelAt).toBe(PERIOD_END * 1000);
+    expect(subscriptionRecord(sub())!.cancelAt).toBeUndefined();
+  });
+
+  test("switching tier and interval in the portal shows the new plan", async () => {
+    const t = await lockedOwner();
+    fakeStripe({ sub_1: sub() });
+    await post(t, "checkout.session.completed", completed());
+    fakeStripe({ sub_1: sub({}, { id: "price_2_5m_year", recurring: { interval: "year" }, metadata: { events: "2500000" } }) });
+    await post(t, "customer.subscription.updated", sub());
+    expect(await t.withIdentity(OWNER).query(api.accounts.me, {})).toMatchObject({
+      access: "active",
+      events: 2_500_000,
+      interval: "year",
+    });
+  });
+
+  test("cancelling keeps access and shows the end date; renewing clears it", async () => {
+    const t = await lockedOwner();
+    fakeStripe({ sub_1: sub({ cancel_at: CANCEL_AT }) });
+    await post(t, "customer.subscription.updated", sub());
+    expect(await t.withIdentity(OWNER).query(api.accounts.me, {})).toMatchObject({
+      access: "active",
+      status: "active",
+      cancelAt: CANCEL_AT * 1000,
+      currentPeriodEnd: PERIOD_END * 1000,
+      lapsed: false,
+    });
+
+    fakeStripe({ sub_1: sub() });
+    await post(t, "customer.subscription.updated", sub());
+    const me = (await t.withIdentity(OWNER).query(api.accounts.me, {}))!;
+    expect(me.cancelAt).toBeNull();
+    expect((await account(t)).cancelAt).toBeUndefined();
+  });
+
+  test("a failed renewal is past due: access kept; paying again makes it active", async () => {
+    const t = await lockedOwner();
+    fakeStripe({ sub_1: sub() });
+    await post(t, "checkout.session.completed", completed());
+
+    fakeStripe({ sub_1: sub({ status: "past_due" }) });
+    const invoice = { id: "in_1", object: "invoice", parent: { subscription_details: { subscription: "sub_1" } } };
+    expect((await post(t, "invoice.payment_failed", invoice)).status).toBe(200);
+    expect((await t.withIdentity(OWNER).query(api.accounts.me, {}))!.access).toBe("past_due");
+    // Past due still reads stats
+    await t.withIdentity(OWNER).mutation(api.sites.create, { domain: "a.dev", timezone: "UTC" });
+    await expect(
+      t.withIdentity(OWNER).query(api.stats.summary, { domain: "a.dev", from: "2026-11-01", to: "2026-11-10" }),
+    ).resolves.toBeDefined();
+
+    fakeStripe({ sub_1: sub() });
+    await post(t, "customer.subscription.updated", sub());
+    expect((await t.withIdentity(OWNER).query(api.accounts.me, {}))!.access).toBe("active");
+  });
+
+  test("an ended subscription locks the account, worded as lapsed rather than a trial", async () => {
+    const t = await lockedOwner();
+    expect((await t.withIdentity(OWNER).query(api.accounts.me, {}))!.lapsed).toBe(false);
+    fakeStripe({ sub_1: sub({ cancel_at: CANCEL_AT }) });
+    await post(t, "checkout.session.completed", completed());
+
+    fakeStripe({ sub_1: sub({ status: "canceled", cancel_at: CANCEL_AT }) });
+    await post(t, "customer.subscription.deleted", sub());
+    expect(await t.withIdentity(OWNER).query(api.accounts.me, {})).toMatchObject({
+      access: "locked",
+      lapsed: true,
+      hasCustomer: true,
+    });
+    await t.withIdentity(OWNER).mutation(api.sites.create, { domain: "a.dev", timezone: "UTC" });
+    await expect(
+      t.withIdentity(OWNER).query(api.stats.summary, { domain: "a.dev", from: "2026-11-01", to: "2026-11-10" }),
+    ).rejects.toThrow(/subscription_required|Subscription required/);
+  });
+
+  test("a subscription that ends while the free trial still runs falls back to the trial", async () => {
+    const t = convexTest(schema, modules);
+    await t.withIdentity(OWNER).mutation(api.accounts.ensure, {});
+    fakeStripe({ sub_1: sub({ status: "canceled" }) });
+    await post(t, "customer.subscription.deleted", sub());
+    expect((await t.withIdentity(OWNER).query(api.accounts.me, {}))!.access).toBe("trialing");
+  });
+});
+
+describe("the customer portal", () => {
+  function fakePortal() {
+    return fakeStripe({}, (url) => {
+      if (url.pathname === "/v1/billing_portal/configurations") {
+        return {
+          object: "list",
+          data: [
+            { id: "bpc_other", metadata: {} },
+            { id: "bpc_ours", metadata: { app: "simple-stats" } },
+          ],
+        };
+      }
+      if (url.pathname === "/v1/billing_portal/sessions") return { id: "bps_1", url: "https://billing.stripe.com/p/session/1" };
+      return undefined;
+    });
+  }
+
+  test("opens our configuration for the account's customer and returns to /billing", async () => {
+    const t = await lockedOwner();
+    await t.mutation(internal.billing.setCustomer, { ownerId: OWNER.tokenIdentifier, customerId: "cus_1" });
+    const calls = fakePortal();
+
+    expect(await t.withIdentity(OWNER).action(api.billing.portal, {})).toBe("https://billing.stripe.com/p/session/1");
+    const body = calls.find((c) => c.url.pathname === "/v1/billing_portal/sessions")!.body;
+    expect(body.get("customer")).toBe("cus_1");
+    expect(body.get("configuration")).toBe("bpc_ours");
+    expect(body.get("return_url")).toBe("http://localhost:3000/billing");
+    expect(body.has("flow_data[type]")).toBe(false);
+
+    const again = fakePortal();
+    await t.withIdentity(OWNER).action(api.billing.portal, { flow: "payment_method_update" });
+    const flow = again.find((c) => c.url.pathname === "/v1/billing_portal/sessions")!.body;
+    expect(flow.get("flow_data[type]")).toBe("payment_method_update");
+    expect(flow.get("flow_data[after_completion][redirect][return_url]")).toBe("http://localhost:3000/billing");
+  });
+
+  test("refuses without a Stripe customer, or signed out", async () => {
+    const t = await lockedOwner();
+    const calls = fakePortal();
+    await expect(t.withIdentity(OWNER).action(api.billing.portal, {})).rejects.toThrow(/No subscription yet/);
+    await expect(t.action(api.billing.portal, {})).rejects.toThrow(/Not signed in/);
+    // Someone else's customer is never used: the stranger has none
+    await t.mutation(internal.billing.setCustomer, { ownerId: OWNER.tokenIdentifier, customerId: "cus_1" });
+    await t.withIdentity(STRANGER).mutation(api.accounts.ensure, {});
+    await expect(t.withIdentity(STRANGER).action(api.billing.portal, {})).rejects.toThrow(/No subscription yet/);
+    expect(calls).toHaveLength(0);
+  });
+});

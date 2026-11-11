@@ -1,6 +1,6 @@
 import { TIERS, type Interval, type Tier } from "../../convex/lib/tiers";
 
-export { TIERS, fittingTierIndex, type Interval, type Tier } from "../../convex/lib/tiers";
+export { TIERS, fittingTierIndex, tierByEvents, type Interval, type Tier } from "../../convex/lib/tiers";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const count = new Intl.NumberFormat("en-US");

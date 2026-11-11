@@ -23,6 +23,15 @@ export const TIERS: readonly Tier[] = [
 
 export const PRODUCT_NAME = "Simple Stats";
 
+/**
+ * One Stripe Product per tier, each with a monthly and a yearly price (Phase 5): the
+ * customer portal allows only one price per interval on a product, so a single product
+ * with all 10 prices couldn't offer tier switching. "Simple Stats 2.5M".
+ */
+export function productName(tier: Pick<Tier, "label">): string {
+  return `${PRODUCT_NAME} ${tier.label}`;
+}
+
 /** The Stripe Price lookup key for a tier and interval: "events_1m_year". */
 export function lookupKey(tier: Pick<Tier, "slug">, interval: Interval): string {
   return `events_${tier.slug}_${interval}`;
@@ -42,6 +51,7 @@ export function fittingTierIndex(events: number): number {
 }
 
 export type StripePrice = {
+  slug: string; // the tier's, which names its product
   lookupKey: string;
   unitAmount: number; // cents
   interval: Interval;
@@ -49,10 +59,11 @@ export type StripePrice = {
   nickname: string;
 };
 
-/** The 10 Stripe Prices on the one product, as scripts/stripe-setup.mjs creates them. */
+/** The 10 Stripe Prices, two on each tier's product, as scripts/stripe-setup.mjs creates them. */
 export function stripePrices(): StripePrice[] {
   return TIERS.flatMap((tier) =>
     (["month", "year"] as const).map((interval) => ({
+      slug: tier.slug,
       lookupKey: lookupKey(tier, interval),
       unitAmount: (interval === "month" ? tier.monthly : tier.yearly) * 100,
       interval,

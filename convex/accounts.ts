@@ -37,8 +37,9 @@ export const ensure = mutation({
 });
 
 /**
- * The signed-in user's access state and trial end, or null before `ensure` has made the
- * account. The trial pill counts the days in the browser, because queries can't read the clock.
+ * The signed-in user's access state, trial end and subscription, or null before `ensure`
+ * has made the account. The trial pill counts the days in the browser, because queries
+ * can't read the clock.
  */
 export const me = query({
   args: {},
@@ -50,16 +51,32 @@ export const me = query({
       // The subscribed tier (Phase 4), null until the billing webhook has written one
       events: v.union(v.null(), v.number()),
       interval: v.union(v.null(), v.literal("month"), v.literal("year")),
+      // Phase 5. The status as Stripe reports it ("trialing" when Checkout carried the
+      // free trial over), null before any subscription
+      status: v.union(v.null(), v.string()),
+      currentPeriodEnd: v.union(v.null(), v.number()),
+      // When a cancelled subscription ends; null when it renews
+      cancelAt: v.union(v.null(), v.number()),
+      // A Stripe customer exists, so the portal can open (invoices, card, plan)
+      hasCustomer: v.boolean(),
+      // Locked after a subscription rather than after the free trial (the paywall's wording)
+      lapsed: v.boolean(),
     }),
   ),
   handler: async (ctx) => {
     const account = await ownerAccount(ctx, await requireOwnerId(ctx));
     if (account === null) return null;
+    const access = accessState(account);
     return {
-      access: accessState(account),
+      access,
       trialEndsAt: account.trialEndsAt,
       events: account.events ?? null,
       interval: account.interval ?? null,
+      status: account.status ?? null,
+      currentPeriodEnd: account.currentPeriodEnd ?? null,
+      cancelAt: account.cancelAtPeriodEnd === true ? (account.cancelAt ?? account.currentPeriodEnd ?? null) : null,
+      hasCustomer: account.stripeCustomerId !== undefined,
+      lapsed: access === "locked" && account.stripeSubscriptionId !== undefined,
     };
   },
 });

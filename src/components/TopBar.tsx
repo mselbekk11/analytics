@@ -67,7 +67,7 @@ type TopBarProps =
  * The sticky bar on every signed-in page, in one of two modes. Site mode (a site's pages):
  * logo, site switcher, online count and the site's section tabs. Account mode (websites,
  * billing, settings): logo and "Simple Stats" and the account tabs. Both have the trial pill
- * (while trialing), the theme toggle and the user menu. The current tab is a link too, so a visitor profile (under
+ * (while trialing, or "Payment failed" while past due), the theme toggle and the user menu. The current tab is a link too, so a visitor profile (under
  * Users) can go back.
  */
 export default function TopBar({ site, account }: TopBarProps) {
@@ -173,10 +173,24 @@ function TabStrip({
 // The pill's day count only needs to move a few times a day
 const TRIAL_REFRESH_MS = 60 * 1000;
 
-/** "Trial · N days left", linking to Billing; nothing once subscribed, comped or locked. */
+/**
+ * "Trial · N days left" while trialing, or a red "Payment failed" while past due (Phase 5),
+ * linking to Billing; nothing once subscribed, comped or locked.
+ */
 function TrialPill() {
   const now = useNow(TRIAL_REFRESH_MS);
   const account = useQuery(api.accounts.me);
+  if (account?.access === "past_due") {
+    return (
+      <Link
+        href="/billing"
+        className="mr-1 flex shrink-0 items-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-destructive transition-colors hover:bg-destructive/20"
+      >
+        <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
+        Payment failed
+      </Link>
+    );
+  }
   if (account?.access !== "trialing") return null;
   return (
     <Link
