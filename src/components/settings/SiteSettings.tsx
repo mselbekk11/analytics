@@ -8,6 +8,7 @@ import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { PlusIcon, XIcon } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import {
   DEFAULT_PLACEHOLDER,
   MAX_EXCLUDED_PATHS,
@@ -57,8 +58,8 @@ type SectionId =
   | "excluded"
   | "danger";
 
-// The sidebar, in order. A hidden group is left out of the sidebar but its sections still open by URL
-const GROUPS: { label: string; hidden?: boolean; sections: { id: SectionId; label: string }[] }[] = [
+// The sidebar, in order. A hidden section is left out of the sidebar but still opens by URL
+const GROUPS: { label: string; sections: { id: SectionId; label: string; hidden?: boolean }[] }[] = [
   {
     label: "Install",
     sections: [
@@ -68,10 +69,10 @@ const GROUPS: { label: string; hidden?: boolean; sections: { id: SectionId; labe
   },
   {
     label: "Attribution",
-    hidden: true,
+    // Revenue attribution comes back with the Revenue tab (launch v1 Phase 10)
     sections: [
       { id: "goals", label: "Goals & conversions" },
-      { id: "revenue", label: "Revenue attribution" },
+      { id: "revenue", label: "Revenue attribution", hidden: true },
     ],
   },
   { label: "Privacy", sections: [{ id: "identity", label: "Visitor identity" }] },
@@ -87,7 +88,9 @@ const GROUPS: { label: string; hidden?: boolean; sections: { id: SectionId; labe
   { label: "Danger zone", sections: [{ id: "danger", label: "Danger zone" }] },
 ];
 const SECTION_IDS = new Set<string>(GROUPS.flatMap((g) => g.sections.map((s) => s.id)));
-const SHOWN_GROUPS = GROUPS.filter((g) => !g.hidden);
+const SHOWN_GROUPS = GROUPS.map((g) => ({ ...g, sections: g.sections.filter((s) => !s.hidden) })).filter(
+  (g) => g.sections.length > 0,
+);
 
 function Settings({ domain }: { domain: string }) {
   const site = useQuery(api.sites.get, { domain });
@@ -310,6 +313,7 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
         </>
       }
     >
+      <GoalList domain={domain} names={names} />
       <div className="flex flex-col gap-2 rounded-md border border-line bg-panel p-3">
         <div className="flex justify-end gap-2">
           <CopyButton text={goalsPrompt(domain, keyGoal)} label="Copy AI prompt" />
@@ -355,6 +359,147 @@ function GoalsSection({ domain, keyGoal }: { domain: string; keyGoal: string | n
         )}
       </form>
     </Section>
+  );
+}
+
+const GOAL_KINDS = [
+  { kind: "event", label: "Event", placeholder: "signup" },
+  { kind: "page", label: "Pageview", placeholder: "/pricing" },
+] as const;
+
+/**
+ * The goals the Goals tab lists: an event by the name it is sent with, or a pageview of
+ * one exact path, each with a display name. Recorded event names are offered.
+ */
+function GoalList({ domain, names }: { domain: string; names: string[] | undefined }) {
+  const goals = useQuery(api.goals.list, { domain });
+  const create = useMutation(api.goals.create);
+  const remove = useMutation(api.goals.remove);
+  const [kind, setKind] = useState<"event" | "page">("event");
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function add(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      await create({ domain, kind, key, name: name.trim() || undefined });
+      setKey("");
+      setName("");
+    } catch (err) {
+      setError(err instanceof ConvexError ? String(err.data) : "Could not add the goal");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function drop(id: Id<"goals">) {
+    setError(null);
+    try {
+      await remove({ domain, id });
+    } catch (err) {
+      setError(err instanceof ConvexError ? String(err.data) : "Could not remove the goal");
+    }
+  }
+
+  const placeholder = GOAL_KINDS.find((k) => k.kind === kind)?.placeholder;
+  return (
+    <div className="flex flex-col gap-3 text-sm">
+      <div className="flex flex-col gap-1">
+        <h3 className="font-medium text-strong">Goals</h3>
+        <p className="text-muted-foreground">
+          What the Goals tab lists, with conversions, rate and top source. Other events you send show there too, with
+          a button to make them goals.
+        </p>
+      </div>
+      {goals === undefined ? (
+        <div className="h-10 animate-pulse rounded bg-line/50" />
+      ) : goals.length === 0 ? (
+        <p className="text-muted-foreground">No goals yet.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
+          {goals.map((g) => (
+            <li key={g.id} className="flex items-center gap-3 py-2 pr-2 pl-3">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-strong">{g.name}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {g.kind === "event" ? "Event" : "Pageview"} · <code className="font-mono">{g.key}</code>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => drop(g.id)}
+                aria-label={`Remove ${g.name}`}
+                className="rounded-md border border-line px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Type</span>
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as "event" | "page");
+              setError(null);
+            }}
+            className="rounded-md border border-line bg-panel px-3 py-2"
+          >
+            {GOAL_KINDS.map((k) => (
+              <option key={k.kind} value={k.kind}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">{kind === "event" ? "Event name" : "Exact path"}</span>
+          <input
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+              setError(null);
+            }}
+            list={kind === "event" ? "goal-event-names" : undefined}
+            placeholder={placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            className="rounded-md border border-line bg-panel px-3 py-2 font-mono"
+          />
+        </label>
+        <datalist id="goal-event-names">
+          {names?.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">Name (optional)</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={kind === "event" ? "Signup" : "Viewed pricing"}
+            maxLength={60}
+            autoComplete="off"
+            className="rounded-md border border-line bg-panel px-3 py-2"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={pending || !key.trim()}
+          className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-40"
+        >
+          {pending ? "Adding…" : "Add goal"}
+        </button>
+      </form>
+      {error && <p className="text-down">{error}</p>}
+    </div>
   );
 }
 

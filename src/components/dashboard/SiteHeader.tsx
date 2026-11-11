@@ -8,7 +8,7 @@ import FilterBar from "./FilterBar";
 import RangeControls from "./RangeControls";
 
 /**
- * A site view's title with the range in words, the range controls, and the filter chips
+ * A site view's title with the range in words, the range controls (and `actions`), and the filter chips
  * with anything to say under them (`note`).
  */
 export default function SiteHeader({
@@ -20,6 +20,7 @@ export default function SiteHeader({
   filters,
   onFilters,
   note,
+  actions,
 }: {
   title: string;
   range: DateRange;
@@ -29,6 +30,8 @@ export default function SiteHeader({
   filters: Filter[];
   onFilters: (next: Filter[]) => void;
   note?: ReactNode;
+  /** Buttons after the range controls */
+  actions?: ReactNode;
 }) {
   return (
     <header className="-mb-2 flex flex-col gap-4">
@@ -39,7 +42,14 @@ export default function SiteHeader({
             {preset !== null ? PRESET_LABELS[preset] : formatRangeLabel(range)}
           </p>
         </div>
-        <RangeControls range={range} preset={preset} today={today} onChange={onRange} />
+        {actions ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <RangeControls range={range} preset={preset} today={today} onChange={onRange} />
+            {actions}
+          </div>
+        ) : (
+          <RangeControls range={range} preset={preset} today={today} onChange={onRange} />
+        )}
       </div>
       {filters.length > 0 && (
         <div className="flex flex-col gap-2">

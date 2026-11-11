@@ -111,3 +111,40 @@ export function GearIcon({ className }: IconProps) {
     </Icon>
   );
 }
+
+// Revenue, Goals and Outbound (launch v1 Phase 8) are drawn here in the same style
+// (20px grid, 2px round strokes); they are not from Nucleo.
+
+/** A banknote: Revenue */
+export function BanknoteIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <rect x="2.5" y="5" width="15" height="10" rx="2.5" ry="2.5" {...stroke} />
+      <circle cx="10" cy="10" r="2" {...stroke} />
+      <line x1="5.5" y1="10" x2="5.75" y2="10" {...stroke} />
+      <line x1="14.25" y1="10" x2="14.5" y2="10" {...stroke} />
+    </Icon>
+  );
+}
+
+/** A target: Goals */
+export function TargetIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <circle cx="10" cy="10" r="7" {...stroke} />
+      <circle cx="10" cy="10" r="3.5" {...stroke} />
+      <circle cx="10" cy="10" r="0.75" fill="currentColor" />
+    </Icon>
+  );
+}
+
+/** An arrow leaving a box: Outbound */
+export function ArrowOutIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <path d="m9,4h-2c-1.6569,0-3,1.3431-3,3v6c0,1.6569,1.3431,3,3,3h6c1.6569,0,3-1.3431,3-3v-2" {...stroke} />
+      <polyline points="12 3 17 3 17 8" {...stroke} />
+      <line x1="17" y1="3" x2="10" y2="10" {...stroke} />
+    </Icon>
+  );
+}

@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { sessionSource, sourceDims } from "./attribution";
 import { breakdownKey, dimValidator, topEntries, type Dim, type DimEntry } from "./dims";
+import { goalRows, SourceTally, type GoalRow, type OtherEvent } from "./goals";
 import { emptyPageEntry, type PageEntry } from "./pages";
 import type { Filter } from "./filters";
 import { localDate, localHour } from "./dates";
@@ -229,6 +230,50 @@ export async function filteredPage(
 }
 
 /**
+ * The Goals tab over the same rows: each goal's conversions and visitors among the
+ * matching sessions, the source of the sessions with the most conversions, the recorded
+ * events that aren't goals, and the visitors to divide by. Pageviews without a session
+ * count toward page goals when nothing is filtered (they have no source).
+ */
+export async function filteredGoals(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+  goals: Doc<"goals">[],
+): Promise<{ status: "ok"; rows: GoalRow[]; others: OtherEvent[]; visitors: number } | { status: "tooMany" }> {
+  try {
+    const { summary, current, currentLoose } = await compute(ctx, site, window, filters);
+    const currency = siteCurrency(site);
+    const eventGoals = new Map(goals.filter((g) => g.kind === "event").map((g) => [g.key, g._id]));
+    const pageGoals = new Map(goals.filter((g) => g.kind === "page").map((g) => [g.key, g._id]));
+    const tally = new SourceTally();
+    for (const { keys, events, pageviews } of current) {
+      const source = keys.get("source");
+      if (source === undefined) continue;
+      for (const e of events) {
+        const id = e.type === "goal" ? eventGoals.get(e.name) : undefined;
+        if (id !== undefined) tally.add(id, source);
+      }
+      for (const p of pageviews) {
+        const id = pageGoals.get(p.path);
+        if (id !== undefined) tally.add(id, source);
+      }
+    }
+    const { rows, others } = goalRows(
+      goals,
+      breakdownEntries("goal", current, [], currency).entries,
+      breakdownEntries("page", current, [], currency, currentLoose).entries,
+      (id) => tally.top(id),
+    );
+    return { status: "ok", rows, others, visitors: summary.current.visitors };
+  } catch (e) {
+    if (e instanceof TooManyRows) return { status: "tooMany" };
+    throw e;
+  }
+}
+
+/**
  * Every number of a view. Pageviews without a session count when nothing is filtered,
  * or, with `loosePath`, when they are of that page and every filter is that page.
  */
@@ -444,7 +489,7 @@ async function compute(
   for (const l of currentLoose) viewed(l.pageview, window.point(l.pageview.ts, l.date));
   const pages = [...byPath.values()];
 
-  return { summary, timeseries, breakdowns, goals, conversions, pages };
+  return { summary, timeseries, breakdowns, goals, conversions, pages, current, currentLoose };
 }
 
 /**

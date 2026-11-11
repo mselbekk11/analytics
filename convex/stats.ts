@@ -284,7 +284,7 @@ async function convertedByDate(
 }
 
 /** Sums one dimension's daily rows per key over the range, plus the totals over every row. */
-async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
+export async function sumDim(ctx: QueryCtx, siteId: Id<"sites">, dim: Dim, { from, to }: DateRange) {
   const rows = await ctx.db
     .query("dailyDims")
     .withIndex("by_site_dim_date", (q) =>

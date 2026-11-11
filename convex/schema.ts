@@ -213,6 +213,17 @@ export default defineSchema({
     .index("by_pvId_name", ["pvId", "name"])
     .index("by_site_type_name", ["siteId", "type", "name"]),
 
+  // The goals a site tracks (launch v1 Phase 8), set in Settings or from the Goals tab's
+  // "Other events": a custom event by name, or a pageview of one exact path. Recorded
+  // events that aren't on this list are the tab's "other events". At most MAX_GOALS a site
+  goals: defineTable({
+    siteId: v.id("sites"),
+    kind: v.union(v.literal("event"), v.literal("page")),
+    key: v.string(), // the event's name as sent, or a path such as "/pricing"
+    name: v.string(), // what the table shows, e.g. "Signup"
+    createdAt: v.number(),
+  }).index("by_site_kind_key", ["siteId", "kind", "key"]),
+
   // Payments and refunds from Stripe or the payments API (5e), each linked to a visitor
   // and credited to one of their sessions when a matching rule finds one
   payments: defineTable({

@@ -1,20 +1,23 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useEffect, useRef, type ComponentType } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Authenticated, useQuery } from "convex/react";
+import { Authenticated, useConvexAuth, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { formatFiltersParam, parseFiltersParam } from "../../convex/lib/filters";
 import { useNow } from "@/components/dashboard/useNow";
 import LogoMark from "@/components/LogoMark";
 import {
+  ArrowOutIcon,
+  BanknoteIcon,
   ChartLineIcon,
   CreditCardIcon,
   GearIcon,
   GlobeIcon,
   PageIcon,
   RadioIcon,
+  TargetIcon,
   UsersIcon,
 } from "@/components/NavIcons";
 import SiteSwitcher from "@/components/SiteSwitcher";
@@ -23,7 +26,15 @@ import UserMenu from "@/components/UserMenu";
 import { formatNumber } from "@/lib/format";
 import { trialLabel } from "@/lib/trial";
 
-export type SiteSection = "analytics" | "pages" | "users" | "live" | "settings";
+export type SiteSection =
+  | "analytics"
+  | "pages"
+  | "users"
+  | "revenue"
+  | "goals"
+  | "outbound"
+  | "live"
+  | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
 
 type Icon = ComponentType<{ className?: string }>;
@@ -32,12 +43,15 @@ const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
   { section: "analytics", label: "Analytics", icon: ChartLineIcon },
   { section: "pages", label: "Pages", icon: PageIcon },
   { section: "users", label: "Users", icon: UsersIcon },
+  { section: "revenue", label: "Revenue", icon: BanknoteIcon },
+  { section: "goals", label: "Goals", icon: TargetIcon },
+  { section: "outbound", label: "Outbound", icon: ArrowOutIcon },
   { section: "live", label: "Live", icon: RadioIcon },
   { section: "settings", label: "Settings", icon: GearIcon },
 ];
 
-// Views that take a range and filters, which carry over when switching between them
-const RANGED: SiteSection[] = ["analytics", "pages", "users"];
+// Views that take a range, filters and the cards' metric, which carry over when switching between them
+const RANGED: SiteSection[] = ["analytics", "pages", "users", "revenue", "goals", "outbound"];
 
 const ACCOUNT_TABS: { section: AccountSection; label: string; href: string; icon: Icon }[] = [
   { section: "websites", label: "Websites", href: "/websites", icon: GlobeIcon },
@@ -119,19 +133,32 @@ export default function TopBar({ site, account }: TopBarProps) {
 }
 
 /**
- * The site's tabs. From one ranged view to another (Analytics, Pages, Users) the links keep
- * `?range=` and `?f=`, so you compare like with like. Site pages render inside Suspense,
- * so reading the query string here is fine.
+ * The site's tabs. From one ranged view to another (Analytics, Pages, Users, Revenue,
+ * Goals, Outbound) the links keep `?range=`, `?f=` and `?metric=`, so you compare like
+ * with like. Revenue shows only on sites that take payments. Site pages render inside
+ * Suspense, so reading the query string here is fine.
  */
 function SiteTabs({ domain, section }: { domain: string; section: SiteSection }) {
   const searchParams = useSearchParams();
-  const range = RANGED.includes(section) ? searchParams.get("range") : null;
-  const filters = RANGED.includes(section) ? formatFiltersParam(parseFiltersParam(searchParams.get("f"))) : "";
-  const query = [range && `range=${encodeURIComponent(range)}`, filters && `f=${filters}`].filter(Boolean).join("&");
+  const { isAuthenticated } = useConvexAuth();
+  const site = useQuery(api.sites.get, isAuthenticated ? { domain } : "skip");
+  const payments = site != null && site.revenueSource !== "none";
+  const ranged = RANGED.includes(section);
+  const range = ranged ? searchParams.get("range") : null;
+  const filters = ranged ? formatFiltersParam(parseFiltersParam(searchParams.get("f"))) : "";
+  const metric = ranged ? searchParams.get("metric") : null;
+  const query = [
+    range && `range=${encodeURIComponent(range)}`,
+    filters && `f=${filters}`,
+    metric && `metric=${encodeURIComponent(metric)}`,
+  ]
+    .filter(Boolean)
+    .join("&");
+  const shown = SITE_TABS.filter((t) => t.section !== "revenue" || payments || section === "revenue");
   return (
     <TabStrip
       label="Site sections"
-      tabs={SITE_TABS.map((t) => ({
+      tabs={shown.map((t) => ({
         label: t.label,
         icon: t.icon,
         href: `${sitePath(domain, t.section)}${query && RANGED.includes(t.section) ? `?${query}` : ""}`,
@@ -141,7 +168,10 @@ function SiteTabs({ domain, section }: { domain: string; section: SiteSection })
   );
 }
 
-/** The underlined tab row under the bar; scrolls sideways on narrow screens. */
+/**
+ * The underlined tab row under the bar; scrolls sideways on narrow screens, with the
+ * current tab scrolled into view.
+ */
 function TabStrip({
   label,
   tabs,
@@ -149,11 +179,24 @@ function TabStrip({
   label: string;
   tabs: { label: string; href: string; active: boolean; icon?: Icon }[];
 }) {
+  const current = useRef<HTMLAnchorElement>(null);
+  const active = tabs.find((t) => t.active)?.label;
+  useEffect(() => {
+    const tab = current.current;
+    const strip = tab?.parentElement;
+    if (!tab || !strip || strip.scrollWidth <= strip.clientWidth) return;
+    // Only the strip scrolls, not the page
+    const left = tab.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = left - (strip.clientWidth - tab.offsetWidth) / 2;
+    }
+  }, [active]);
   return (
     <nav aria-label={label} className="-mb-px flex gap-6 overflow-x-auto text-sm [scrollbar-width:none]">
       {tabs.map((t) => (
         <Link
           key={t.label}
+          ref={t.active ? current : undefined}
           href={t.href}
           aria-current={t.active ? "page" : undefined}
           className={

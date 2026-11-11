@@ -11,6 +11,7 @@
 import type * as accounts from "../accounts.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as billing from "../billing.js";
+import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_access from "../lib/access.js";
@@ -23,6 +24,7 @@ import type * as lib_domain from "../lib/domain.js";
 import type * as lib_filtered from "../lib/filtered.js";
 import type * as lib_filters from "../lib/filters.js";
 import type * as lib_geo from "../lib/geo.js";
+import type * as lib_goals from "../lib/goals.js";
 import type * as lib_keys from "../lib/keys.js";
 import type * as lib_mcp from "../lib/mcp.js";
 import type * as lib_names from "../lib/names.js";
@@ -58,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   apiKeys: typeof apiKeys;
   billing: typeof billing;
+  goals: typeof goals;
   http: typeof http;
   ingest: typeof ingest;
   "lib/access": typeof lib_access;
@@ -70,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   "lib/filtered": typeof lib_filtered;
   "lib/filters": typeof lib_filters;
   "lib/geo": typeof lib_geo;
+  "lib/goals": typeof lib_goals;
   "lib/keys": typeof lib_keys;
   "lib/mcp": typeof lib_mcp;
   "lib/names": typeof lib_names;

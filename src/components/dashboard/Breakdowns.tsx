@@ -155,12 +155,13 @@ export function cardMetrics(currency: string | null): CardMetric[] {
   return currency === null ? ["visitors", "pageviews"] : ["visitors", "pageviews", "revenue"];
 }
 
-/** Hidden until they show more than a list of goals and a placeholder */
-const SHOW_EVENTS_AND_FUNNELS = false;
+/** Hidden until Funnels ships (launch v1 Phase 12) */
+const SHOW_FUNNELS = false;
 
 /**
- * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices
- * (and Events | Funnels, hidden for now), in two columns with dividers (one column on phones).
+ * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices,
+ * then Events across both columns (Events | Funnels once Funnels ships), with dividers
+ * (one column on phones).
  */
 export default function Breakdowns(props: Props) {
   return (
@@ -169,7 +170,7 @@ export default function Breakdowns(props: Props) {
       <Breakdown {...props} card={PAGES} />
       <Breakdown {...props} card={COUNTRIES} />
       <Breakdown {...props} card={DEVICES} />
-      {SHOW_EVENTS_AND_FUNNELS && (
+      {SHOW_FUNNELS ? (
         <>
           <Events {...props} />
           <StatsCard
@@ -181,6 +182,10 @@ export default function Breakdowns(props: Props) {
             empty="Funnels are coming soon"
           />
         </>
+      ) : (
+        <div className="md:col-span-2 [&>*]:h-full">
+          <Events {...props} />
+        </div>
       )}
     </div>
   );

@@ -520,7 +520,13 @@ export const deleteSiteData = internalMutation({
       .take(DELETE_BATCH);
     for (const row of secrets) await ctx.db.delete("siteSecrets", row._id);
 
-    const batches = [pageviews, dims, stats, usage, sessions, visitors, events, payments, checkouts];
+    const goals = await ctx.db
+      .query("goals")
+      .withIndex("by_site_kind_key", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of goals) await ctx.db.delete("goals", row._id);
+
+    const batches = [pageviews, dims, stats, usage, sessions, visitors, events, payments, checkouts, goals];
     if (batches.some((rows) => rows.length === DELETE_BATCH)) {
       await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
     }

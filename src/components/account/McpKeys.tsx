@@ -25,8 +25,8 @@ export default function McpKeys() {
   const createKey = useAction(api.apiKeys.create);
   const revokeKey = useMutation(api.apiKeys.revoke);
   const [name, setName] = useState("");
-  // The key just created, until the page is left; only its hash is stored
-  const [created, setCreated] = useState<{ key: string; name: string } | null>(null);
+  // The key just created, until the page is left or it is revoked; only its hash is stored
+  const [created, setCreated] = useState<{ key: string; name: string; prefix: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState<Id<"apiKeys"> | null>(null);
@@ -37,8 +37,8 @@ export default function McpKeys() {
     setPending(true);
     setError(null);
     try {
-      const { key } = await createKey({ name });
-      setCreated({ key, name: name.trim() });
+      const { key, prefix } = await createKey({ name });
+      setCreated({ key, name: name.trim(), prefix });
       setName("");
     } catch (err) {
       setError(err instanceof ConvexError ? String(err.data) : "Could not create a key");
@@ -52,6 +52,10 @@ export default function McpKeys() {
     try {
       await revokeKey({ id });
       setConfirming(null);
+      // Revoking the key just created takes it out of the box and the setup snippets,
+      // which go back to the placeholder, so a dead key can't be copied
+      const revoked = keys?.find((k) => k.id === id);
+      if (revoked !== undefined && revoked.prefix === created?.prefix) setCreated(null);
     } catch (err) {
       setError(err instanceof ConvexError ? String(err.data) : "Could not revoke the key");
     }
