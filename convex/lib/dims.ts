@@ -92,6 +92,19 @@ export function listCount(dim: Dim, metric?: CardMetric): DimCount {
   return dimMetric(dim);
 }
 
+/**
+ * The counts a list keeps: visitors, then pageviews on pageview lists, events on goals
+ * and outbound links, sessions on the session lists, and revenue on the lists payments
+ * are credited to (when the site has revenue). The rollups leave the others at 0, which
+ * would read as "none", so the MCP server leaves them out.
+ */
+export function listCounts(dim: Dim, revenue: boolean): DimCount[] {
+  const own: DimCount = PAGEVIEW_DIMS.has(dim) ? "pageviews" : dimMetric(dim) === "events" ? "events" : "sessions";
+  const kept = new Set<DimCount>(["visitors", own]);
+  if (revenue && REVENUE_DIMS.has(dim)) kept.add("revenueMinor");
+  return DIM_COUNTS.filter((c) => kept.has(c));
+}
+
 function rankBy(entries: DimEntry[], count: DimCount): DimEntry[] {
   const order = [count, ...DIM_COUNTS.filter((m) => m !== count)];
   return [...entries].sort((a, b) => {

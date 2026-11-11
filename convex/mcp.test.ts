@@ -181,9 +181,16 @@ describe("mcp tools", () => {
 
     const pages = await t.query(api.mcp.breakdown, { ...args, dim: "page" });
     const uiPages = await asOwner.query(api.stats.breakdown, { domain: "picai.so", ...range, dim: "page" });
-    expect(pages.rows.map((r: { key: string; pageviews: number }) => [r.key, r.pageviews])).toEqual(
+    expect(pages.rows.map((r) => [r.key, r.pageviews])).toEqual(
       uiPages.rows.map((r) => [r.key, r.pageviews]),
     );
+
+    // Only the counts a list keeps: countries have no sessions, sources no pageviews
+    const countries = await t.query(api.mcp.breakdown, { ...args, dim: "country" });
+    expect(Object.keys(countries.rows[0]).sort()).toEqual(["key", "pageviews", "visitors"]);
+    expect(Object.keys(countries.totals).sort()).toEqual(["pageviews", "visitors"]);
+    const sources = await t.query(api.mcp.breakdown, { ...args, dim: "source" });
+    expect(Object.keys(sources.rows[0]).sort()).toEqual(["key", "sessions", "visitors"]);
 
     // Filtered, through the same view as the dashboard's ?f=
     const filtered = await t.query(api.mcp.summary, { ...args, filters: "device:mobile" });
@@ -215,6 +222,9 @@ describe("mcp tools", () => {
     expect(visitors.rows.map((r: { visitorId: string }) => r.visitorId)).toEqual(["v1"]);
     const journey = await t.query(api.mcp.journey, { ...args, visitorId: "v1" });
     expect(journey).toMatchObject({ visitorId: "v1", sessionCount: 1 });
+    // No payments on this site, so no currency
+    expect(visitors).toMatchObject({ currency: null });
+    expect(journey.currency).toBeNull();
     await expect(t.query(api.mcp.journey, { ...args, visitorId: "nobody" })).rejects.toThrow(/Visitor not found/);
     const live = await t.query(api.mcp.live, args);
     expect(live).toMatchObject({ online: 1, visitors: [{ visitorId: "v1", path: "/" }] });

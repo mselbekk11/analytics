@@ -4,7 +4,15 @@ import { mutation, query, type QueryCtx } from "./_generated/server";
 import { requireAccess } from "./lib/access";
 import { ownedSite } from "./lib/auth";
 import { hourWindow as hourBounds, localDate } from "./lib/dates";
-import { breakdownKey, CARD_METRICS, dimValidator, listChannelValidator, rankEntries } from "./lib/dims";
+import {
+  breakdownKey,
+  CARD_METRICS,
+  dimValidator,
+  listChannelValidator,
+  listCounts,
+  rankEntries,
+  type DimCount,
+} from "./lib/dims";
 import { dayWindow, filteredView, hourWindow } from "./lib/filtered";
 import { MAX_FILTER_DAYS, type Filter } from "./lib/filters";
 import { formatToolFilters, parseToolFilters, parseToolRange, type ToolRange } from "./lib/mcp";
@@ -266,21 +274,26 @@ export const breakdown = query({
     const revenue = hasRevenue(site);
     const limit = Math.max(1, Math.min(MAX_BREAKDOWN_ROWS, Math.floor(args.limit ?? 20)));
     const ranked = rankEntries(args.dim, list.rows, args.metric);
+    // Only the counts this list keeps: a country's sessions or a source's pageviews are
+    // never counted, and a 0 there would read as "none"
+    const counts = listCounts(args.dim, revenue);
+    const pick = (values: Record<DimCount, number>): Partial<Record<DimCount, number>> =>
+      Object.fromEntries(counts.map((c) => [c, values[c]]));
     return {
       ...view.echo,
       dim: args.dim,
       ...(args.channel && { channel: args.channel }),
       metric: args.metric ?? null,
       currency: revenue ? siteCurrency(site) : null,
-      rows: ranked.slice(0, limit).map(({ revenueMinor, ...row }) => ({ ...row, ...(revenue && { revenueMinor }) })),
+      rows: ranked.slice(0, limit).map((row) => ({ key: row.key, ...pick(row) })),
       more: ranked.length > limit,
-      totals: {
+      totals: pick({
         visitors: list.totalVisitors,
         pageviews: list.totalPageviews,
         sessions: list.totalSessions,
         events: list.totalEvents,
-        ...(revenue && { revenueMinor: list.totalRevenueMinor }),
-      },
+        revenueMinor: list.totalRevenueMinor,
+      }),
     };
   },
 });
@@ -367,7 +380,8 @@ export const visitors = query({
       matched: result.matched,
       truncated: result.truncated,
       customerKinds: result.customerKinds,
-      currency: result.currency,
+      // As everywhere else in the tools: a currency only on sites that take payments
+      currency: hasRevenue(view.site) ? result.currency : null,
     };
   },
 });
@@ -380,7 +394,7 @@ export const journey = query({
     const site = await keySite(ctx, args);
     const profile = await visitorProfile(ctx, site, { visitorId: args.visitorId });
     if (profile === null) throw new ConvexError("Visitor not found");
-    return { domain: site.domain, timezone: site.timezone, ...profile };
+    return { domain: site.domain, timezone: site.timezone, ...profile, currency: hasRevenue(site) ? profile.currency : null };
   },
 });
 

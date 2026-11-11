@@ -32,10 +32,10 @@ describe("hashKey", () => {
 describe("setup snippets", () => {
   test("point at /api/mcp with the key in the Authorization header", () => {
     expect(claudeCodeCommand("https://a.example", KEY)).toBe(
-      `claude mcp add --transport http analytics https://a.example/api/mcp --header "Authorization: Bearer ${KEY}"`,
+      `claude mcp add --transport http simplestats https://a.example/api/mcp --header "Authorization: Bearer ${KEY}"`,
     );
     expect(JSON.parse(cursorConfig("https://a.example", KEY))).toEqual({
-      mcpServers: { analytics: { url: "https://a.example/api/mcp", headers: { Authorization: `Bearer ${KEY}` } } },
+      mcpServers: { simplestats: { url: "https://a.example/api/mcp", headers: { Authorization: `Bearer ${KEY}` } } },
     });
   });
 });

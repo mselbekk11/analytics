@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { listCount, rankEntries, topEntries, type DimEntry } from "./dims";
+import { listCount, listCounts, rankEntries, topEntries, type DimEntry } from "./dims";
 
 const row = (key: string, c: Partial<Omit<DimEntry, "key">>): DimEntry => ({
   key,
@@ -28,6 +28,17 @@ describe("listCount", () => {
     expect(listCount("page", "revenue")).toBe("pageviews");
     expect(listCount("device", "revenue")).toBe("visitors");
     expect(listCount("page")).toBe("pageviews");
+  });
+});
+
+describe("listCounts", () => {
+  test("keeps the counts each kind of list has", () => {
+    expect(listCounts("country", false)).toEqual(["pageviews", "visitors"]);
+    expect(listCounts("country", true)).toEqual(["pageviews", "visitors", "revenueMinor"]);
+    expect(listCounts("page", true)).toEqual(["pageviews", "visitors"]);
+    expect(listCounts("source", true)).toEqual(["visitors", "sessions", "revenueMinor"]);
+    expect(listCounts("entry", false)).toEqual(["visitors", "sessions"]);
+    expect(listCounts("goal", false)).toEqual(["visitors", "events"]);
   });
 });
 

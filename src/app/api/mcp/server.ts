@@ -94,7 +94,7 @@ export function buildServer(keyHash: string, secret: string): McpServer {
     {
       title: "Breakdown",
       description:
-        "One of the dashboard's lists, top rows first: page, entry, exit, referrer, source, channel, utm_*, ref, country, region (\"US/CA\"), city (\"US/CA/San Francisco\"), device, browser, os, goal or outbound. Each row has visitors, pageviews, sessions, events (goal completions or outbound clicks) and revenue. Ranked by the list's own count unless `metric` is given, as the cards' metric toggle does.",
+        "One of the dashboard's lists, top rows first: page, entry, exit, referrer, source, channel, utm_*, ref, country, region (\"US/CA\"), city (\"US/CA/San Francisco\"), device, browser, os, goal or outbound. Each row has visitors and the counts that list keeps: pageviews (page, referrer, device, browser, os and the places), sessions (sources, channels, utm_*, ref, entry and exit), events (goal completions or outbound clicks), and revenue on the source and place lists of a site that takes payments. Ranked by the list's own count unless `metric` is given, as the cards' metric toggle does.",
       inputSchema: z.object({
         domain,
         dim: z.enum(dims).describe("The list"),

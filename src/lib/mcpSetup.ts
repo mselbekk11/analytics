@@ -5,7 +5,7 @@ export const KEY_PLACEHOLDER = "<your-key>";
 
 /** The `claude mcp add` command for this app's endpoint. */
 export function claudeCodeCommand(origin: string, key: string): string {
-  return `claude mcp add --transport http analytics ${origin}/api/mcp --header "Authorization: Bearer ${key}"`;
+  return `claude mcp add --transport http simplestats ${origin}/api/mcp --header "Authorization: Bearer ${key}"`;
 }
 
 /**
@@ -16,7 +16,7 @@ export function claudeCodeCommand(origin: string, key: string): string {
 export function claudeDesktopConfig(origin: string, key: string): string {
   const config = {
     mcpServers: {
-      analytics: {
+      simplestats: {
         command: "npx",
         args: ["-y", "mcp-remote", `${origin}/api/mcp`, "--header", "Authorization:${AUTH_HEADER}"],
         env: { AUTH_HEADER: `Bearer ${key}` },
@@ -28,6 +28,6 @@ export function claudeDesktopConfig(origin: string, key: string): string {
 
 /** Cursor's `~/.cursor/mcp.json` (or the project's `.cursor/mcp.json`) entry. */
 export function cursorConfig(origin: string, key: string): string {
-  const config = { mcpServers: { analytics: { url: `${origin}/api/mcp`, headers: { Authorization: `Bearer ${key}` } } } };
+  const config = { mcpServers: { simplestats: { url: `${origin}/api/mcp`, headers: { Authorization: `Bearer ${key}` } } } };
   return JSON.stringify(config, null, 2);
 }
