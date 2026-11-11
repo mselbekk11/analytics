@@ -69,10 +69,9 @@ const GROUPS: { label: string; sections: { id: SectionId; label: string; hidden?
   },
   {
     label: "Attribution",
-    // Revenue attribution comes back with the Revenue tab (launch v1 Phase 10)
     sections: [
       { id: "goals", label: "Goals & conversions" },
-      { id: "revenue", label: "Revenue attribution", hidden: true },
+      { id: "revenue", label: "Revenue attribution" },
     ],
   },
   { label: "Privacy", sections: [{ id: "identity", label: "Visitor identity" }] },

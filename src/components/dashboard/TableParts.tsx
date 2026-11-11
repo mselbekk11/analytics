@@ -5,7 +5,7 @@ import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import { cn } from "cn";
 import { formatChange } from "@/lib/format";
 
-// Pieces the ranged tabs (Pages, Goals, Outbound) share: the joined stat tiles, the
+// Pieces the ranged tabs (Pages, Goals, Outbound, Revenue) share: the joined stat tiles, the
 // sortable table header, the trend sparkline, a change against the period before, and
 // the table's loading rows.
 
@@ -26,10 +26,13 @@ export function Tile({ label, value, note }: { label: string; value: string | un
   );
 }
 
-/** A tile's note: the change "vs previous", green up and red down, or a dash without one. */
-export function ChangeNote({ change }: { change: number | null }) {
+/**
+ * A tile's note: the change "vs previous", green up and red down (the other way round
+ * with `invert`, for numbers where less is better), or a dash without one.
+ */
+export function ChangeNote({ change, invert = false }: { change: number | null; invert?: boolean }) {
   if (change === null) return <>–</>;
-  const direction = Math.sign(Math.round(change * 1000));
+  const direction = Math.sign(Math.round(change * 1000)) * (invert ? -1 : 1);
   return (
     <>
       <span className={cn("font-medium", direction > 0 && "text-up", direction < 0 && "text-down")}>

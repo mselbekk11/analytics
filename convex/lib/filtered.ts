@@ -490,7 +490,19 @@ async function compute(
   for (const l of currentLoose) viewed(l.pageview, window.point(l.pageview.ts, l.date));
   const pages = [...byPath.values()];
 
-  return { summary, timeseries, breakdowns, goals, conversions, pages, current, currentLoose, previous: sessionsIn(prev) };
+  return {
+    summary,
+    timeseries,
+    breakdowns,
+    goals,
+    conversions,
+    pages,
+    current,
+    currentLoose,
+    previous: sessionsIn(prev),
+    currentPayments,
+    previousPayments: paymentsIn(prev),
+  };
 }
 
 /**
@@ -574,6 +586,51 @@ export async function filteredOutbound(
 }
 
 /**
+ * The Revenue tab over the same rows: the summary and chart the Analytics tab shows for
+ * this view, its Sources and Countries lists, and the payments credited to matching
+ * sessions in this period and the one before (each with its session). Payments without a
+ * session aren't in the filtered view, as on the Analytics tab.
+ */
+export async function filteredRevenue(
+  ctx: QueryCtx,
+  site: Doc<"sites">,
+  window: ViewWindow,
+  filters: Filter[],
+): Promise<
+  | {
+      status: "ok";
+      summary: Summary;
+      timeseries: Series;
+      sources: BreakdownResult;
+      countries: BreakdownResult;
+      current: CreditedPayment[];
+      previous: CreditedPayment[];
+    }
+  | { status: "tooMany" }
+> {
+  try {
+    const { summary, timeseries, breakdowns, currentPayments, previousPayments } = await compute(
+      ctx,
+      site,
+      window,
+      filters,
+    );
+    return {
+      status: "ok",
+      summary,
+      timeseries,
+      sources: breakdowns.source,
+      countries: breakdowns.country,
+      current: currentPayments,
+      previous: previousPayments,
+    };
+  } catch (e) {
+    if (e instanceof TooManyRows) return { status: "tooMany" };
+    throw e;
+  }
+}
+
+/**
  * A credited session that started before the window (the visitor came in then and paid
  * later): read it, with its pageviews and events for page, goal and outbound filters.
  */
@@ -610,7 +667,7 @@ async function creditedSession(
   return info;
 }
 
-type CreditedPayment = { payment: Doc<"payments">; info: SessionInfo };
+export type CreditedPayment = { payment: Doc<"payments">; info: SessionInfo };
 type LoosePageview = { pageview: Doc<"pageviews">; date: string };
 
 /**

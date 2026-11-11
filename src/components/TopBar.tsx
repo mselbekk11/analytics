@@ -135,7 +135,8 @@ export default function TopBar({ site, account }: TopBarProps) {
 /**
  * The site's tabs. From one ranged view to another (Analytics, Pages, Users, Revenue,
  * Goals, Outbound) the links keep `?range=`, `?f=` and `?metric=`, so you compare like
- * with like. Revenue shows only on sites that take payments. Site pages render inside
+ * with like. Revenue shows only on sites that take payments (or while you're on it: a
+ * direct visit gets the setup prompt). Site pages render inside
  * Suspense, so reading the query string here is fine.
  */
 function SiteTabs({ domain, section }: { domain: string; section: SiteSection }) {
