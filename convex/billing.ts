@@ -1,3 +1,4 @@
+import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { action, internalMutation, internalQuery, query } from "./_generated/server";
@@ -6,6 +7,7 @@ import { requireOwnerId } from "./lib/auth";
 import { shouldApply, subscriptionRecordValidator } from "./lib/billing";
 import { stripeApi } from "./lib/stripeApi";
 import { lookupKey, tierByEvents } from "./lib/tiers";
+import { isMonth, ownerUsage } from "./lib/usage";
 
 // Subscribing (launch v1 Phase 4). The checkout action sends the customer to Stripe
 // Checkout; the billing webhook (http.ts, /billing/stripe) re-reads the subscription and
@@ -189,32 +191,64 @@ export const applySubscription = internalMutation({
   },
 });
 
+const usageValidator = v.object({ pageviews: v.number(), events: v.number(), total: v.number() });
+
 /**
- * Pageviews across the signed-in user's sites so far in `month` ("2026-11"), from the
- * daily rollups, to start /billing's slider on the tier that fits. Days are each site's
- * own. Not gated by the lock: /billing must work for a locked account. Custom events and
- * a UTC month come with the usage meter (Phase 6).
+ * The usage meter (Phase 6): pageviews plus custom events (goals and outbound clicks)
+ * across the signed-in user's sites in the UTC calendar `month` ("2026-11"), which the
+ * browser passes because queries can't read the clock. Pings don't count. Not gated by
+ * the lock: /billing must work for a locked account, and going over changes nothing.
  */
-export const monthPageviews = query({
+export const usage = query({
   args: { month: v.string() },
-  returns: v.number(),
+  returns: usageValidator,
   handler: async (ctx, args) => {
-    if (!/^\d{4}-\d{2}$/.test(args.month)) throw new ConvexError("Bad month");
-    const ownerId = await requireOwnerId(ctx);
-    const sites = await ctx.db
-      .query("sites")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
-      .take(100);
-    let total = 0;
-    for (const site of sites) {
-      const days = await ctx.db
-        .query("dailyStats")
-        .withIndex("by_site_date", (q) =>
-          q.eq("siteId", site._id).gte("date", `${args.month}-01`).lte("date", `${args.month}-31`),
-        )
-        .take(31);
-      for (const day of days) total += day.pageviews;
+    if (!isMonth(args.month)) throw new ConvexError("Bad month");
+    return await ownerUsage(ctx, await requireOwnerId(ctx), args.month);
+  },
+});
+
+/**
+ * The subscribed accounts (active or past due) whose usage in `month` is over their
+ * tier's limit, a page of accounts at a time, for the owner to get in touch about moving
+ * up. A page can come back with fewer (or no) rows while `isDone` is false; keep going
+ * with `continueCursor`:
+ *
+ *   npx convex run billing:overLimit '{"month":"2026-11","paginationOpts":{"numItems":100,"cursor":null}}'
+ */
+export const overLimit = internalQuery({
+  args: { month: v.string(), paginationOpts: paginationOptsValidator },
+  returns: v.object({
+    page: v.array(
+      v.object({
+        ownerId: v.string(),
+        access: accessValidator,
+        limit: v.number(),
+        usage: usageValidator,
+        stripeCustomerId: v.union(v.null(), v.string()),
+      }),
+    ),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    if (!isMonth(args.month)) throw new ConvexError("Bad month");
+    const result = await ctx.db.query("accounts").paginate(args.paginationOpts);
+    const page = [];
+    for (const account of result.page) {
+      const access = accessState(account);
+      const limit = account.events;
+      if (limit === undefined || (access !== "active" && access !== "past_due")) continue;
+      const used = await ownerUsage(ctx, account.ownerId, args.month);
+      if (used.total <= limit) continue;
+      page.push({
+        ownerId: account.ownerId,
+        access,
+        limit,
+        usage: used,
+        stripeCustomerId: account.stripeCustomerId ?? null,
+      });
     }
-    return total;
+    return { page, isDone: result.isDone, continueCursor: result.continueCursor };
   },
 });

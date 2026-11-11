@@ -6,6 +6,7 @@ import { countCookielessVisit, countSession, sessionSource } from "./lib/attribu
 import { localDate } from "./lib/dates";
 import { bumpPageDim, bumpSessionDim, type PageDelta } from "./lib/rollups";
 import { classify } from "./lib/sources";
+import { addUsage, monthStart, utcDate, utcMonth } from "./lib/usage";
 
 // Phase 5b backfill: source and channel for everything recorded before the site's
 // first classified pageview (`sourcesStartedAt`). Run once after deploying 5b:
@@ -337,6 +338,88 @@ async function visitorTotals(ctx: MutationCtx, visitor: Doc<"visitors">) {
     exitPath: latest?.exitPath,
   };
 }
+
+// Launch v1 Phase 6 backfill: the usage meter's rows (usageDays) for this UTC month's
+// pageviews, goals and outbound clicks recorded before ingest started counting them
+// (each site's `usageStartedAt`). Earlier months aren't needed: the meter only shows the
+// current one. Run once after deploying Phase 6:
+//
+//   npx convex run migrations:backfillUsage          (dev)
+//   npx convex run migrations:backfillUsage --prod   (production)
+//
+// A site is marked `usageBackfilled` at the start, so running this twice is safe.
+
+const USAGE_BATCH = 1_000;
+
+export const backfillUsage = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const from = monthStart(utcMonth(now));
+    for await (const site of ctx.db.query("sites")) {
+      if (site.usageBackfilled) continue;
+      await ctx.db.patch("sites", site._id, {
+        usageBackfilled: true,
+        usageStartedAt: site.usageStartedAt ?? now,
+      });
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillUsageSite, {
+        siteId: site._id,
+        from,
+        step: "pageviews",
+        cursor: null,
+      });
+    }
+    return null;
+  },
+});
+
+export const backfillUsageSite = internalMutation({
+  args: {
+    siteId: v.id("sites"),
+    from: v.number(), // the start of the month being backfilled
+    step: v.union(v.literal("pageviews"), v.literal("events")),
+    cursor: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { siteId, from, step, cursor }) => {
+    const site = await ctx.db.get("sites", siteId);
+    if (site === null || site.usageStartedAt === undefined) return null;
+    const cutoff = site.usageStartedAt;
+
+    // Summed per day first, so a batch writes each day's row once
+    const days = new Map<string, number>();
+    let page;
+    if (step === "pageviews") {
+      page = await ctx.db
+        .query("pageviews")
+        .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", from).lt("ts", cutoff))
+        .paginate({ numItems: USAGE_BATCH, cursor });
+      for (const pv of page.page) days.set(utcDate(pv.ts), (days.get(utcDate(pv.ts)) ?? 0) + 1);
+    } else {
+      page = await ctx.db
+        .query("events")
+        .withIndex("by_site_ts", (q) => q.eq("siteId", siteId).gte("ts", from).lt("ts", cutoff))
+        .paginate({ numItems: USAGE_BATCH, cursor });
+      for (const e of page.page) {
+        if (e.type === "goal" || e.type === "outbound") days.set(utcDate(e.ts), (days.get(utcDate(e.ts)) ?? 0) + 1);
+      }
+    }
+    for (const [date, n] of days) {
+      await addUsage(ctx, siteId, date, step === "pageviews" ? { pageviews: n } : { events: n });
+    }
+
+    const next = !page.isDone
+      ? { step, cursor: page.continueCursor }
+      : step === "pageviews"
+        ? { step: "events" as const, cursor: null }
+        : null;
+    if (next !== null) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillUsageSite, { siteId, from, ...next });
+    }
+    return null;
+  },
+});
 
 // Launch v1 Phase 2: moving to the Clerk production instance gives the owner a new
 // tokenIdentifier (new issuer and new user id). This hands every site and MCP key from

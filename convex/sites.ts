@@ -452,7 +452,7 @@ export const remove = mutation({
   },
 });
 
-// Nine tables per run, well inside the per-mutation write limit (16,000 writes)
+// Ten tables per run, well inside the per-mutation write limit (16,000 writes)
 const DELETE_BATCH = 1000;
 
 export const deleteSiteData = internalMutation({
@@ -477,6 +477,12 @@ export const deleteSiteData = internalMutation({
       .withIndex("by_site_date", (q) => q.eq("siteId", siteId))
       .take(DELETE_BATCH);
     for (const row of stats) await ctx.db.delete("dailyStats", row._id);
+
+    const usage = await ctx.db
+      .query("usageDays")
+      .withIndex("by_site_date", (q) => q.eq("siteId", siteId))
+      .take(DELETE_BATCH);
+    for (const row of usage) await ctx.db.delete("usageDays", row._id);
 
     const sessions = await ctx.db
       .query("sessions")
@@ -514,7 +520,7 @@ export const deleteSiteData = internalMutation({
       .take(DELETE_BATCH);
     for (const row of secrets) await ctx.db.delete("siteSecrets", row._id);
 
-    const batches = [pageviews, dims, stats, sessions, visitors, events, payments, checkouts];
+    const batches = [pageviews, dims, stats, usage, sessions, visitors, events, payments, checkouts];
     if (batches.some((rows) => rows.length === DELETE_BATCH)) {
       await ctx.scheduler.runAfter(0, internal.sites.deleteSiteData, { siteId });
     }

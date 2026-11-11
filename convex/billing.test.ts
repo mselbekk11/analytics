@@ -362,32 +362,6 @@ describe("checkout", () => {
   });
 });
 
-describe("this month's pageviews", () => {
-  test("sum the owner's sites for the month only, and nobody else's", async () => {
-    const t = convexTest(schema, modules);
-    const owner = t.withIdentity(OWNER);
-    await owner.mutation(api.sites.create, { domain: "a.dev", timezone: "UTC" });
-    await owner.mutation(api.sites.create, { domain: "b.dev", timezone: "UTC" });
-    await t.withIdentity(STRANGER).mutation(api.sites.create, { domain: "c.dev", timezone: "UTC" });
-    expect(await owner.query(api.billing.monthPageviews, { month: "2026-11" })).toBe(0);
-
-    await t.run(async (ctx) => {
-      const sites = await ctx.db.query("sites").collect();
-      const id = (d: string) => sites.find((s) => s.domain === d)!._id;
-      const day = (domain: string, date: string, pageviews: number) =>
-        ctx.db.insert("dailyStats", { siteId: id(domain), date, pageviews, visitors: 1, durationSumMs: 0, durationCount: 0 });
-      await day("a.dev", "2026-10-31", 1000); // last month
-      await day("a.dev", "2026-11-01", 300);
-      await day("a.dev", "2026-11-30", 200);
-      await day("b.dev", "2026-11-10", 50);
-      await day("c.dev", "2026-11-10", 9999); // the stranger's
-    });
-
-    expect(await owner.query(api.billing.monthPageviews, { month: "2026-11" })).toBe(550);
-    await expect(owner.query(api.billing.monthPageviews, { month: "Nov" })).rejects.toThrow(/Bad month/);
-  });
-});
-
 describe("managing a subscription (Phase 5)", () => {
   const CANCEL_AT = Math.floor(Date.parse("2026-12-01T00:00:00Z") / 1000);
 

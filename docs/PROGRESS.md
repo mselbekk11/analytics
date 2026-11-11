@@ -1,6 +1,6 @@
 # Build Progress
 
-Last updated: 2026-11-11 (launch v1 Phases 1 to 3 live, Phase 4 committed (`9e05f59`), Phase 5 committed and pushed (checked on dev), Phase 6 next, see [plans/launch-v1-plan.md](../plans/launch-v1-plan.md), PRD `plans/launch-v1.md`; homepage v1 Phases 1 to 9 built, that plan is complete; design v4 Phases 1 to 17 built, that plan is complete). Homepage v1 is planned in [plans/homepage-v1-plan.md](../plans/homepage-v1-plan.md) (PRD: `plans/homepage-v1.md`, owner's brief `plans/homepage-v1-brief.md`, screenshots in `public/homepage/`, reference https://piqo.app/). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
+Last updated: 2026-11-11 (launch v1 Phases 1 to 3 live, Phase 4 committed (`9e05f59`), Phase 5 committed and pushed (checked on dev), Phase 6 committed and pushed (checked on dev; prod backfill still to run), Phase 7 next, see [plans/launch-v1-plan.md](../plans/launch-v1-plan.md), PRD `plans/launch-v1.md`; homepage v1 Phases 1 to 9 built, that plan is complete; design v4 Phases 1 to 17 built, that plan is complete). Homepage v1 is planned in [plans/homepage-v1-plan.md](../plans/homepage-v1-plan.md) (PRD: `plans/homepage-v1.md`, owner's brief `plans/homepage-v1-brief.md`, screenshots in `public/homepage/`, reference https://piqo.app/). Design v4 is planned in [plans/dashboard-design-v4-plan.md](../plans/dashboard-design-v4-plan.md) (PRD: `plans/dashboard-design-v4.md`, owner's brief `plans/dashboard-design-v4-brief.md`, screenshots in `public/design-v4/`). Design v3 is planned in [plans/dashboard-design-v3-plan.md](../plans/dashboard-design-v3-plan.md) (PRD: `plans/dashboard-design-v3.md`, owner's brief `plans/dashboard-design-v3-brief.md`, screenshots in `public/design-v3/`). Design v2 is planned in [plans/dashboard-design-v2-plan.md](../plans/dashboard-design-v2-plan.md) (PRD: `plans/dashboard-design-v2.md`). Read this together with [PLAN.md](PLAN.md) (Phases 0 to 4) and [PHASE5.md](PHASE5.md) (Phases 5 and 6, which replace PLAN.md's scope rule). This file records what has been built, the decisions taken along the way (some differ from PLAN.md), and how the environments are set up.
 
 ## Status
 
@@ -61,6 +61,7 @@ Last updated: 2026-11-11 (launch v1 Phases 1 to 3 live, Phase 4 committed (`9e05
 | Launch v1, Phase 2: Clerk production and owner migration | **Live in production since 2026-11-03.** Clerk production instance "Simple Stats" on `clerk.simplestats.ai` (DNS at Namecheap), access mode Open, Google sign-in with our own Google OAuth client (External, published). Vercel Production has the `pk_live` (Config) and `sk_live` (Secret) keys, Preview keeps the dev keys; Convex prod's `CLERK_JWT_ISSUER_DOMAIN` is `https://clerk.simplestats.ai`. `migrations:moveOwner` (commit `33aeb8c`) moved the owner's 5 sites and 1 MCP key on prod to `https://clerk.simplestats.ai|user_3LcJFiWoORY1j9WKqb4pojhKn6G`. Owner confirmed all 5 sites show. |
 | Launch v1, Phase 3: Accounts, trial and lock | **Live in production since 2026-11-04** (commit `f6fed72`). New `accounts` table (the plan's shape plus `trialEnded`, see Decisions). `accounts.ensure` runs on every signed-in page load (and in `sites.create`) and starts a 7-day trial once. Internal `accounts.setComped` and `accounts.setTrialEnd`. `lib/access.ts` works out comped / trialing / active / past_due / locked; every `stats.*`, `pages.*` and `visitors.*` read (through `requireReadableSite`) and all 8 MCP tools (through `keyOwner`) refuse a locked account with `ConvexError({ code: "subscription_required" })`, and MCP shows it as "Subscription required: pick a plan at https://www.simplestats.ai/billing". Ingest, `/websites`, site Settings, `/billing`, `/settings` and MCP keys are untouched. The top bar has a "Trial · N days left" pill linking to `/billing`; Analytics, Pages, Users and Live show "Pick a plan to continue" with a button to `/billing` when locked. Checked on dev in the browser: a new trial (pill at 7 days), a trial forced to expire (paywall on all four tabs, no pill or online count, Settings and /websites still work, `/test.html` still recorded), and comped (no pill or paywall). The owner's dev account is left comped. On prod the owner ran `accounts:setComped`; the prod `accounts` table has one row, the owner's (`https://clerk.simplestats.ai|user_3LcJFiWoORY1j9WKqb4pojhKn6G`), with `comped: true`. Other prod users get a 7-day trial on their next sign-in. |
 | Launch v1, Phase 4: Checkout and billing webhook | **Committed and pushed as `9e05f59`, checked on dev.** Prod needs Stripe live mode (Phase 11). One plan with an event-tier slider: the tiers live in `convex/lib/tiers.ts` and drive the homepage card (`TierPicker`, "Start free trial"), `/billing` ("Subscribe"), the checkout action and `scripts/stripe-setup.mjs`. `accounts.plan` is now `accounts.events`. `billing.checkout` finds the price by lookup key, reuses or creates the Stripe customer and opens a subscription Checkout; the new `/billing/stripe` webhook (own signing secret) re-reads the subscription and `billing.applySubscription` writes tier, interval, status, period end and cancel flag. `/billing` shows "Finishing up…" after Checkout until `accounts.me` flips. Checked on dev in the browser on 2026-11-11 against the "SimpleStats sandbox" Stripe account: the owner's dev account was locked, picked 1M monthly, paid with 4242, and `/billing` showed "You're all set · 1,000,000 events / month, billed monthly" with no reload (both events answered 200 within a second); the site dashboard was unlocked. Keyboard and the Yearly toggle checked on `/billing`; the homepage card at phone width was not checked in the browser (signed-in users are redirected from `/`). |
+| Launch v1, Phase 6: Usage meter | **Committed and pushed, checked on dev.** New `usageDays` table: pageviews and custom events (goals and outbound clicks) per site per UTC day, bumped at ingest; pings, identify and checkout claims don't count. `billing.usage` (replaces `monthPageviews`) sums the account's sites for a UTC month; `/billing` shows "X of Y events this month" with a bar, "Over your tier this month" with a link to the portal (or "get in touch" past 10M), and for a trial or locked account the tier it fits ("You'd be on 1M · $8/mo"), where the slider starts. Internal `billing.overLimit` lists subscribed accounts over their tier. `migrations:backfillUsage` ran on dev (matched the raw rows: 81 pageviews and 8 events in November). Needs a deploy and `npx convex run migrations:backfillUsage --prod`. See Decisions. |
 | Launch v1, Phase 5: Managing a subscription | **Committed and pushed, checked on dev.** Prod needs Stripe live mode (Phase 11). `/billing` shows the tier, price, a status badge (Active, Trial, Cancelling, Past due) and "Renews on" / "Ends on" / "First charge on" for subscribed accounts, with Manage subscription opening the Stripe customer portal (`billing.portal`). A "Cancels on <date>" banner while cancelling; a red "Payment failed, update your card" banner (its Update card button opens the portal's card form) and a "Payment failed" pill in the top bar while past due, with access kept. An ended subscription locks the account like an expired trial, and the paywall and `/billing` say "Your subscription has ended" (plus a billing-history link). The webhook also takes `invoice.payment_failed`; the account stores `cancelAt`; `accounts.me` returns status, period end, `cancelAt`, `hasCustomer` and `lapsed`. Stripe is now one product per tier (see Decisions), and `scripts/stripe-setup.mjs` also creates the portal configuration. Checked on dev in the browser on 2026-11-11: 1M monthly → 2.5M yearly in the portal showed on `/billing`; cancelling in the portal showed the banner and "Ends on"; ending the subscription locked `/billing` and the site live, with the lapsed wording; a failed charge showed the banner, badge and pill and the dashboard stayed open; paying the invoice made it active again. The usage meter (whose limit follows the tier) is Phase 6. |
 | Design v3, Phase 6: onboarding redirect | **Built, awaiting owner review.** When the site list loads empty, `/websites` replaces itself with `/websites/new`. That covers a new account and deleting the last site. The skeleton stays up until then, and the old empty state is gone. On `/websites/new`, Cancel only shows when you have at least one site. |
 | Design v3, Phase 5: add website, step 2 and first-hit detection | **Built, awaiting owner review.** Step 2 of `/websites/new` shows the site with a "Created" badge, the snippet in a code block labelled "HTML · paste in `<head>`" with Copy, and a live status row. "Waiting for your first event…" flips to "First pageview received" through the new `sites.hasPageview` query, with no polling. Then "Go to dashboard →" replaces "Skip to dashboard", and the stepper and panel tick every step. Site Settings uses the same snippet block. |
@@ -107,7 +108,7 @@ Vercel build command: `npx convex deploy --cmd 'npm run build'`.
 ```text
 convex/
   schema.ts          PLAN.md's four tables, plus visitors and sessions (5a), events (5d), payments,
-                     checkouts and siteSecrets (5e), and accounts (launch v1 Phase 3)
+                     checkouts and siteSecrets (5e), accounts (launch v1 Phase 3) and usageDays (Phase 6)
   accounts.ts        accounts.ensure (trial on first signed-in request), accounts.me (access state + trial end),
                      internal endTrial (scheduled at trialEndsAt), setComped, setTrialEnd (launch v1 Phase 3)
   auth.config.ts     Clerk issuer from CLERK_JWT_ISSUER_DOMAIN, applicationID "convex"
@@ -130,11 +131,12 @@ convex/
                      mcp.sites / summary / timeseries / breakdown / pages / visitors / journey / live
   http.ts            Stripe webhook POST /stripe/{siteId} (Convex HTTP action, Stripe SDK signature check)
   migrations.ts      backfillSources (5b, run once per deployment) + backfillSite batches; backfillPageStats
-                     (design v4 Phase 6); backfillVisitorTotals (design v4 Phase 9)
+                     (design v4 Phase 6); backfillVisitorTotals (design v4 Phase 9); backfillUsage (launch v1 Phase 6)
   lib/auth.ts        requireOwnerId(ctx) -> identity.tokenIdentifier; requireSite / findOwnedSite(ctx, domain)
   lib/ranges.ts      date-range maths on "YYYY-MM-DD": presets, previous/next range, ?range= parsing (shared with the page)
   lib/dates.ts       localDate(ts, tz), isValidTimeZone
   lib/domain.ts      normalizeDomain, hostMatchesDomain (shared with the collect route)
+  lib/usage.ts       the usage meter: countUsage (ingest), addUsage, ownerUsage, utcDate/utcMonth (launch v1 Phase 6)
   lib/rollups.ts     bumpDailyStats, bumpDailyDim, bumpSessionDim, bumpEventDim upserts
   lib/dims.ts        dimValidator (every dailyDims dim), dimMetric (which count a list ranks by), rankEntries
   lib/filters.ts     click-to-filter: Filter validator, ?f= parse/format, toggleFilter (shared with the page)
@@ -323,6 +325,16 @@ Checks at the end of Phase 5e: the same four clean, `npm test` 337 tests passing
 - **`accounts.plan` becomes `accounts.events`** (the tier's monthly limit). Nothing writes `plan` yet, so no migration.
 - **Stripe: one product, 10 prices found by `lookup_key`** (`events_500k_month` …), with `metadata.events`, created by a script from the `pricing` tier list. No price-id env vars.
 - Plan and PRD updated to match (Phases 4, 5, 6 and 11).
+
+### Launch v1, Phase 6 (usage meter)
+
+- **A new `usageDays` table, not a count on `dailyStats`.** The plan asked for a UTC calendar month from the daily rollups, but `dailyStats` days are in the site's timezone, so a month summed from them is off by up to 14 hours at each end (a Los Angeles site's Nov 1 starts at 07:00 UTC). `usageDays` holds one row per site per **UTC** day with `pageviews` and `events`, so the month is exact. It is still a per-site daily rollup, not a per-account document, so there's no new contention point: each hit writes one more row, the same site-and-day shape as `dailyStats`. If the owner prefers the site's own month instead, the alternative is an `events` field on `dailyStats` and summing local days.
+- **What counts:** a stored pageview (cookieless too) and a stored goal or outbound click (the script's `track()` sends goals). Pings, `identify` and Stripe checkout claims don't. Hits ingest drops (excluded paths, a retried beacon, a goal repeated on the same pageview, the 50-per-pageview cap, unknown sites) don't count either, since the count is taken where the row is written.
+- **The backfill** (`migrations:backfillUsage`) counts this UTC month's raw `pageviews` and `events` from before each site's `usageStartedAt` (the first hit ingest counted, or the backfill's run time). Earlier months aren't backfilled; the meter only shows the current one. One edge: an event whose pageview hadn't arrived yet is retried 5 s later with its original time, so one retried across the deploy could count twice.
+- **A deleted site's usage rows are deleted with it** (`deleteSiteData`), so deleting a site takes its hits off this month's count. Nothing is enforced, so this was kept simple.
+- **`billing.usage` takes the month from the browser** (queries can't read the clock), from `useNow`, so it rolls over at midnight UTC on an open page. It isn't gated by the lock. `billing.monthPageviews` is gone.
+- **`billing.overLimit` is an internal paginated query** over accounts: subscribed ones (active or past due) whose total is over `events`. Trials and comped accounts have no limit and aren't listed. Run it with `npx convex run billing:overLimit '{"month":"2026-11","paginationOpts":{"numItems":100,"cursor":null}}'` (add `--prod`); a page can have fewer rows than asked while `isDone` is false.
+- **`/billing`:** every state now shows the meter card (pageviews and custom events, and the day it starts over, in UTC). Subscribed: "X of Y events this month" and a bar, red past the limit with "Over your tier this month" and "move up to <the tier that fits>" opening the portal, or "get in touch" past 10M. Trial and locked: the count and "You'd be on 1M · $8/mo" (or "Get in touch" past 10M), and the slider starts on that tier. Comped: the count only.
 
 ### Launch v1, Phase 5 (managing a subscription)
 
@@ -966,17 +978,28 @@ Read production data with `npx convex data <table> --prod`.
 - Replace the `CONTACT_EMAIL` placeholder (`hello@example.com`): the pricing card's "Get in touch" now uses it.
 - Optional tooling updates: Vercel CLI 29.0.2 is far behind (65.x), Convex 1.48.0 is available, and `npx convex ai-files update` refreshes the Convex AI files.
 
-## Next: launch v1 Phase 6 (usage meter)
+## Next: launch v1 Phase 7 (MCP end-to-end on production)
 
-Phase 5 is committed and pushed. To try it on dev:
+First, once the Phase 6 push has deployed: `npx convex run migrations:backfillUsage --prod`, then check `/billing` on prod shows this month's count.
+
+### Launch v1 Phase 6 (committed and pushed)
+
+Checked on dev on 2026-11-11. Convex dev has the new functions and the backfill has run there. To check it:
+
+1. `/billing` on the owner's dev account (1M monthly, active) shows "96 of 1,000,000 events this month" (85 pageviews and 11 custom events across `localhost` and `example.com`) and a bar.
+2. Send hits to the dev `localhost` site (curl with `vid` and `sid`, or `/test.html`): each pageview, goal and outbound click moves the meter by one, live; pings don't. The checks on dev: 3 pageviews, 2 goals, 1 outbound click and 3 pings moved it by exactly 6, and a pageview on `example.com` by 1.
+3. The over-limit states were checked with temporary `usageDays` rows (imported with `npx convex import --table usageDays --append`, then removed): 1.5M showed the red bar, "Over your tier this month" and "move up to 2.5M"; 11.5M showed "get in touch"; `billing:overLimit` listed the owner's account. Not checked in the browser: the trial or locked view ("You'd be on …"), since the dev account is subscribed; tests and types cover it.
+4. After deploying: `npx convex run migrations:backfillUsage --prod`.
+
+## Earlier: launch v1 Phase 5 (committed and pushed as `66f7841`)
+
+To try it on dev:
 
 1. Keep a Stripe listener forwarding to dev, now with `invoice.payment_failed`: `stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.payment_failed --forward-to https://precise-donkey-389.convex.site/billing/stripe`. Its signing secret is already on Convex dev (re-set it after a new `stripe login` with `npx convex env set STRIPE_BILLING_WEBHOOK_SECRET "$(stripe listen --print-secret)"`).
 2. The owner's dev account is subscribed to 1M monthly (`sub_1UaaL5Q1Qi5yAM4J7kazvzaz`, customer `cus_VbnVaRROtM5kLd`, card 4242) and isn't comped. That subscription was made through the API during testing, not Checkout; the first one (`sub_1UaZwYQ1Qi5yAM4JM9vyJHo1`) was ended to test the lapsed state. Its invoices include a $141.99 2.5M-yearly upgrade and a $382 10M-yearly charge that first failed on the decline card, then was paid with 4242 (all sandbox).
 3. On `/billing`, Manage subscription opens the portal: switch tier and interval, cancel (banner and "Ends on"), renew. Ending the subscription in the Stripe sandbox dashboard locks the account.
 4. To see past due: with Managed Payments a Checkout-made subscription's card can't be changed through the API, so attach `pm_card_chargeCustomerFail` to an API-made subscription as its default card and upgrade it with `proration_behavior: "always_invoice"` (`billing_cycle_anchor: "now"` isn't accepted on update in this API version, and a change with no proration doesn't invoice).
 5. Before Phase 11: run `scripts/stripe-setup.mjs --live` (products, prices and portal), and subscribe the live billing endpoint to `invoice.payment_failed` too.
-
-Phase 6 (usage meter) is next.
 
 ## Earlier: review launch v1 Phase 4 (committed as `9e05f59`)
 
@@ -1195,7 +1218,7 @@ Then 5b.
 
 Owner: review `/websites` and the settings page against `public/SA-websites.png`, then add each remaining site under Add website (production) and paste its snippet (Settings → Embed snippet) into mselbekk.com and the other six sites, next to the SA snippet. Phase 4 is then the two-week side-by-side run.
 
-## Launch v1 gotchas (Phases 1 to 5)
+## Launch v1 gotchas (Phases 1 to 6)
 
 - **`vercel link --yes` creates a project when it can't find one.** The CLI was first logged in to an account that only sees the Hobby team, and it made an empty `analytics` project there. The real project is on `mselbekk11s-projects` (Pro). Link without `--yes`.
 - **Convex full backups and `npx convex export --prod` both failed** on 2026-11-03 (the dashboard said to contact support). The Clerk switch went ahead with a copy of the 5 `sites` and 1 `apiKeys` rows instead, since the migration only rewrote `ownerId`.
@@ -1211,3 +1234,5 @@ Owner: review `/websites` and the settings page against `public/SA-websites.png`
 - **The Stripe customer portal allows one price per interval per product**, hence a product per tier (Phase 5 decisions).
 - **With Managed Payments, `default_payment_method` can't be changed through the API** on a subscription Checkout made ("cannot be updated for Subscriptions created by Checkout Sessions with Managed Payments enabled"). Customers change it in the portal; tests need an API-made subscription.
 - **A long `python3 - <<'EOF'` heredoc in Bash tripped Claude Code's removal safety check** (it couldn't parse the command). Write the script to the scratchpad first and run it from there.
+- **`npx convex data <table> --limit 100000` printed nothing** (no error), while `--limit 10000` worked. Keep the limit at 10,000 or less.
+- **The repo has no Prettier config**, so `npx prettier --write` reformats a file to 80 columns. Don't run it; the code is formatted by hand at about 120.

@@ -33,6 +33,10 @@ export default defineSchema({
     // The Visitor identity setting (design v4 Phase 15): ingest strips visitor and session
     // ids from every hit and tells the script to drop its cookies. Missing means cookies
     cookieless: v.optional(v.boolean()),
+    // The first hit ingest counted on usageDays (launch v1 Phase 6); the backfill
+    // (migrations.backfillUsage) counts this month's hits before it
+    usageStartedAt: v.optional(v.number()),
+    usageBackfilled: v.optional(v.boolean()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_domain", ["domain"]),
@@ -72,6 +76,17 @@ export default defineSchema({
     revenueMinor: v.optional(v.number()), // net of refunds
     payments: v.optional(v.number()), // count, refunds not included
     refundsMinor: v.optional(v.number()), // refunded amount, positive
+  }).index("by_site_date", ["siteId", "date"]),
+
+  // What the usage meter counts (launch v1 Phase 6): one row per site per UTC day, so a
+  // UTC calendar month is exact whatever the site's timezone (dailyStats days are local).
+  // Pageviews, and goals plus outbound clicks (the custom events); pings, identify and
+  // checkout claims don't count
+  usageDays: defineTable({
+    siteId: v.id("sites"),
+    date: v.string(), // "2026-11-01" in UTC
+    pageviews: v.number(),
+    events: v.number(),
   }).index("by_site_date", ["siteId", "date"]),
 
   // One row per site, day, dimension and value: the lists (see lib/dims.ts)

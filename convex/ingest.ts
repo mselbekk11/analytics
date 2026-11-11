@@ -23,6 +23,7 @@ import {
   type PageDelta,
 } from "./lib/rollups";
 import { checkSecret } from "./lib/secret";
+import { countUsage } from "./lib/usage";
 
 // These are public because /api/collect calls them over HTTP, so every call must
 // carry INGEST_SECRET. Hits for unknown sites or foreign hostnames are dropped
@@ -131,6 +132,7 @@ export const pageview = mutation({
       pvId: args.pvId,
       ...ids,
     });
+    await countUsage(ctx, site, ts, { pageviews: 1 });
 
     // With ids, a visitor counts once per local day; without, SA's unique-visit rule applies
     let countsVisitor = args.unique;
@@ -568,6 +570,7 @@ async function recordEvent(
   }
 
   await bumpEventDim(ctx, site._id, date, type, name, firstToday);
+  await countUsage(ctx, site, ts, { events: 1 });
   const session =
     sessionId === undefined
       ? null

@@ -37,6 +37,7 @@ import type * as lib_statsShapes from "../lib/statsShapes.js";
 import type * as lib_stripe from "../lib/stripe.js";
 import type * as lib_stripeApi from "../lib/stripeApi.js";
 import type * as lib_tiers from "../lib/tiers.js";
+import type * as lib_usage from "../lib/usage.js";
 import type * as lib_visitors from "../lib/visitors.js";
 import type * as mcp from "../mcp.js";
 import type * as me from "../me.js";
@@ -83,6 +84,7 @@ declare const fullApi: ApiFromModules<{
   "lib/stripe": typeof lib_stripe;
   "lib/stripeApi": typeof lib_stripeApi;
   "lib/tiers": typeof lib_tiers;
+  "lib/usage": typeof lib_usage;
   "lib/visitors": typeof lib_visitors;
   mcp: typeof mcp;
   me: typeof me;

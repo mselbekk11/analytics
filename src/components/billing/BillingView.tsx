@@ -18,6 +18,8 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { useNow } from "@/components/dashboard/useNow";
 import { fittingTierIndex, formatEvents, type Interval, type Tier, tierByEvents, tierPrice } from "@/lib/pricing";
 import { trialDaysLeft } from "@/lib/trial";
+import { utcMonth } from "../../../convex/lib/usage";
+import UsageCard from "./UsageCard";
 
 // Stripe Checkout only carries a trial over with more than 48 hours left (billing.checkout)
 const MIN_TRIAL_LEFT_MS = 49 * 60 * 60 * 1000;
@@ -30,6 +32,7 @@ const SLOW_MS = 30 * 1000;
  * date, the cancelling and payment-failed banners, and Manage subscription (the Stripe
  * portal). "Finishing up…" shows after Checkout until the webhook has written the
  * subscription (accounts.me is reactive, so no polling, and portal changes show too).
+ * Every state shows the usage meter (Phase 6).
  */
 export default function BillingView() {
   return (
@@ -68,6 +71,24 @@ function BillingBody() {
 }
 
 /**
+ * This UTC month's usage across every site (billing.usage), and the day it starts over.
+ * The month comes from the browser's clock, checked every minute, since queries can't
+ * read it.
+ */
+function useUsage() {
+  const now = useNow(60 * 1000);
+  const month = utcMonth(now);
+  const usage = useQuery(api.billing.usage, { month });
+  const [y, m] = month.split("-").map(Number);
+  const resetsOn = new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return { usage, resetsOn };
+}
+
+/**
  * Opens the Stripe customer portal (billing.portal), optionally straight at the card form.
  * The page navigates away on success, so `pending` only resets on an error.
  */
@@ -100,9 +121,8 @@ function Choose({
   hasCustomer: boolean;
 }) {
   const now = useNow(60 * 1000);
-  // The browser's month; the slider starts on the tier this month's traffic fits
-  const [month] = useState(() => new Date().toISOString().slice(0, 7));
-  const pageviews = useQuery(api.billing.monthPageviews, { month });
+  // The slider starts on the tier this month's events fit (TierPicker reads it once)
+  const { usage, resetsOn } = useUsage();
   const checkout = useAction(api.billing.checkout);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,16 +152,14 @@ function Choose({
             : lapsed
               ? "Your subscription has ended. Your sites are still collecting data, so nothing is lost: subscribe again to see it."
               : "Your free trial has ended. Your sites are still collecting data, so nothing is lost: subscribe to see it again."}
-          {pageviews !== undefined && pageviews > 0 && (
-            <> This month so far: {formatEvents(pageviews)} pageviews.</>
-          )}
         </p>
       </div>
-      {pageviews === undefined ? (
+      <UsageCard usage={usage} limit={null} showFit resetsOn={resetsOn} />
+      {usage === undefined ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <TierPicker
-          initialStep={fittingTierIndex(pageviews)}
+          initialStep={fittingTierIndex(usage.total)}
           action={(tier, interval) => (
             <>
               <Button size="lg" className="w-full" disabled={pending} onClick={() => subscribe(tier, interval)}>
@@ -209,6 +227,7 @@ const longDate = (ms: number) => format(ms, "MMMM d, yyyy");
  */
 function Subscribed({ account, justPaid }: { account: Account; justPaid: boolean }) {
   const portal = usePortal();
+  const { usage, resetsOn } = useUsage();
   const { events, interval, status, currentPeriodEnd, cancelAt } = account;
   const tier = events === null ? null : tierByEvents(events);
   const pastDue = account.access === "past_due";
@@ -291,20 +310,31 @@ function Subscribed({ account, justPaid }: { account: Account; justPaid: boolean
           </div>
         </CardHeader>
       </Card>
+      <UsageCard
+        usage={usage}
+        limit={events}
+        resetsOn={resetsOn}
+        onMoveUp={() => portal.open()}
+        moveUpPending={portal.pending}
+      />
     </>
   );
 }
 
 function Comped() {
+  const { usage, resetsOn } = useUsage();
   return (
-    <Card>
-      <CardHeader>
-        <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-muted">
-          <Gift aria-hidden className="size-4 text-muted-foreground" />
-        </div>
-        <CardTitle>Your account is free</CardTitle>
-        <CardDescription>Every feature, no subscription needed.</CardDescription>
-      </CardHeader>
-    </Card>
+    <>
+      <Card>
+        <CardHeader>
+          <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-muted">
+            <Gift aria-hidden className="size-4 text-muted-foreground" />
+          </div>
+          <CardTitle>Your account is free</CardTitle>
+          <CardDescription>Every feature, no subscription needed.</CardDescription>
+        </CardHeader>
+      </Card>
+      <UsageCard usage={usage} limit={null} resetsOn={resetsOn} />
+    </>
   );
 }
