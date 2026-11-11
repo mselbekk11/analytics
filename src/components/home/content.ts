@@ -23,7 +23,7 @@ import {
   SiWebflow,
   SiWordpress,
 } from "react-icons/si";
-import type { Plan } from "@/lib/pricing";
+import { TIERS, type Tier } from "@/lib/pricing";
 
 /**
  * Every word on the homepage, kept apart from the layout so it can be edited without
@@ -217,9 +217,9 @@ export const sections: HomeSection[] = [
     eyebrow: "Pricing",
     label: "Pricing",
     icon: Tag,
-    heading: ["Every feature on every plan.", "You only choose the volume."],
+    heading: ["One plan with every feature.", "You only choose the volume."],
     paragraph:
-      "Up to 20 sites and the full feature set on all plans; they only change how many events you can send each month. Try any of them free for 7 days, no card needed.",
+      "Up to 20 sites and the full feature set at every tier: slide to the number of events you send each month. Try it free for 7 days, no card needed.",
     figures: [],
   },
   {
@@ -291,38 +291,35 @@ export const finalCta = {
 export type Feature = { label: string; soon?: boolean };
 
 /**
- * The plans, in one place. Changing a price is one edit here: the "save up to N%" figure
- * on the toggle is worked out from these (src/lib/pricing.ts). Billing isn't built, so
- * every "Choose …" button goes to sign-in.
+ * The one plan, priced by events on a slider. The tiers and their prices come from
+ * convex/lib/tiers.ts, which also makes the Stripe prices, so the homepage, /billing and
+ * Stripe can't disagree. The last step of the slider is "Get in touch".
  */
 export const pricing: {
   monthly: string;
   yearly: string;
+  yearlyNote: string;
   eventsLabel: string;
-  choose: string;
-  popular: string;
-  plans: Plan[];
+  tiers: readonly Tier[];
+  cta: string;
+  ctaNote: string;
+  contact: { heading: string; note: string; cta: string };
   includesLabel: string;
   includes: Feature[];
 } = {
   monthly: "Monthly",
-  yearly: "Yearly, save up to", // followed by the computed percentage
-  eventsLabel: "Events / month",
-  choose: "Choose", // "Choose Growth"
-  popular: "Popular",
-  plans: [
-    { name: "Starter", audience: "Side projects and new launches", monthly: 5, yearly: 49, events: 500_000 },
-    {
-      name: "Growth",
-      audience: "Growing products and small teams",
-      monthly: 8,
-      yearly: 69,
-      events: 1_000_000,
-      popular: true,
-    },
-    { name: "Scale", audience: "Busy sites and agencies", monthly: 19, yearly: 179, events: 2_500_000 },
-  ],
-  includesLabel: "Every plan includes",
+  yearly: "Yearly",
+  yearlyNote: "2 months free",
+  eventsLabel: "events / month",
+  tiers: TIERS,
+  cta: "Start free trial",
+  ctaNote: "7 days free, no card needed",
+  contact: {
+    heading: "More than 10M events a month?",
+    note: "Tell us about your traffic and we'll put a plan together.",
+    cta: "Get in touch",
+  },
+  includesLabel: "Every tier includes",
   includes: [
     { label: "Revenue and goal attribution", soon: true },
     { label: "Customer journeys, session by session" },

@@ -274,10 +274,11 @@ export default defineSchema({
     // queries can't read the clock, so the lock is stored
     trialEnded: v.optional(v.boolean()),
     comped: v.optional(v.boolean()), // free forever, set by accounts.setComped
-    // Stripe (Phase 4)
+    // Stripe (Phase 4), written by the billing webhook (billing.applySubscription) from
+    // the subscription it re-reads, never from the event's own payload
     stripeCustomerId: v.optional(v.string()),
     stripeSubscriptionId: v.optional(v.string()),
-    plan: v.optional(v.union(v.literal("starter"), v.literal("growth"), v.literal("scale"))),
+    events: v.optional(v.number()), // the tier's monthly limit, from the price's metadata.events
     interval: v.optional(v.union(v.literal("month"), v.literal("year"))),
     status: v.optional(v.string()), // the subscription's status as Stripe reports it
     currentPeriodEnd: v.optional(v.number()),

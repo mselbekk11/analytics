@@ -1,13 +1,13 @@
 import { Check } from "lucide-react";
+import HomeTierPicker from "./HomeTierPicker";
 import { pricing } from "./content";
-import PricingTable from "./PricingTable";
 import SoonBadge from "./SoonBadge";
 
-/** The plans (a client island for the Monthly | Yearly toggle), then what every plan includes. */
+/** The tier slider (a client island), then what every tier includes. */
 export default function Pricing() {
   return (
     <div>
-      <PricingTable />
+      <HomeTierPicker />
       <h3 className="sr-only">{pricing.includesLabel}</h3>
       <ul className="mt-6 grid gap-x-8 gap-y-3 text-[15px] sm:grid-cols-2">
         {pricing.includes.map((f) => (

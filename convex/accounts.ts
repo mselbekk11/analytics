@@ -4,8 +4,8 @@ import { internalMutation, mutation, query, type MutationCtx } from "./_generate
 import { accessState, accessValidator, ownerAccount } from "./lib/access";
 import { requireOwnerId } from "./lib/auth";
 
-// Accounts, the trial and comping (launch v1 Phase 3). Stripe fills in the subscription
-// fields from Phase 4.
+// Accounts, the trial and comping (launch v1 Phase 3). The subscription fields are
+// written by the billing webhook (billing.ts, Phase 4).
 
 export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -42,11 +42,25 @@ export const ensure = mutation({
  */
 export const me = query({
   args: {},
-  returns: v.union(v.null(), v.object({ access: accessValidator, trialEndsAt: v.number() })),
+  returns: v.union(
+    v.null(),
+    v.object({
+      access: accessValidator,
+      trialEndsAt: v.number(),
+      // The subscribed tier (Phase 4), null until the billing webhook has written one
+      events: v.union(v.null(), v.number()),
+      interval: v.union(v.null(), v.literal("month"), v.literal("year")),
+    }),
+  ),
   handler: async (ctx) => {
     const account = await ownerAccount(ctx, await requireOwnerId(ctx));
     if (account === null) return null;
-    return { access: accessState(account), trialEndsAt: account.trialEndsAt };
+    return {
+      access: accessState(account),
+      trialEndsAt: account.trialEndsAt,
+      events: account.events ?? null,
+      interval: account.interval ?? null,
+    };
   },
 });
 

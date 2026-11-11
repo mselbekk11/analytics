@@ -1,20 +1,11 @@
-/** How a price is shown: per month, or per year paid up front. */
-export type Billing = "monthly" | "yearly";
+import { TIERS, type Interval, type Tier } from "../../convex/lib/tiers";
 
-/** One plan. Prices are whole dollars; every plan has every feature, only the volume differs. */
-export type Plan = {
-  name: string;
-  audience: string; // one line under the name
-  monthly: number; // $ a month, billed monthly
-  yearly: number; // $ a year, billed yearly
-  events: number; // a month
-  popular?: boolean;
-};
+export { TIERS, fittingTierIndex, type Interval, type Tier } from "../../convex/lib/tiers";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const count = new Intl.NumberFormat("en-US");
 
-/** "$5", "$179". */
+/** "$5", "$390". */
 export function formatPrice(dollars: number): string {
   return usd.format(dollars);
 }
@@ -24,23 +15,37 @@ export function formatEvents(n: number): string {
   return count.format(n);
 }
 
-/** The share of twelve monthly payments saved by paying yearly, in percent (28.125 for $8 vs $69). */
-export function yearlySaving(plan: Pick<Plan, "monthly" | "yearly">): number {
-  const twelve = plan.monthly * 12;
-  return twelve > 0 ? ((twelve - plan.yearly) / twelve) * 100 : 0;
+/** The slider's steps: each tier, then "10M+" (Get in touch). */
+export const STEPS = TIERS.length + 1;
+
+/** The tier at a slider step, or null on the last step ("Get in touch"). */
+export function tierAt(step: number): Tier | null {
+  return TIERS[step] ?? null;
 }
 
-/** The best yearly saving across the plans, rounded down so "save up to N%" never overstates it. */
-export function maxYearlySaving(plans: Pick<Plan, "monthly" | "yearly">[]): number {
-  return Math.floor(Math.max(0, ...plans.map(yearlySaving)));
+/** "500k" … "10M", and "10M+" past the last tier. */
+export function stepLabel(step: number): string {
+  return tierAt(step)?.label ?? `${TIERS[TIERS.length - 1].label}+`;
 }
 
 /**
- * The big number, its unit and the line under it for a plan:
- * monthly "$5" "/ month" "or $49 billed yearly", yearly "$49" "/ year" "or $5 / month billed monthly".
+ * The big number, its unit and the line under it:
+ * month "$8" "/ month" "or $80 a year, 2 months free", year "$80" "/ year" "$6.67 a month".
  */
-export function planPrice(plan: Plan, billing: Billing): { amount: string; unit: string; note: string } {
-  return billing === "monthly"
-    ? { amount: formatPrice(plan.monthly), unit: "/ month", note: `or ${formatPrice(plan.yearly)} billed yearly` }
-    : { amount: formatPrice(plan.yearly), unit: "/ year", note: `or ${formatPrice(plan.monthly)} / month billed monthly` };
+export function tierPrice(tier: Tier, interval: Interval): { amount: string; unit: string; note: string } {
+  if (interval === "month") {
+    return {
+      amount: formatPrice(tier.monthly),
+      unit: "/ month",
+      note: `or ${formatPrice(tier.yearly)} a year, 2 months free`,
+    };
+  }
+  const perMonth = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(tier.yearly / 12);
+  return { amount: formatPrice(tier.yearly), unit: "/ year", note: `${perMonth} a month, billed yearly` };
+}
+
+/** "1,000,000 events / month", read out by the slider for screen readers. */
+export function stepValueText(step: number): string {
+  const tier = tierAt(step);
+  return tier === null ? `More than ${formatEvents(TIERS[TIERS.length - 1].events)} events a month` : `${formatEvents(tier.events)} events a month`;
 }

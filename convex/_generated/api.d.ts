@@ -10,11 +10,13 @@
 
 import type * as accounts from "../accounts.js";
 import type * as apiKeys from "../apiKeys.js";
+import type * as billing from "../billing.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_attribution from "../lib/attribution.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_billing from "../lib/billing.js";
 import type * as lib_dates from "../lib/dates.js";
 import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
@@ -33,6 +35,8 @@ import type * as lib_secret from "../lib/secret.js";
 import type * as lib_sources from "../lib/sources.js";
 import type * as lib_statsShapes from "../lib/statsShapes.js";
 import type * as lib_stripe from "../lib/stripe.js";
+import type * as lib_stripeApi from "../lib/stripeApi.js";
+import type * as lib_tiers from "../lib/tiers.js";
 import type * as lib_visitors from "../lib/visitors.js";
 import type * as mcp from "../mcp.js";
 import type * as me from "../me.js";
@@ -52,11 +56,13 @@ import type {
 declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   apiKeys: typeof apiKeys;
+  billing: typeof billing;
   http: typeof http;
   ingest: typeof ingest;
   "lib/access": typeof lib_access;
   "lib/attribution": typeof lib_attribution;
   "lib/auth": typeof lib_auth;
+  "lib/billing": typeof lib_billing;
   "lib/dates": typeof lib_dates;
   "lib/dims": typeof lib_dims;
   "lib/domain": typeof lib_domain;
@@ -75,6 +81,8 @@ declare const fullApi: ApiFromModules<{
   "lib/sources": typeof lib_sources;
   "lib/statsShapes": typeof lib_statsShapes;
   "lib/stripe": typeof lib_stripe;
+  "lib/stripeApi": typeof lib_stripeApi;
+  "lib/tiers": typeof lib_tiers;
   "lib/visitors": typeof lib_visitors;
   mcp: typeof mcp;
   me: typeof me;
