@@ -29,6 +29,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Simple Stats tracking simplestats.ai itself (the script skips localhost, so dev isn't counted) */}
+        <script async src="https://www.simplestats.ai/script.js" data-site="simplestats.ai"></script>
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
           {/* Clerk follows the color-scheme next-themes sets on <html> (its shadcn theme froze the page) */}
