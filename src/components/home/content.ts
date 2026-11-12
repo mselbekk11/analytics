@@ -31,8 +31,9 @@ import { TIERS, type Tier } from "@/lib/pricing";
  * carry `soon: true`, and the script size, Stripe + API, cookieless mode and MCP are real.
  */
 
-/** Every call to action goes here. Sign-up stays invite-only. */
+/** "Dashboard" and "Go to dashboard" go to sign-in; every "Start free trial" goes to sign-up. */
 export const SIGN_IN = "/sign-in";
+export const SIGN_UP = "/sign-up";
 
 /** Placeholder: the owner fills in the real address. Used by the FAQ and /privacy. */
 export const CONTACT_EMAIL = "hello@example.com";
@@ -143,7 +144,6 @@ export const sections: HomeSection[] = [
       { value: "Journeys", label: "every session before a payment" },
       { value: "Key goal", label: "signups counted as conversions" },
     ],
-    soon: true,
   },
   {
     id: "s-funnels",
@@ -321,7 +321,7 @@ export const pricing: {
   },
   includesLabel: "Every tier includes",
   includes: [
-    { label: "Revenue and goal attribution", soon: true },
+    { label: "Revenue and goal attribution" },
     { label: "Customer journeys, session by session" },
     { label: "Realtime map and visitor feed" },
     { label: "MCP access for Claude and Cursor" },
@@ -390,8 +390,8 @@ export const customers: { exampleLabel: string; quotes: Quote[] } = {
 /** One FAQ entry. `email` adds the contact address as a link after the answer. */
 export type FaqEntry = { question: string; answer: string; soon?: boolean; email?: boolean };
 
-// Billing isn't built: the answers on events, limits and cancelling describe the intended
-// plans, so the owner should confirm them before taking payments.
+// The billing answers (trial, events, going over, cancelling) were checked against launch v1
+// Phases 3–6 (accounts.ts, billing.ts, lib/usage.ts) and approved by the owner in Phase 11.
 export const faq: FaqEntry[] = [
   {
     question: "How is this different from Plausible or Fathom?",
@@ -399,9 +399,14 @@ export const faq: FaqEntry[] = [
       "Both count visits well. Simple Stats also ties each payment from Stripe or the API to the visit that brought it, gives AI assistants such as ChatGPT, Claude and Perplexity their own traffic channel, and lets you ask about your stats from Claude or Cursor through an MCP server.",
   },
   {
+    question: "Is there a free trial?",
+    answer:
+      "Yes: 7 days with every feature, and no card needed. It starts when you sign up. Subscribe whenever you like; with two or more days of the trial left, the first charge waits until the trial ends. If the trial ends without a plan, the dashboard locks but your sites keep collecting data, so nothing is lost when you subscribe.",
+  },
+  {
     question: "What counts as an event?",
     answer:
-      "Each pageview counts as one, and so does each custom event, such as a signup or a click on a link to another site. The small pings that measure time on page don't count.",
+      "Each pageview counts as one, and so does each custom event, such as a goal or a click on a link to another site. The small pings that measure time on page don't count, and neither do identify calls or payments. Events are added up across all your sites for each calendar month (UTC), and the Billing page shows where you are.",
   },
   {
     question: "Do I need a cookie banner?",
@@ -411,7 +416,7 @@ export const faq: FaqEntry[] = [
   {
     question: "What happens if I go over my plan's events?",
     answer:
-      "Nothing stops. Every event is still counted and your dashboard keeps working. If you stay over the limit, we'll get in touch about moving up a plan.",
+      "Nothing stops. Every event is still counted and your dashboard keeps working. The Billing page shows when you're over and lets you move up a tier. If you stay over, we'll get in touch.",
   },
   {
     question: "Will the script slow my site down?",
@@ -427,7 +432,7 @@ export const faq: FaqEntry[] = [
   {
     question: "Can I cancel at any time?",
     answer:
-      "Yes. There's no contract: cancel whenever you like and you won't be charged again. Deleting a site from its settings removes all of its data.",
+      "Yes. There's no contract: cancel from Billing → Manage subscription and you won't be charged again. You keep the dashboard until the end of the period you've paid for, and your sites keep collecting data after that, so you can come back without a gap. Deleting a site from its settings removes all of its data.",
   },
   {
     question: "How do I get in touch?",

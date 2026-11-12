@@ -8,6 +8,7 @@
 //
 //   STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-setup.mjs
 //   STRIPE_SECRET_KEY=sk_live_... node scripts/stripe-setup.mjs --live
+//   add --dry-run to only read the account and print what would change (Phase 11)
 //
 // Needs Node 22.18+ (it imports the TypeScript tier list directly).
 import Stripe from "stripe";
@@ -23,12 +24,19 @@ if (live && !process.argv.includes("--live")) {
   console.error("That is a live key: pass --live to create live prices");
   process.exit(1);
 }
+const dry = process.argv.includes("--dry-run");
 const stripe = new Stripe(key);
+/** Runs a write, or in --dry-run prints it and returns a stand-in with an `id`. */
+async function write(what, run, standIn = {}) {
+  if (!dry) return run();
+  console.log(`  would ${what}`);
+  return { id: "(new)", ...standIn };
+}
 const APP = "simple-stats";
 // "Software as a service (SaaS) - business use". Checkout needs a tax code when Stripe's
 // Managed Payments is on (the default for new accounts), and Stripe Tax uses it too
 const TAX_CODE = "txcd_10103001";
-console.log(live ? "LIVE mode" : "test mode");
+console.log(`${live ? "LIVE mode" : "test mode"}${dry ? ", dry run: nothing is written" : ""}`);
 
 // products.search can lag a few seconds behind a create, so list instead
 const products = [];
@@ -45,13 +53,14 @@ for (const tier of TIERS) {
   };
   let product = products.find((p) => p.metadata.tier === tier.slug);
   if (product === undefined) {
-    product = await stripe.products.create(want);
-    console.log(`  created product ${product.id} (${product.name})`);
+    product = await write(`create product "${want.name}"`, () => stripe.products.create(want), { ...want, id: `(new ${tier.slug})` });
+    if (!dry) console.log(`  created product ${product.id} (${product.name})`);
   } else {
     const taxCode = typeof product.tax_code === "string" ? product.tax_code : product.tax_code?.id;
     if (!product.active || product.name !== want.name || product.description !== want.description || taxCode !== TAX_CODE) {
-      product = await stripe.products.update(product.id, { ...want, active: true });
-      console.log(`  updated product ${product.id} (${product.name})`);
+      const id = product.id;
+      product = await write(`update product ${id} to "${want.name}"`, () => stripe.products.update(id, { ...want, active: true }), { id });
+      if (!dry) console.log(`  updated product ${product.id} (${product.name})`);
     } else {
       console.log(`  ok      product ${product.id} (${product.name})`);
     }
@@ -78,7 +87,9 @@ for (const want of wanted) {
     priceOf[want.lookupKey] = have.id;
     continue;
   }
-  const price = await stripe.prices.create({
+  const verb = have ? "move" : "create";
+  const what = `${verb} price ${want.lookupKey} $${want.unitAmount / 100}/${want.interval} on ${productOf[want.slug]}`;
+  const price = await write(what, () => stripe.prices.create({
     product: productOf[want.slug],
     currency: "usd",
     unit_amount: want.unitAmount,
@@ -87,20 +98,20 @@ for (const want of wanted) {
     transfer_lookup_key: have !== undefined,
     nickname: want.nickname,
     metadata: { events: String(want.events) },
-  });
-  if (have?.active) await stripe.prices.update(have.id, { active: false });
+  }), { id: `(new ${want.lookupKey})` });
+  if (have?.active) await write(`archive price ${have.id}`, () => stripe.prices.update(have.id, { active: false }));
   priceOf[want.lookupKey] = price.id;
-  console.log(`  ${have ? "moved" : "created"} ${want.lookupKey}  ${price.id}  $${want.unitAmount / 100}/${want.interval}`);
+  if (!dry) console.log(`  ${have ? "moved" : "created"} ${want.lookupKey}  ${price.id}  $${want.unitAmount / 100}/${want.interval}`);
 }
 
 // Phase 4's single product: archive what's left on it, then the product (subscriptions
 // on its prices carry on; the portal moves them to a tier product on their next change)
 for (const old of products.filter((p) => p.metadata.tier === undefined && p.active)) {
   for await (const price of stripe.prices.list({ product: old.id, active: true, limit: 100 })) {
-    await stripe.prices.update(price.id, { active: false });
+    await write(`archive price ${price.id}`, () => stripe.prices.update(price.id, { active: false }));
   }
-  await stripe.products.update(old.id, { active: false });
-  console.log(`  archived the old single product ${old.id} (${old.name})`);
+  await write(`archive product ${old.id}`, () => stripe.products.update(old.id, { active: false }));
+  if (!dry) console.log(`  archived the old single product ${old.id} (${old.name})`);
 }
 
 // The customer portal (Phase 5): switch between all 10 prices, update the card and
@@ -140,6 +151,7 @@ const portal = {
 const configs = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
 const mine = configs.data.find((c) => c.metadata?.app === APP);
 const config = mine
-  ? await stripe.billingPortal.configurations.update(mine.id, portal)
-  : await stripe.billingPortal.configurations.create(portal);
-console.log(`  portal  ${mine ? "updated" : "created"} ${config.id}`);
+  ? await write(`update portal configuration ${mine.id}`, () => stripe.billingPortal.configurations.update(mine.id, portal), { id: mine.id })
+  : await write("create the portal configuration", () => stripe.billingPortal.configurations.create(portal));
+if (dry) console.log(`    switch between: ${TIERS.map((t) => productOf[t.slug]).join(", ")}; card, invoices, cancel at period end`);
+else console.log(`  portal  ${mine ? "updated" : "created"} ${config.id}`);

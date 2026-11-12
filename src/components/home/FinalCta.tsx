@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { CONTAINER } from "./container";
-import { finalCta, SIGN_IN } from "./content";
+import { finalCta, SIGN_UP } from "./content";
 
 /** The last call to action, centred above the footer. */
 export default function FinalCta() {
@@ -14,7 +14,7 @@ export default function FinalCta() {
         >
           <span className="sm:block">{finalCta.heading[0]}</span> <span className="sm:block">{finalCta.heading[1]}</span>
         </h2>
-        <Button size="lg" className="mt-8 h-10 px-5 text-[15px]" render={<Link href={SIGN_IN} />} nativeButton={false}>
+        <Button size="lg" className="mt-8 h-10 px-5 text-[15px]" render={<Link href={SIGN_UP} />} nativeButton={false}>
           {finalCta.button}
         </Button>
         <p className="mt-4 text-sm text-muted-foreground">{finalCta.note}</p>
