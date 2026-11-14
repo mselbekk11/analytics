@@ -1,13 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { requireReadableSite, requireSite } from "./lib/auth";
 import { hourWindow, localDate } from "./lib/dates";
-import { funnelCounts, funnelStepValidator, MAX_FUNNELS, parseFunnel, type Hit } from "./lib/funnels";
+import { funnelResult, funnelStepValidator, MAX_FUNNELS, parseFunnel, type Hit } from "./lib/funnels";
 import { isValidRange } from "./lib/ranges";
 import { rangeArg } from "./pages";
 
-// The Funnels tab (launch v1 Phase 12). See lib/funnels.ts for how a funnel counts.
+// The Funnels tab (launch v1 Phase 12; edit, delete, step names and the median time in
+// Phase 13). See lib/funnels.ts for how a funnel counts.
 
 const HOUR_MS = 60 * 60 * 1000;
 // Documents read per results query, pageviews and events together. Past this the tab
@@ -62,18 +63,57 @@ export const create = mutation({
   },
 });
 
+/** The funnel if it belongs to this site, which the caller owns; else "Funnel not found". */
+async function ownedFunnel(ctx: MutationCtx, domain: string, id: Id<"funnels">): Promise<Doc<"funnels">> {
+  const site = await requireSite(ctx, domain);
+  const funnel = await ctx.db.get("funnels", id);
+  if (funnel === null || funnel.siteId !== site._id) throw new ConvexError("Funnel not found");
+  return funnel;
+}
+
+/** Replaces a funnel's name, steps and window, checked as create checks them. */
+export const update = mutation({
+  args: {
+    domain: v.string(),
+    id: v.id("funnels"),
+    name: v.string(),
+    steps: v.array(funnelStepValidator),
+    windowHours: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const funnel = await ownedFunnel(ctx, args.domain, args.id);
+    await ctx.db.patch("funnels", funnel._id, parseFunnel(args.name, args.steps, args.windowHours));
+    return null;
+  },
+});
+
+/** Deletes a funnel. */
+export const remove = mutation({
+  args: { domain: v.string(), id: v.id("funnels") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const funnel = await ownedFunnel(ctx, args.domain, args.id);
+    await ctx.db.delete("funnels", funnel._id);
+    return null;
+  },
+});
+
 /**
  * Every funnel's visitors per step over the range, computed from the raw pageviews and
  * goal events: entries in the range, later steps up to each funnel's window after it.
- * Only hits with a visitor id count, so cookieless sites get `cookieless`. `read` is
- * how many documents the query read.
+ * `medianMs` is the median time from entry to the last step over those who completed,
+ * null when nobody did. Only hits with a visitor id count, so cookieless sites get
+ * `cookieless`. `read` is how many documents the query read.
  */
 export const results = query({
   args: { domain: v.string(), range: rangeArg },
   returns: v.union(
     v.object({
       status: v.literal("ok"),
-      funnels: v.array(v.object({ id: v.id("funnels"), counts: v.array(v.number()) })),
+      funnels: v.array(
+        v.object({ id: v.id("funnels"), counts: v.array(v.number()), medianMs: v.union(v.number(), v.null()) }),
+      ),
       read: v.number(),
     }),
     v.object({ status: v.union(v.literal("cookieless"), v.literal("tooMany")) }),
@@ -139,7 +179,7 @@ export const results = query({
 
     return {
       status: "ok" as const,
-      funnels: funnels.map((f) => ({ id: f._id, counts: funnelCounts(journeys.values(), f.steps, f.windowHours) })),
+      funnels: funnels.map((f) => ({ id: f._id, ...funnelResult(journeys.values(), f.steps, f.windowHours) })),
       read: pageviews.length + events.length,
     };
   },

@@ -174,6 +174,7 @@ function Dashboard({
             view={{ filters, raw, data: view?.breakdowns, goals: view?.goals, onSelect: selectRow }}
             metric={metric}
             onMetric={cycleMetric}
+            funnelRange={hourly !== null ? { period: hourly, now: hourNow } : range}
           />
         </>
       )}

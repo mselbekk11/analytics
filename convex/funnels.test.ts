@@ -3,10 +3,16 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import {
+  funnelAttempt,
   funnelCounts,
+  funnelResult,
   funnelStats,
   MAX_FUNNELS,
+  MAX_STEP_NAME,
+  median,
   parseFunnel,
+  stepLabel,
+  stepTarget,
   stepsReached,
   windowLabel,
   type FunnelStep,
@@ -84,6 +90,37 @@ describe("stepsReached", () => {
   });
 });
 
+describe("median time", () => {
+  test("median of odd and even counts, none for nobody", () => {
+    expect(median([5, 1, 3])).toBe(3);
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+    expect(median([])).toBeNull();
+  });
+
+  test("a visitor's time runs from entry to the last step, only when they finish", () => {
+    const done = [pv(0, "/"), pv(1, "/pricing"), pv(2, "/signup/team"), ev(3, "signup")];
+    expect(funnelAttempt(done, SIGNUP, 24 * HOUR)).toEqual({ reached: 4, durationMs: 3 * HOUR });
+    expect(funnelAttempt(done.slice(0, 3), SIGNUP, 24 * HOUR)).toEqual({ reached: 3, durationMs: null });
+  });
+
+  test("a visitor who enters again and then finishes counts from the entry that finished first", () => {
+    // Entered at 0 and at 10; both attempts finish at 12 in a 24 h window, the shorter counts
+    const hits = [pv(0, "/"), pv(10, "/"), pv(11, "/pricing"), pv(11.5, "/signup"), ev(12, "signup")];
+    expect(funnelAttempt(hits, SIGNUP, 24 * HOUR).durationMs).toBe(2 * HOUR);
+  });
+
+  test("funnelResult gives the counts and the median over those who completed", () => {
+    const journeys = [
+      [pv(0, "/"), pv(0.5, "/pricing"), pv(0.75, "/signup"), ev(1, "signup")], // 1 h
+      [pv(0, "/"), pv(1, "/pricing"), pv(2, "/signup"), ev(3, "signup")], // 3 h
+      [pv(0, "/"), pv(1, "/pricing"), pv(5, "/signup"), ev(6, "signup")], // 6 h
+      [pv(0, "/"), pv(1, "/pricing")], // didn't finish, no time
+    ];
+    expect(funnelResult(journeys, SIGNUP, 24)).toEqual({ counts: [4, 4, 3, 3], medianMs: 3 * HOUR });
+    expect(funnelResult([journeys[3]], SIGNUP, 24)).toEqual({ counts: [1, 1, 0, 0], medianMs: null });
+  });
+});
+
 describe("funnelStats", () => {
   test("shares, drop-offs and the headline numbers", () => {
     const { steps, entered, completed, conversion } = funnelStats([10, 5, 2]);
@@ -130,6 +167,28 @@ describe("parseFunnel", () => {
     expect(() => parseFunnel("x", SIGNUP, 0)).toThrow("window");
     expect(() => parseFunnel("x", SIGNUP, 1.5)).toThrow("window");
     expect(() => parseFunnel("x", SIGNUP, 721)).toThrow("window");
+  });
+
+  test("step names: trimmed, blank ones left off, too long refused", () => {
+    const parsed = parseFunnel(
+      "x",
+      [
+        { kind: "page", pattern: "/", label: "  Home page " },
+        { kind: "event", name: "signup", label: "   " },
+      ],
+      24,
+    );
+    expect(parsed.steps).toEqual([{ kind: "page", pattern: "/", label: "Home page" }, event("signup")]);
+    expect(() =>
+      parseFunnel("x", [page("/"), { kind: "page", pattern: "/a", label: "n".repeat(MAX_STEP_NAME + 1) }], 24),
+    ).toThrow("Step 2: Step names are at most");
+  });
+
+  test("a step reads as its name, or its pattern or event without one", () => {
+    expect(stepLabel({ kind: "page", pattern: "/pricing", label: "Viewed pricing" })).toBe("Viewed pricing");
+    expect(stepTarget({ kind: "page", pattern: "/pricing", label: "Viewed pricing" })).toBe("/pricing");
+    expect(stepLabel(page("/pricing"))).toBe("/pricing");
+    expect(stepLabel(event("signup"))).toBe("signup");
   });
 
   test("window labels", () => {
@@ -263,7 +322,8 @@ describe("funnels", () => {
 
     const result = await owner.query(api.funnels.results, { domain: DOMAIN, range });
     // a, b, c and e entered; a, c and e reached /pricing; a and c checkout; only a bought
-    expect(result).toMatchObject({ status: "ok", funnels: [{ id, counts: [4, 3, 2, 1] }] });
+    // Only a completed, 11 minutes after entering
+    expect(result).toMatchObject({ status: "ok", funnels: [{ id, counts: [4, 3, 2, 1], medianMs: 11 * 60_000 }] });
     if (result.status === "ok") expect(result.read).toBeGreaterThan(0);
 
     // A wider window lets c finish
@@ -274,7 +334,10 @@ describe("funnels", () => {
       windowHours: 48,
     });
     const again = await owner.query(api.funnels.results, { domain: DOMAIN, range });
-    expect(again.status === "ok" && again.funnels.find((f) => f.id === wide)?.counts).toEqual([4, 3, 2, 2]);
+    const wideResult = again.status === "ok" ? again.funnels.find((f) => f.id === wide) : undefined;
+    expect(wideResult?.counts).toEqual([4, 3, 2, 2]);
+    // a took 11 minutes, c 25 hours: the median of two is their mean
+    expect(wideResult?.medianMs).toBe((11 * 60_000 + 25 * HOUR) / 2);
   });
 
   test("hour ranges count entries in the hours", async () => {
@@ -287,6 +350,89 @@ describe("funnels", () => {
     const now = Date.parse("2026-10-12T12:00:00Z");
     const result = await owner.query(api.funnels.results, { domain: DOMAIN, range: { period: "today", now } });
     expect(result).toMatchObject({ status: "ok", funnels: [{ counts: [1, 1] }] });
+  });
+
+  test("update re-checks the funnel and re-computes it; the owner only", async () => {
+    const t = await setup();
+    const owner = t.withIdentity(OWNER);
+    const id = await owner.mutation(api.funnels.create, { domain: DOMAIN, name: "Purchase", steps: STEPS });
+    await visit(t, "2026-10-11T17:00:00Z", "a", "/");
+    await visit(t, "2026-10-11T17:05:00Z", "a", "/pricing");
+    expect(await owner.query(api.funnels.results, { domain: DOMAIN, range })).toMatchObject({
+      funnels: [{ counts: [1, 1, 0, 0], medianMs: null }],
+    });
+
+    // Down to two steps, with names: a now completes, in 5 minutes
+    await owner.mutation(api.funnels.update, {
+      domain: DOMAIN,
+      id,
+      name: " Pricing ",
+      steps: [
+        { kind: "page", pattern: "/", label: "Home" },
+        { kind: "page", pattern: "/pricing", label: " Viewed pricing " },
+      ],
+      windowHours: 2,
+    });
+    expect(await owner.query(api.funnels.list, { domain: DOMAIN })).toEqual([
+      {
+        id,
+        name: "Pricing",
+        steps: [
+          { kind: "page", pattern: "/", label: "Home" },
+          { kind: "page", pattern: "/pricing", label: "Viewed pricing" },
+        ],
+        windowHours: 2,
+      },
+    ]);
+    expect(await owner.query(api.funnels.results, { domain: DOMAIN, range })).toMatchObject({
+      funnels: [{ id, counts: [1, 1], medianMs: 5 * 60_000 }],
+    });
+
+    // Checked as create checks it
+    await expect(
+      owner.mutation(api.funnels.update, { domain: DOMAIN, id, name: "x", steps: [page("/")] }),
+    ).rejects.toThrow("2 to 8 steps");
+    await expect(owner.mutation(api.funnels.update, { domain: DOMAIN, id, name: " ", steps: STEPS })).rejects.toThrow(
+      "name",
+    );
+    await expect(
+      owner.mutation(api.funnels.update, { domain: DOMAIN, id, name: "x", steps: STEPS, windowHours: 0 }),
+    ).rejects.toThrow("window");
+
+    // Another user can't edit it, whatever domain they pass
+    const stranger = t.withIdentity(STRANGER);
+    await stranger.mutation(api.accounts.ensure, {});
+    await stranger.mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
+    await expect(
+      stranger.mutation(api.funnels.update, { domain: DOMAIN, id, name: "Mine", steps: STEPS }),
+    ).rejects.toThrow("Site not found");
+    await expect(
+      stranger.mutation(api.funnels.update, { domain: "other.com", id, name: "Mine", steps: STEPS }),
+    ).rejects.toThrow("Funnel not found");
+    expect((await owner.query(api.funnels.list, { domain: DOMAIN }))[0].name).toBe("Pricing");
+  });
+
+  test("remove deletes the funnel from the list and the results; the owner only", async () => {
+    const t = await setup();
+    const owner = t.withIdentity(OWNER);
+    const a = await owner.mutation(api.funnels.create, { domain: DOMAIN, name: "A", steps: STEPS });
+    const b = await owner.mutation(api.funnels.create, { domain: DOMAIN, name: "B", steps: STEPS });
+
+    const stranger = t.withIdentity(STRANGER);
+    await stranger.mutation(api.accounts.ensure, {});
+    await stranger.mutation(api.sites.create, { domain: "other.com", timezone: "UTC" });
+    await expect(stranger.mutation(api.funnels.remove, { domain: DOMAIN, id: a })).rejects.toThrow("Site not found");
+    await expect(stranger.mutation(api.funnels.remove, { domain: "other.com", id: a })).rejects.toThrow(
+      "Funnel not found",
+    );
+    await expect(t.mutation(api.funnels.remove, { domain: DOMAIN, id: a })).rejects.toThrow();
+
+    await owner.mutation(api.funnels.remove, { domain: DOMAIN, id: a });
+    expect((await owner.query(api.funnels.list, { domain: DOMAIN })).map((f) => f.id)).toEqual([b]);
+    const result = await owner.query(api.funnels.results, { domain: DOMAIN, range });
+    expect(result.status === "ok" && result.funnels.map((f) => f.id)).toEqual([b]);
+    // Gone: a second delete says so
+    await expect(owner.mutation(api.funnels.remove, { domain: DOMAIN, id: a })).rejects.toThrow("Funnel not found");
   });
 
   test("cookieless sites get no funnels", async () => {

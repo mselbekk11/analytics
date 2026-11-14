@@ -8,6 +8,10 @@ import { matchesPattern, parseExcludedPath } from "./paths";
 // in the range; each later step is the first matching hit after the previous one, no
 // later than the window from entry. A visitor who enters more than once counts their
 // furthest attempt. Pure, so the queries, the form and the tests share it.
+//
+// Phase 13: a step can carry an optional display name (`label`), shown on the card with
+// the pattern or event under it; funnels saved before it have none. Results also give
+// the median time from entry to completion (see funnelResult).
 
 export const MIN_STEPS = 2;
 export const MAX_STEPS = 8;
@@ -15,14 +19,15 @@ export const MAX_FUNNELS = 20; // per site
 export const MAX_FUNNEL_NAME = 60;
 export const DEFAULT_WINDOW_HOURS = 24;
 export const MAX_WINDOW_HOURS = 30 * 24;
+export const MAX_STEP_NAME = 60;
 
 export const funnelStepValidator = v.union(
-  v.object({ kind: v.literal("page"), pattern: v.string() }),
-  v.object({ kind: v.literal("event"), name: v.string() }),
+  v.object({ kind: v.literal("page"), pattern: v.string(), label: v.optional(v.string()) }),
+  v.object({ kind: v.literal("event"), name: v.string(), label: v.optional(v.string()) }),
 );
 export type FunnelStep = Infer<typeof funnelStepValidator>;
 
-/** A new funnel's name, steps and window, cleaned up, or a ConvexError saying what is wrong. */
+/** A new or edited funnel's name, steps and window, cleaned up, or a ConvexError saying what is wrong. */
 export function parseFunnel(
   name: string,
   steps: FunnelStep[],
@@ -48,6 +53,9 @@ export function parseFunnel(
 
 /** What is wrong with one step as typed, or null. The form shows it under the step. */
 export function stepError(step: FunnelStep): string | null {
+  if (step.label !== undefined && step.label.trim().length > MAX_STEP_NAME) {
+    return `Step names are at most ${MAX_STEP_NAME} characters`;
+  }
   if (step.kind === "page") {
     const parsed = parseExcludedPath(step.pattern);
     return "error" in parsed ? parsed.error.replace("/admin/*", "/blog/*") : null;
@@ -58,10 +66,13 @@ export function stepError(step: FunnelStep): string | null {
   return null;
 }
 
+// A blank name is left off, so the card falls back to the pattern or event
 function cleanStep(step: FunnelStep): FunnelStep {
-  if (step.kind === "event") return { kind: "event", name: step.name.trim() };
+  const label = step.label?.trim();
+  const named = label ? { label } : {};
+  if (step.kind === "event") return { kind: "event", name: step.name.trim(), ...named };
   const parsed = parseExcludedPath(step.pattern);
-  return { kind: "page", pattern: "pattern" in parsed ? parsed.pattern : step.pattern };
+  return { kind: "page", pattern: "pattern" in parsed ? parsed.pattern : step.pattern, ...named };
 }
 
 /** A pageview (its path) or a custom event (its name), in time order within a visitor. */
@@ -74,35 +85,77 @@ export function matchesStep(hit: Hit, step: FunnelStep): boolean {
 }
 
 /**
- * How many steps one visitor reached (0 when they never entered). `hits` are in time
- * order, pageviews before the events they carry; `entry` marks hits inside the range,
- * which only matters for step 1. Each later step must be a later hit than the previous
- * step's, at most `windowMs` after the entry. The earliest match is always the best one
- * for the steps after it, so one pass per entry is enough.
+ * How far one visitor got: the steps reached (0 when they never entered), and when they
+ * finished, the time from entry to the last step (the shortest over their entries, so a
+ * visitor who comes back and then finishes counts from the entry that finished). `hits`
+ * are in time order, pageviews before the events they carry; `entry` marks hits inside
+ * the range, which only matters for step 1. Each later step must be a later hit than
+ * the previous step's, at most `windowMs` after the entry. The earliest match is always
+ * the best one for the steps after it, so one pass per entry is enough.
  */
-export function stepsReached(hits: Hit[], steps: FunnelStep[], windowMs: number): number {
+export function funnelAttempt(
+  hits: Hit[],
+  steps: FunnelStep[],
+  windowMs: number,
+): { reached: number; durationMs: number | null } {
   let best = 0;
-  for (let i = 0; i < hits.length && best < steps.length; i++) {
+  let durationMs: number | null = null;
+  for (let i = 0; i < hits.length; i++) {
     if (!hits[i].entry || !matchesStep(hits[i], steps[0])) continue;
     const deadline = hits[i].ts + windowMs;
     let reached = 1;
+    let last = hits[i].ts;
     for (let j = i + 1; j < hits.length && reached < steps.length && hits[j].ts <= deadline; j++) {
-      if (matchesStep(hits[j], steps[reached])) reached++;
+      if (matchesStep(hits[j], steps[reached])) {
+        reached++;
+        last = hits[j].ts;
+      }
     }
     best = Math.max(best, reached);
+    if (reached === steps.length) {
+      const took = last - hits[i].ts;
+      if (durationMs === null || took < durationMs) durationMs = took;
+    }
   }
-  return best;
+  return { reached: best, durationMs };
+}
+
+/** How many steps one visitor reached (0 when they never entered). */
+export function stepsReached(hits: Hit[], steps: FunnelStep[], windowMs: number): number {
+  return funnelAttempt(hits, steps, windowMs).reached;
+}
+
+/** The middle value (the mean of the two middle ones for an even count), null for none. */
+export function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Visitors who reached each step, from every visitor's hits, and the median time from
+ * entry to completion over those who completed (null when nobody did).
+ */
+export function funnelResult(
+  journeys: Iterable<Hit[]>,
+  steps: FunnelStep[],
+  windowHours: number,
+): { counts: number[]; medianMs: number | null } {
+  const counts = steps.map(() => 0);
+  const durations: number[] = [];
+  const windowMs = windowHours * 60 * 60 * 1000;
+  for (const hits of journeys) {
+    const { reached, durationMs } = funnelAttempt(hits, steps, windowMs);
+    for (let s = 0; s < reached; s++) counts[s]++;
+    if (durationMs !== null) durations.push(durationMs);
+  }
+  return { counts, medianMs: median(durations) };
 }
 
 /** Visitors who reached each step, from every visitor's hits. */
 export function funnelCounts(journeys: Iterable<Hit[]>, steps: FunnelStep[], windowHours: number): number[] {
-  const counts = steps.map(() => 0);
-  const windowMs = windowHours * 60 * 60 * 1000;
-  for (const hits of journeys) {
-    const reached = stepsReached(hits, steps, windowMs);
-    for (let s = 0; s < reached; s++) counts[s]++;
-  }
-  return counts;
+  return funnelResult(journeys, steps, windowHours).counts;
 }
 
 export type StepStats = {
@@ -133,9 +186,14 @@ export function funnelStats(counts: number[]): {
   return { steps, entered, completed, conversion: entered > 0 ? completed / entered : 0 };
 }
 
-/** How a step reads on a card and in the form's summary. */
-export function stepLabel(step: FunnelStep): string {
+/** A step's pattern or event name, as it is set up. */
+export function stepTarget(step: FunnelStep): string {
   return step.kind === "page" ? step.pattern : step.name;
+}
+
+/** How a step reads on a card: its name, or its pattern or event when it has none. */
+export function stepLabel(step: FunnelStep): string {
+  return step.label ?? stepTarget(step);
 }
 
 /** "24 hours", "1 hour", "7 days". */

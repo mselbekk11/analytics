@@ -1,36 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
-import { ArrowDownIcon, ArrowUpIcon, CornerDownRightIcon, PlusIcon, XIcon } from "lucide-react";
-import { cn } from "cn";
+import { ArrowDownIcon, ArrowUpIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import {
   DEFAULT_WINDOW_HOURS,
-  funnelStats,
   MAX_FUNNEL_NAME,
   MAX_FUNNELS,
+  MAX_STEP_NAME,
   MAX_STEPS,
   MAX_WINDOW_HOURS,
   MIN_STEPS,
   stepError,
-  stepLabel,
-  windowLabel,
+  stepTarget,
   type FunnelStep,
 } from "../../../convex/lib/funnels";
-import { formatNumber, formatRate } from "@/lib/format";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import SiteHeader from "@/components/dashboard/SiteHeader";
 import SiteShell from "@/components/dashboard/SiteShell";
 import { useSiteRange } from "@/components/dashboard/useSiteRange";
-import { sitePath } from "@/components/TopBar";
-
-type Funnel = FunctionReturnType<typeof api.funnels.list>[number];
-type Results = FunctionReturnType<typeof api.funnels.results>;
+import { CookielessExplanation, FunnelCard, funnelNumbers, type Funnel } from "./FunnelCard";
 
 export default function FunnelsView() {
   return (
@@ -59,7 +61,7 @@ function Funnels({
   cookieless: boolean;
 }) {
   // Funnels don't take filters yet; ?f= is kept in the URL for the other tabs
-  const { today, range, preset, hourly, hourNow, setRange } = useSiteRange(timezone, tracking);
+  const { today, range, preset, hourly, hourNow, searchParams, navigate, setRange } = useSiteRange(timezone, tracking);
   const funnels = useQuery(api.funnels.list, { domain });
   const result = useQuery(api.funnels.results, {
     domain,
@@ -69,7 +71,17 @@ function Funnels({
   const [last, setLast] = useState(result);
   if (result !== undefined && result !== last) setLast(result);
   const shown = result ?? last;
-  const [creating, setCreating] = useState(false);
+  // ?new=1 (the Analytics card's "Create a funnel") opens the form. The param stays until
+  // the form closes, so a remount while the site loads still opens it.
+  const [creatingState, setCreatingState] = useState(false);
+  const creating = creatingState || searchParams.get("new") === "1";
+  function setCreating(open: boolean) {
+    setCreatingState(open);
+    if (!open && searchParams.get("new") !== null) navigate({ set: { new: null } });
+  }
+  // The funnel whose card is swapped for the form, and the one Delete asks about
+  const [editing, setEditing] = useState<Id<"funnels"> | null>(null);
+  const [deleting, setDeleting] = useState<Funnel | null>(null);
 
   const full = funnels !== undefined && funnels.length >= MAX_FUNNELS;
   const blocked = cookieless || shown?.status === "cookieless";
@@ -97,7 +109,7 @@ function Funnels({
         }
       />
       {blocked ? (
-        <CookielessNotice settings={`${sitePath(domain, "settings")}?section=identity`} />
+        <CookielessNotice domain={domain} />
       ) : (
         <>
           {creating && <FunnelForm domain={domain} onDone={() => setCreating(false)} />}
@@ -112,28 +124,116 @@ function Funnels({
             !creating && <EmptyState onCreate={() => setCreating(true)} />
           ) : (
             <div className="flex flex-col gap-6">
-              {funnels.map((f) => (
-                <FunnelCard key={f.id} funnel={f} result={shown} loading={result === undefined} />
-              ))}
+              {funnels.map((f) =>
+                editing === f.id ? (
+                  <FunnelForm key={f.id} domain={domain} funnel={f} onDone={() => setEditing(null)} />
+                ) : (
+                  <FunnelCard
+                    key={f.id}
+                    funnel={f}
+                    numbers={funnelNumbers(f, shown)}
+                    loading={result === undefined}
+                    actions={
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setEditing(f.id)}
+                          aria-label={`Edit ${f.name}`}
+                          title="Edit"
+                        >
+                          <PencilIcon />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setDeleting(f)}
+                          aria-label={`Delete ${f.name}`}
+                          title="Delete"
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </div>
+                    }
+                  />
+                ),
+              )}
             </div>
           )}
         </>
       )}
+      <DeleteFunnelDialog domain={domain} funnel={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }
 
-function CookielessNotice({ settings }: { settings: string }) {
+/** Asks before deleting a funnel, in the app (not the browser's confirm()). */
+function DeleteFunnelDialog({
+  domain,
+  funnel,
+  onClose,
+}: {
+  domain: string;
+  funnel: Funnel | null;
+  onClose: () => void;
+}) {
+  const remove = useMutation(api.funnels.remove);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Keep the name on screen while the dialog closes
+  const [shown, setShown] = useState(funnel);
+  if (funnel !== null && funnel !== shown) setShown(funnel);
+
+  async function confirm() {
+    if (funnel === null) return;
+    setPending(true);
+    setError(null);
+    try {
+      await remove({ domain, id: funnel.id });
+      onClose();
+    } catch (err) {
+      setError(err instanceof ConvexError ? String(err.data) : "Could not delete the funnel");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <AlertDialog
+      open={funnel !== null}
+      onOpenChange={(open) => {
+        if (!open && !pending) {
+          setError(null);
+          onClose();
+        }
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {shown ? `“${shown.name}”` : "this funnel"}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The funnel goes from the Funnels tab and the Analytics tab. Your pageviews and events stay, so you can
+            make it again later.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error && <p className="text-sm text-down">{error}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <Button variant="destructive" onClick={confirm} disabled={pending}>
+            {pending ? "Deleting…" : "Delete funnel"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function CookielessNotice({ domain }: { domain: string }) {
   return (
     <section className="flex flex-col items-start gap-2 rounded-lg border border-border px-5 py-8 sm:px-8">
       <h2 className="font-medium">Funnels need visitor ids</h2>
       <p className="max-w-2xl text-sm text-muted-foreground">
-        A funnel follows each visitor from one step to the next, and that takes the visitor id cookie. This site is
-        cookieless, so its pageviews and events can&apos;t be joined into journeys. Switch it to cookies in{" "}
-        <Link href={settings} className="underline hover:text-foreground">
-          Settings → Visitor identity
-        </Link>{" "}
-        and funnels count visits from then on.
+        <CookielessExplanation domain={domain} />
       </p>
     </section>
   );
@@ -157,109 +257,41 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
   );
 }
 
-/**
- * One funnel: each step's visitors as a bar the length of its share of those who entered,
- * with the share, and between steps how many dropped off and the share that continued;
- * beside it the conversion, entered and completed.
- */
-function FunnelCard({ funnel, result, loading }: { funnel: Funnel; result: Results | undefined; loading: boolean }) {
-  const counts = result?.status === "ok" ? result.funnels.find((r) => r.id === funnel.id)?.counts : undefined;
-  const stats = counts && counts.length === funnel.steps.length ? funnelStats(counts) : undefined;
-  const value = (s: string | undefined) => s ?? "–";
-  return (
-    <section
-      aria-label={funnel.name}
-      className={cn("overflow-hidden rounded-lg border border-border", loading && stats && "opacity-60")}
-    >
-      <div className="flex flex-col gap-0.5 border-b border-border px-4 py-3.5 sm:px-5">
-        <h2 className="text-sm font-medium">{funnel.name}</h2>
-        <p className="text-xs text-muted-foreground">
-          {funnel.steps.length} steps · completed within {windowLabel(funnel.windowHours)}
-        </p>
-      </div>
-      <div className="flex flex-col sm:flex-row">
-        <ol className="flex min-w-0 flex-1 flex-col px-4 py-4 sm:px-5">
-          {funnel.steps.map((step, i) => {
-            const s = stats?.steps[i];
-            return (
-              <li key={i} className="flex flex-col">
-                {i > 0 && (
-                  <span className="flex items-center gap-1.5 py-2 pl-1 text-xs text-muted-foreground tabular-nums">
-                    <CornerDownRightIcon className="size-3.5" />
-                    {s ? `${formatNumber(s.dropped)} dropped off · ${formatRate(s.ofPrevious)} continued` : "–"}
-                  </span>
-                )}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-[11px] text-muted-foreground tabular-nums">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 truncate font-mono text-[13px]" title={stepLabel(step)}>
-                    {stepLabel(step)}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {step.kind === "page" ? "Page" : "Event"}
-                  </span>
-                  <span className="ml-auto shrink-0 pl-2 font-medium tabular-nums">{value(s && formatNumber(s.count))}</span>
-                  <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-                    {value(s && formatRate(s.ofEntered))}
-                  </span>
-                </div>
-                <div className="mt-2 ml-7 h-2 overflow-hidden rounded-full bg-bar">
-                  <div
-                    className="h-full rounded-full transition-[width] duration-300"
-                    style={{
-                      width: `${s && s.count > 0 ? Math.max(s.ofEntered * 100, 1) : 0}%`,
-                      background: "var(--series-visitors)",
-                    }}
-                  />
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-        <dl className="grid shrink-0 grid-cols-3 gap-4 border-t border-border px-4 py-4 sm:flex sm:w-36 sm:flex-col sm:border-t-0 sm:border-l">
-          <Stat label="Conversion" value={value(stats && formatRate(stats.conversion))} big />
-          <Stat label="Entered" value={value(stats && formatNumber(stats.entered))} />
-          <Stat label="Completed" value={value(stats && formatNumber(stats.completed))} />
-        </dl>
-      </div>
-    </section>
-  );
-}
-
-function Stat({ label, value, big }: { label: string; value: string; big?: boolean }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd
-        className={
-          big ? "text-[1.625rem] leading-8 font-semibold tracking-tight tabular-nums" : "text-sm font-medium tabular-nums"
-        }
-      >
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-type DraftStep = { id: number; kind: FunnelStep["kind"]; value: string };
+type DraftStep = { id: number; kind: FunnelStep["kind"]; value: string; label: string };
 let nextStepId = 0;
-const draftStep = (kind: FunnelStep["kind"], value = ""): DraftStep => ({ id: ++nextStepId, kind, value });
-const toStep = (d: DraftStep): FunnelStep =>
-  d.kind === "page" ? { kind: "page", pattern: d.value } : { kind: "event", name: d.value };
+const draftStep = (kind: FunnelStep["kind"], value = "", label = ""): DraftStep => ({
+  id: ++nextStepId,
+  kind,
+  value,
+  label,
+});
+const toStep = (d: DraftStep): FunnelStep => {
+  const named = d.label.trim() ? { label: d.label } : {};
+  return d.kind === "page" ? { kind: "page", pattern: d.value, ...named } : { kind: "event", name: d.value, ...named };
+};
+// Whole days of two or more open in days, as the card labels them
+const inDays = (hours: number) => hours % 24 === 0 && hours >= 48;
 
 /**
- * The New funnel form: a name, 2 to 8 ordered steps (a page pattern or an event name,
- * with the site's goals and recorded events offered) and the completion window.
+ * The New funnel form, or the Edit form pre-filled from `funnel`: a name, 2 to 8 ordered
+ * steps (a page pattern or an event name, with the site's goals and recorded events
+ * offered, and an optional display name) and the completion window.
  */
-function FunnelForm({ domain, onDone }: { domain: string; onDone: () => void }) {
+function FunnelForm({ domain, funnel, onDone }: { domain: string; funnel?: Funnel; onDone: () => void }) {
   const create = useMutation(api.funnels.create);
+  const save = useMutation(api.funnels.update);
   const eventNames = useQuery(api.sites.goalNames, { domain });
   const goals = useQuery(api.goals.list, { domain });
-  const [name, setName] = useState("");
-  const [steps, setSteps] = useState<DraftStep[]>(() => [draftStep("page", "/"), draftStep("page")]);
-  const [windowValue, setWindowValue] = useState(String(DEFAULT_WINDOW_HOURS));
-  const [unit, setUnit] = useState<"hours" | "days">("hours");
+  const [name, setName] = useState(funnel?.name ?? "");
+  const [steps, setSteps] = useState<DraftStep[]>(() =>
+    funnel
+      ? funnel.steps.map((s) => draftStep(s.kind, stepTarget(s), s.label ?? ""))
+      : [draftStep("page", "/"), draftStep("page")],
+  );
+  const startHours = funnel?.windowHours ?? DEFAULT_WINDOW_HOURS;
+  const [windowValue, setWindowValue] = useState(String(inDays(startHours) ? startHours / 24 : startHours));
+  const [unit, setUnit] = useState<"hours" | "days">(inDays(startHours) ? "days" : "hours");
+  const title = funnel ? "Edit funnel" : "New funnel";
   const [errors, setErrors] = useState<Map<number, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -301,19 +333,21 @@ function FunnelForm({ domain, onDone }: { domain: string; onDone: () => void }) 
     setPending(true);
     setError(null);
     try {
-      await create({ domain, name, steps: steps.map(toStep), windowHours });
+      const args = { domain, name, steps: steps.map(toStep), windowHours };
+      if (funnel) await save({ ...args, id: funnel.id });
+      else await create(args);
       onDone();
     } catch (err) {
-      setError(err instanceof ConvexError ? String(err.data) : "Could not create the funnel");
+      setError(err instanceof ConvexError ? String(err.data) : `Could not ${funnel ? "save" : "create"} the funnel`);
     } finally {
       setPending(false);
     }
   }
 
   return (
-    <form onSubmit={submit} aria-label="New funnel" className="flex flex-col gap-5 rounded-lg border border-border px-4 py-5 sm:px-5">
+    <form onSubmit={submit} aria-label={title} className="flex flex-col gap-5 rounded-lg border border-border px-4 py-5 sm:px-5">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="font-medium">New funnel</h2>
+        <h2 className="font-medium">{title}</h2>
         <Button type="button" variant="ghost" size="icon-sm" onClick={onDone} aria-label="Close">
           <XIcon />
         </Button>
@@ -335,7 +369,8 @@ function FunnelForm({ domain, onDone }: { domain: string; onDone: () => void }) 
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1.5 text-xs text-muted-foreground">
-          Steps, in order. Pages take * wildcards: /blog/* is every page under /blog.
+          Steps, in order. Pages take * wildcards: /blog/* is every page under /blog. A name is optional and shows
+          on the card.
         </legend>
         <ol className="flex flex-col gap-2">
           {steps.map((s, i) => (
@@ -397,6 +432,17 @@ function FunnelForm({ domain, onDone }: { domain: string; onDone: () => void }) 
                   </Button>
                 </div>
               </div>
+              <div className="pl-7">
+                <Input
+                  value={s.label}
+                  onChange={(e) => update(s.id, { label: e.target.value })}
+                  aria-label={`Step ${i + 1} name (optional)`}
+                  placeholder={i === 0 ? "Name, optional: Visited the home page" : "Name, optional"}
+                  maxLength={MAX_STEP_NAME}
+                  autoComplete="off"
+                  className="h-7 max-w-md text-[13px]"
+                />
+              </div>
               {errors.has(s.id) && <p className="pl-7 text-xs text-down">{errors.get(s.id)}</p>}
             </li>
           ))}
@@ -452,7 +498,7 @@ function FunnelForm({ domain, onDone }: { domain: string; onDone: () => void }) 
 
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending}>
-          {pending ? "Creating…" : "Create funnel"}
+          {funnel ? (pending ? "Saving…" : "Save funnel") : pending ? "Creating…" : "Create funnel"}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           Cancel

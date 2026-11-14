@@ -57,6 +57,8 @@ import {
   regionLabel,
 } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import type { FunnelRange } from "@/components/funnels/FunnelCard";
+import FunnelsSummaryCard from "@/components/funnels/FunnelsSummaryCard";
 import StatsCard, { type CardTab, type StatsRow } from "./StatsCard";
 
 type Props = {
@@ -69,6 +71,8 @@ type Props = {
   metric: CardMetric;
   /** Moves every card to the next metric */
   onMetric: () => void;
+  /** The Funnels card's range: the day range, or the hour period as the Funnels tab takes it */
+  funnelRange: FunnelRange;
 };
 
 /**
@@ -155,13 +159,9 @@ export function cardMetrics(currency: string | null): CardMetric[] {
   return currency === null ? ["visitors", "pageviews"] : ["visitors", "pageviews", "revenue"];
 }
 
-/** Hidden until Funnels ships (launch v1 Phase 12) */
-const SHOW_FUNNELS = false;
-
 /**
  * The cards under the chart, in one bordered block: Sources | Pages, Countries | Devices,
- * then Events across both columns (Events | Funnels once Funnels ships), with dividers
- * (one column on phones).
+ * then Events | Funnels, with dividers (one column on phones).
  */
 export default function Breakdowns(props: Props) {
   return (
@@ -170,23 +170,8 @@ export default function Breakdowns(props: Props) {
       <Breakdown {...props} card={PAGES} />
       <Breakdown {...props} card={COUNTRIES} />
       <Breakdown {...props} card={DEVICES} />
-      {SHOW_FUNNELS ? (
-        <>
-          <Events {...props} />
-          <StatsCard
-            title="Funnels"
-            tabs={[{ id: "funnels", label: "Funnels" }]}
-            tab="funnels"
-            onTab={() => {}}
-            rows={[]}
-            empty="Funnels are coming soon"
-          />
-        </>
-      ) : (
-        <div className="md:col-span-2 [&>*]:h-full">
-          <Events {...props} />
-        </div>
-      )}
+      <Events {...props} />
+      <FunnelsSummaryCard domain={props.domain} range={props.funnelRange} />
     </div>
   );
 }
