@@ -1081,13 +1081,13 @@ Read production data with `npx convex data <table> --prod`.
 
 ## Next: owner review of launch v1 Phase 12 (Funnels, first cut)
 
-Phase 12 is committed but not pushed. To review:
+Phase 12 is pushed (owner's go, 2026-11-14). To review:
 
 1. On dev, open `/sites/localhost/funnels` (7d): the three check funnels described in Decisions → Launch v1, Phase 12. Try "New funnel".
-2. Decide on the homepage Fig. 4 mock (step names and Median time, which the real card lacks).
-3. Push when happy. The push deploys the `funnels` table (new, empty, with its index) and functions to Convex prod and the tab to Vercel. Then optionally make a funnel on a prod site and compare.
+2. Homepage Fig. 4 mock: decided 2026-11-14 to keep it and build step names and Median time in Phase 13 (added to its plan).
+3. The push deploys the `funnels` table (new, empty, with its index) and functions to Convex prod and the tab to Vercel. Then optionally make a funnel on a prod site and compare.
 
-Phase 13 (edit, delete and the Analytics Funnels card) is next and not started.
+Phase 13 (edit, delete, the Analytics Funnels card, step names and Median time) is next and not started. The three dev check funnels on `localhost` can be deleted once Phase 13 adds delete.
 
 ## Earlier: owner review of launch v1 Phase 11 (homepage clean-up and go live)
 

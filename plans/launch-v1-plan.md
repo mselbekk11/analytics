@@ -238,11 +238,14 @@ Add the `funnels` table with owner-checked create and list functions (up to 8 st
 
 Edit and Delete on each funnel card, with a confirmation dialog for delete (rendered in the app, not a browser dialog). The Analytics tab's Funnels card is shown again, displaying the site's first funnel with "All funnels →". When there are no funnels it shows a short prompt with a link to create one.
 
+Also bring the card up to the homepage Fig. 4 mock (owner's call after Phase 12): each step gets an optional display name (shown on the bar, the pattern or event underneath), and the card shows a Median time from entry to completion.
+
 ### Acceptance criteria
 
 - [ ] Editing a step re-computes the card, and deleting removes it everywhere.
 - [ ] The Analytics card matches the Funnels tab for the same range.
 - [ ] Tests cover update and delete with owner checks (wrong user refused).
+- [ ] Step names show on the card and in the form, and Median time matches a scripted dev journey; tests cover both.
 
 ---
 
