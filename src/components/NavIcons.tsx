@@ -148,3 +148,12 @@ export function ArrowOutIcon({ className }: IconProps) {
     </Icon>
   );
 }
+
+/** A funnel narrowing to a stem: Funnels (drawn to match the set, not from Nucleo) */
+export function FunnelIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <path d="m4,3h12c.8284,0,1.2426,1.0021.6569,1.5879l-4.6569,4.6569v5.7553c0,.3788-.214.725-.5528.8944l-2,1c-.6649.3325-1.4472-.151-1.4472-.8944v-6.7553L3.3431,4.5879c-.5858-.5858-.1716-1.5879.6569-1.5879Z" {...stroke} />
+    </Icon>
+  );
+}

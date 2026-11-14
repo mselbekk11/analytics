@@ -13,6 +13,7 @@ import {
   BanknoteIcon,
   ChartLineIcon,
   CreditCardIcon,
+  FunnelIcon,
   GearIcon,
   GlobeIcon,
   PageIcon,
@@ -33,6 +34,7 @@ export type SiteSection =
   | "revenue"
   | "goals"
   | "outbound"
+  | "funnels"
   | "live"
   | "settings";
 export type AccountSection = "websites" | "billing" | "settings";
@@ -46,12 +48,13 @@ const SITE_TABS: { section: SiteSection; label: string; icon: Icon }[] = [
   { section: "revenue", label: "Revenue", icon: BanknoteIcon },
   { section: "goals", label: "Goals", icon: TargetIcon },
   { section: "outbound", label: "Outbound", icon: ArrowOutIcon },
+  { section: "funnels", label: "Funnels", icon: FunnelIcon },
   { section: "live", label: "Live", icon: RadioIcon },
   { section: "settings", label: "Settings", icon: GearIcon },
 ];
 
 // Views that take a range, filters and the cards' metric, which carry over when switching between them
-const RANGED: SiteSection[] = ["analytics", "pages", "users", "revenue", "goals", "outbound"];
+const RANGED: SiteSection[] = ["analytics", "pages", "users", "revenue", "goals", "outbound", "funnels"];
 
 const ACCOUNT_TABS: { section: AccountSection; label: string; href: string; icon: Icon }[] = [
   { section: "websites", label: "Websites", href: "/websites", icon: GlobeIcon },
@@ -134,7 +137,7 @@ export default function TopBar({ site, account }: TopBarProps) {
 
 /**
  * The site's tabs. From one ranged view to another (Analytics, Pages, Users, Revenue,
- * Goals, Outbound) the links keep `?range=`, `?f=` and `?metric=`, so you compare like
+ * Goals, Outbound, Funnels) the links keep `?range=`, `?f=` and `?metric=`, so you compare like
  * with like. Revenue shows only on sites that take payments (or while you're on it: a
  * direct visit gets the setup prompt). Site pages render inside
  * Suspense, so reading the query string here is fine.

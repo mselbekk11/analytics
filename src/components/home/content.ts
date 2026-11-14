@@ -158,7 +158,6 @@ export const sections: HomeSection[] = [
       { n: 4, caption: "A signup funnel, step by step, over 24 hours." },
       { n: 5, caption: "Goals with their conversion rate and top source." },
     ],
-    soon: true,
   },
   {
     id: "s-search",
@@ -327,7 +326,7 @@ export const pricing: {
     { label: "MCP access for Claude and Cursor" },
     { label: "Cookieless mode" },
     { label: "Excluded paths and path grouping" },
-    { label: "Funnels", soon: true },
+    { label: "Funnels" },
     { label: "Search Console and Bing", soon: true },
   ],
 };

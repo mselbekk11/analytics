@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { dimValidator } from "./lib/dims";
+import { funnelStepValidator } from "./lib/funnels";
 
 export default defineSchema({
   sites: defineTable({
@@ -223,6 +224,16 @@ export default defineSchema({
     name: v.string(), // what the table shows, e.g. "Signup"
     createdAt: v.number(),
   }).index("by_site_kind_key", ["siteId", "kind", "key"]),
+
+  // A site's funnels (launch v1 Phase 12): 2 to 8 ordered steps and a completion window,
+  // computed on demand from the raw rows (see lib/funnels.ts). At most MAX_FUNNELS a site
+  funnels: defineTable({
+    siteId: v.id("sites"),
+    name: v.string(),
+    steps: v.array(funnelStepValidator),
+    windowHours: v.number(),
+    createdAt: v.number(),
+  }).index("by_site", ["siteId"]),
 
   // Payments and refunds from Stripe or the payments API (5e), each linked to a visitor
   // and credited to one of their sessions when a matching rule finds one

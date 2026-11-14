@@ -11,6 +11,7 @@
 import type * as accounts from "../accounts.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as billing from "../billing.js";
+import type * as funnels from "../funnels.js";
 import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
@@ -23,6 +24,7 @@ import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
 import type * as lib_filtered from "../lib/filtered.js";
 import type * as lib_filters from "../lib/filters.js";
+import type * as lib_funnels from "../lib/funnels.js";
 import type * as lib_geo from "../lib/geo.js";
 import type * as lib_goals from "../lib/goals.js";
 import type * as lib_keys from "../lib/keys.js";
@@ -64,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   apiKeys: typeof apiKeys;
   billing: typeof billing;
+  funnels: typeof funnels;
   goals: typeof goals;
   http: typeof http;
   ingest: typeof ingest;
@@ -76,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   "lib/domain": typeof lib_domain;
   "lib/filtered": typeof lib_filtered;
   "lib/filters": typeof lib_filters;
+  "lib/funnels": typeof lib_funnels;
   "lib/geo": typeof lib_geo;
   "lib/goals": typeof lib_goals;
   "lib/keys": typeof lib_keys;

@@ -12,7 +12,7 @@ const WIDTH = 560;
 const HEIGHT = 470;
 
 /**
- * Fig. 4: a signup funnel (not built yet), drawn in the dashboard's style: the header, then
+ * Fig. 4: a signup funnel, drawn in the dashboard's style: the header, then
  * one card with each step's name and target, a bar as long as its share of the first
  * step, the visitors and that share, and the drop-off to the next step; beside it the
  * funnel's overall conversion, entered, completed and median time.
