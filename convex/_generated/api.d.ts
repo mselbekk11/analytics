@@ -11,14 +11,19 @@
 import type * as accounts from "../accounts.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as billing from "../billing.js";
+import type * as crons from "../crons.js";
+import type * as emails_InsightEmail from "../emails/InsightEmail.js";
 import type * as funnels from "../funnels.js";
 import type * as goals from "../goals.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
+import type * as insights from "../insights.js";
+import type * as insightsSend from "../insightsSend.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_attribution from "../lib/attribution.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_billing from "../lib/billing.js";
+import type * as lib_clerk from "../lib/clerk.js";
 import type * as lib_dates from "../lib/dates.js";
 import type * as lib_dims from "../lib/dims.js";
 import type * as lib_domain from "../lib/domain.js";
@@ -27,6 +32,7 @@ import type * as lib_filters from "../lib/filters.js";
 import type * as lib_funnels from "../lib/funnels.js";
 import type * as lib_geo from "../lib/geo.js";
 import type * as lib_goals from "../lib/goals.js";
+import type * as lib_insights from "../lib/insights.js";
 import type * as lib_keys from "../lib/keys.js";
 import type * as lib_mcp from "../lib/mcp.js";
 import type * as lib_names from "../lib/names.js";
@@ -68,14 +74,19 @@ declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   apiKeys: typeof apiKeys;
   billing: typeof billing;
+  crons: typeof crons;
+  "emails/InsightEmail": typeof emails_InsightEmail;
   funnels: typeof funnels;
   goals: typeof goals;
   http: typeof http;
   ingest: typeof ingest;
+  insights: typeof insights;
+  insightsSend: typeof insightsSend;
   "lib/access": typeof lib_access;
   "lib/attribution": typeof lib_attribution;
   "lib/auth": typeof lib_auth;
   "lib/billing": typeof lib_billing;
+  "lib/clerk": typeof lib_clerk;
   "lib/dates": typeof lib_dates;
   "lib/dims": typeof lib_dims;
   "lib/domain": typeof lib_domain;
@@ -84,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   "lib/funnels": typeof lib_funnels;
   "lib/geo": typeof lib_geo;
   "lib/goals": typeof lib_goals;
+  "lib/insights": typeof lib_insights;
   "lib/keys": typeof lib_keys;
   "lib/mcp": typeof lib_mcp;
   "lib/names": typeof lib_names;
@@ -142,4 +154,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  resend: import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">;
+};

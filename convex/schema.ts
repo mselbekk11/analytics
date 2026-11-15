@@ -328,6 +328,11 @@ export default defineSchema({
     currentPeriodEnd: v.optional(v.number()),
     cancelAtPeriodEnd: v.optional(v.boolean()),
     cancelAt: v.optional(v.number()), // when a cancelled subscription ends (Phase 5)
+    // Insight emails (Phase 15). Missing means the default: daily off, weekly and monthly
+    // on (lib/insights.ts, wantsCadence)
+    emailDaily: v.optional(v.boolean()),
+    emailWeekly: v.optional(v.boolean()),
+    emailMonthly: v.optional(v.boolean()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_stripeCustomerId", ["stripeCustomerId"]),

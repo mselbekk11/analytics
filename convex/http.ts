@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { billingSubscriptionId, subscriptionRecord } from "./lib/billing";
+import { verifyUnsubscribe, type Cadence } from "./lib/insights";
 import { parseStripeEvent } from "./lib/stripe";
 import { stripeApi } from "./lib/stripeApi";
 
@@ -83,5 +84,36 @@ http.route({
     return new Response(null, { status: 200 });
   }),
 });
+
+/**
+ * One-click unsubscribe from an insight email (launch v1 Phase 15): the link in the email
+ * (GET) and the List-Unsubscribe-Post one-click (POST, RFC 8058) both turn off just the
+ * cadence the token was signed for, then show a small page. A tampered, malformed or
+ * unknown token changes nothing.
+ */
+const unsubscribeHandler = httpAction(async (ctx, request) => {
+  const token = new URL(request.url).searchParams.get("t") ?? "";
+  const secret = process.env.INSIGHT_UNSUBSCRIBE_SECRET;
+  const verified = secret ? await verifyUnsubscribe(secret, token) : null;
+  const done = verified !== null && (await ctx.runMutation(internal.insights.unsubscribe, verified));
+  if (!done) {
+    return unsubscribePage(400, "This link isn't valid", "Nothing was changed. You can turn insight emails on or off in Settings.");
+  }
+  const other = (["daily", "weekly", "monthly"] as Cadence[]).filter((c) => c !== verified.cadence).join(" and ");
+  return unsubscribePage(
+    200,
+    `Unsubscribed from ${verified.cadence} emails`,
+    `You won't get ${verified.cadence} insight emails any more. Your ${other} emails are unchanged.`,
+  );
+});
+
+http.route({ path: "/email/unsubscribe", method: "GET", handler: unsubscribeHandler });
+http.route({ path: "/email/unsubscribe", method: "POST", handler: unsubscribeHandler });
+
+function unsubscribePage(status: number, title: string, text: string): Response {
+  const settings = `${(process.env.APP_URL ?? "https://www.simplestats.ai").replace(/\/$/, "")}/settings`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title} · Simple Stats</title><style>body{margin:0;padding:64px 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f5f5f5;color:#171717}main{max-width:420px;margin:0 auto;background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:28px}p.b{font-size:13px;font-weight:600;color:#737373;margin:0 0 8px}h1{font-size:20px;margin:0 0 8px}p{font-size:14px;line-height:20px;color:#525252;margin:0 0 16px}a{color:#2563eb}@media (prefers-color-scheme:dark){body{background:#0a0a0a;color:#fafafa}main{background:#171717;border-color:#262626}p{color:#a3a3a3}a{color:#60a5fa}}</style></head><body><main><p class="b">Simple Stats</p><h1>${title}</h1><p>${text}</p><p><a href="${settings}">Email settings</a></p></main></body></html>`;
+  return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
 
 export default http;

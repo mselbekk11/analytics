@@ -5,6 +5,7 @@ import { useClerk, useUser } from "@clerk/nextjs";
 import { Authenticated } from "convex/react";
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import InsightEmails from "@/components/account/InsightEmails";
 import McpKeys from "@/components/account/McpKeys";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ const THEMES = [
 // next-themes only knows the stored choice in the browser, so the server renders no selection
 const subscribeNever = () => () => {};
 
-/** Account settings: who is signed in, Clerk's profile, the theme, MCP server keys and sign out. */
+/** Account settings: who is signed in, Clerk's profile, the theme, insight emails, MCP server keys and sign out. */
 export default function AccountSettings() {
   const { user, isLoaded } = useUser();
   const clerk = useClerk();
@@ -81,8 +82,9 @@ export default function AccountSettings() {
           </div>
         </Card>
 
-        {/* Convex reads need the session, so the keys wait for it */}
+        {/* Convex reads need the session, so these wait for it */}
         <Authenticated>
+          <InsightEmails />
           <McpKeys />
         </Authenticated>
 
