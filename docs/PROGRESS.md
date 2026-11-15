@@ -116,7 +116,7 @@ Every variable the code reads, and where each environment gets it. No values are
 | `RESEND_API_KEY` | Convex dev: a Resend sending key (set by the owner 2026-11-15) | Convex prod: the same key, copied from dev without printing (2026-11-15) |
 | `INSIGHT_UNSUBSCRIBE_SECRET` | Convex dev: random, from `openssl rand -base64 32` (2026-11-15) | Convex prod: its own random value (2026-11-15). Sending refuses without it |
 | `CLERK_SECRET_KEY` (Convex) | Convex dev: the Clerk dev instance's secret, the same value as `.env.local` (2026-11-15) | Convex prod: a second production `sk_live_` key made for Convex in Clerk ("convex prod insight emails", set by the owner 2026-11-15; Vercel's own value can't be revealed). Used to look up the account owner's email |
-| `INSIGHT_EMAILS_ONLY_TO` | Convex dev: `mselbekk11@gmail.com`, so dev can only email the owner | Convex prod: unset (was set to the owner for the rollout test, removed 2026-11-15 with the owner's yes), so every opted-in, unlocked account gets email |
+| `INSIGHT_EMAILS_ONLY_TO` | Convex dev: `none` (since 2026-11-15, the owner's choice: only prod sends insight emails; dev's crons still run but skip everyone). To test a send on dev, set it to the owner's address, send, then back to `none` | Convex prod: unset (was set to the owner for the rollout test, removed 2026-11-15 with the owner's yes), so every opted-in, unlocked account gets email |
 | `INSIGHT_EMAILS_FROM` | unset (optional override of the sender) | unset |
 
 `.env.example` lists the `.env.local` ones. The Vercel list above is from the setup notes in this file; the Vercel MCP connector couldn't read the Pro team's env list on 2026-11-12 (not authorised for that scope), so re-check names there if one is added by hand.
@@ -1466,6 +1466,6 @@ Owner: review `/websites` and the settings page against `public/SA-websites.png`
 - **`npx convex data <table> --limit 100000` printed nothing** (no error), while `--limit 10000` worked. Keep the limit at 10,000 or less.
 - **Use `https://www.simplestats.ai/api/mcp`, never the apex.** The apex's 308 to www makes clients drop the `Authorization` header (cross-host redirect), so the MCP server sees no key and answers 401 "Missing or malformed API key".
 - **`claude mcp add` with the same name twice fails**; `claude mcp remove <name>` first. `claude mcp list` checks each server's connection.
-- **Convex crons are on dev too.** Since Phase 15, dev runs the insight email crons (weekly Mondays 09:00 UTC, monthly the 1st); `INSIGHT_EMAILS_ONLY_TO` keeps them to the owner. `npx convex codegen` now uploads to dev as well (it has a component to analyse).
+- **Convex crons are on dev too.** Since Phase 15, dev runs the insight email crons (weekly Mondays 09:00 UTC, monthly the 1st); `INSIGHT_EMAILS_ONLY_TO=none` on dev makes them email nobody. `npx convex codegen` now uploads to dev as well (it has a component to analyse).
 - **Resend now uses two CNAMEs for SPF** (`rsend.mail`, `send.mail`) instead of an MX and a TXT; copy what Resend's domain page shows. Receiving stays off.
 - **The repo has no Prettier config**, so `npx prettier --write` reformats a file to 80 columns. Don't run it; the code is formatted by hand at about 120.
