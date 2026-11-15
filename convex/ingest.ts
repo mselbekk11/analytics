@@ -14,6 +14,7 @@ import { hostMatchesDomain, normalizeDomain } from "./lib/domain";
 import { cityKey, regionKey } from "./lib/geo";
 import { groupPath, isExcludedPath } from "./lib/paths";
 import { claimCheckout } from "./lib/revenue";
+import { signupAt } from "./lib/signups";
 import {
   bumpDailyDim,
   bumpDailyStats,
@@ -522,7 +523,7 @@ async function recordEvent(
   const { visitorId, sessionId } = pv;
   if (type === "identify" || type === "claim") {
     if (visitorId === undefined) return;
-    if (e.type === "identify") await identify(ctx, site, visitorId, e);
+    if (e.type === "identify") await identify(ctx, site, visitorId, e, args.ts, pv.path);
   }
 
   const earlier = await ctx.db
@@ -595,12 +596,17 @@ async function recordEvent(
   }
 }
 
-/** Writes the fields identify() sent onto the visitor; the email is lower-cased for matching. */
+/**
+ * Writes the fields identify() sent onto the visitor; the email is lower-cased for
+ * matching. The first call that gives an email or user id is the signup (lib/signups.ts).
+ */
 async function identify(
   ctx: MutationCtx,
   site: Doc<"sites">,
   visitorId: string,
   user: { userId?: string; email?: string; name?: string },
+  ts: number,
+  path: string,
 ): Promise<void> {
   const visitor = await ctx.db
     .query("visitors")
@@ -610,10 +616,13 @@ async function identify(
   const userId = user.userId?.trim().slice(0, 100);
   const email = user.email?.trim().toLowerCase().slice(0, 254);
   const name = user.name?.trim().slice(0, 100);
+  const validEmail = email !== undefined && email.includes("@");
+  const signup = userId || validEmail ? await signupAt(ctx, visitor, ts, path) : null;
   await ctx.db.patch("visitors", visitor._id, {
     ...(userId ? { userId } : {}),
-    ...(email && email.includes("@") ? { email } : {}),
+    ...(validEmail ? { email } : {}),
     ...(name ? { name } : {}),
+    ...(signup ?? {}),
   });
 }
 

@@ -145,8 +145,15 @@ export default defineSchema({
     browser: v.optional(v.string()),
     entryPath: v.optional(v.string()),
     exitPath: v.optional(v.string()),
+    // The signup (launch v1 Phase 14): when identify() first gave this visitor an email or
+    // user id, set once at ingest (migrations.backfillIdentifiedAt for older ones), with the
+    // page it happened on and the entry page of the visitor's first session
+    identifiedAt: v.optional(v.number()),
+    signupPath: v.optional(v.string()),
+    landingPath: v.optional(v.string()),
   })
     .index("by_site_visitor", ["siteId", "visitorId"])
+    .index("by_site_identifiedAt", ["siteId", "identifiedAt"])
     .index("by_site_lastSeen", ["siteId", "lastSeen"])
     .index("by_site_email", ["siteId", "email"])
     .index("by_site_firstPaid", ["siteId", "firstPaidAt"]),

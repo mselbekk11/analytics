@@ -5,6 +5,7 @@ import { internalMutation, type MutationCtx } from "./_generated/server";
 import { countCookielessVisit, countSession, sessionSource } from "./lib/attribution";
 import { localDate } from "./lib/dates";
 import { bumpPageDim, bumpSessionDim, type PageDelta } from "./lib/rollups";
+import { firstIdentify, landingPath } from "./lib/signups";
 import { classify } from "./lib/sources";
 import { addUsage, monthStart, utcDate, utcMonth } from "./lib/usage";
 
@@ -449,3 +450,77 @@ export const moveOwner = internalMutation({
     return { sites, apiKeys };
   },
 });
+
+// Launch v1 Phase 14 backfill: `identifiedAt` (and the signup and landing pages) for
+// visitors identify()'d before ingest recorded signups. Run once after the deploy:
+//
+//   npx convex run migrations:backfillIdentifiedAt          (dev)
+//   npx convex run migrations:backfillIdentifiedAt --prod   (production)
+//
+// A visitor with an email or user id takes its earliest identify() call on record. One
+// with a user id but no identify call left (rare: past the per-pageview event cap) takes
+// its first visit, which can't be later than its first identify. One with only an email
+// and no identify call got the email from a payment, so it isn't a signup. An
+// `identifiedAt` already set is only ever moved earlier, so running this twice is safe.
+
+const IDENTIFIED_BATCH = 100;
+
+export const backfillIdentifiedAt = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    for await (const site of ctx.db.query("sites")) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillIdentifiedAtSite, {
+        siteId: site._id,
+        cursor: null,
+      });
+    }
+    return null;
+  },
+});
+
+export const backfillIdentifiedAtSite = internalMutation({
+  args: { siteId: v.id("sites"), cursor: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, { siteId, cursor }) => {
+    const page = await ctx.db
+      .query("visitors")
+      .withIndex("by_site_visitor", (q) => q.eq("siteId", siteId))
+      .paginate({ numItems: IDENTIFIED_BATCH, cursor });
+    for (const visitor of page.page) {
+      const patch = await backfilledSignup(ctx, visitor);
+      if (patch !== null) await ctx.db.patch("visitors", visitor._id, patch);
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.migrations.backfillIdentifiedAtSite, {
+        siteId,
+        cursor: page.continueCursor,
+      });
+    }
+    return null;
+  },
+});
+
+/** The signup fields a visitor should have, or null when nothing changes. */
+async function backfilledSignup(
+  ctx: MutationCtx,
+  visitor: Doc<"visitors">,
+): Promise<Partial<Pick<Doc<"visitors">, "identifiedAt" | "signupPath" | "landingPath">> | null> {
+  if (visitor.userId === undefined && visitor.email === undefined) return null;
+  const first = await firstIdentify(ctx, visitor);
+  let at: { ts: number; path?: string } | null = first;
+  if (at === null && visitor.userId !== undefined) at = { ts: visitor.firstSeen };
+  if (at === null) return null;
+  const patch: Partial<Pick<Doc<"visitors">, "identifiedAt" | "signupPath" | "landingPath">> = {};
+  if (visitor.identifiedAt === undefined || at.ts < visitor.identifiedAt) {
+    patch.identifiedAt = at.ts;
+    if (at.path !== undefined) patch.signupPath = at.path;
+  } else if (visitor.signupPath === undefined && at.path !== undefined && at.ts === visitor.identifiedAt) {
+    patch.signupPath = at.path;
+  }
+  if (visitor.landingPath === undefined) {
+    const landing = await landingPath(ctx, visitor);
+    if (landing !== null) patch.landingPath = landing;
+  }
+  return Object.keys(patch).length === 0 ? null : patch;
+}

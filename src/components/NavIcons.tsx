@@ -157,3 +157,15 @@ export function FunnelIcon({ className }: IconProps) {
     </Icon>
   );
 }
+
+/** A person with a plus: Signups (drawn to match the set, not from Nucleo) */
+export function UserPlusIcon({ className }: IconProps) {
+  return (
+    <Icon className={className}>
+      <circle cx="8" cy="6.5" r="3" {...stroke} />
+      <path d="m2.5,16.5c.6-2.8,2.9-4.5,5.5-4.5s4.9,1.7,5.5,4.5" {...stroke} />
+      <line x1="15.5" y1="6" x2="15.5" y2="11" {...stroke} />
+      <line x1="13" y1="8.5" x2="18" y2="8.5" {...stroke} />
+    </Icon>
+  );
+}
