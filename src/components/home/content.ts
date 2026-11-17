@@ -11,18 +11,6 @@ import {
   Tag,
   Users,
 } from "lucide-react";
-import type { IconType } from "react-icons";
-import {
-  SiClaude,
-  SiCursor,
-  SiNextdotjs,
-  SiReact,
-  SiShopify,
-  SiStripe,
-  SiVercel,
-  SiWebflow,
-  SiWordpress,
-} from "react-icons/si";
 import { TIERS, type Tier } from "@/lib/pricing";
 
 /**
@@ -57,32 +45,39 @@ export const nav = {
   cta: "Dashboard",
 };
 
-export type Integration = { name: string; icon: IconType };
+/** The homepage's fixed header (HeroHeader): section links, then Sign in and Get started. */
+export const header = {
+  links: [
+    { label: "Features", href: "#s-traffic" },
+    { label: "Ask AI", href: "#s-ai" },
+    { label: "Pricing", href: "#s-pricing" },
+    { label: "FAQ", href: "#s-faq" },
+  ] satisfies PageLink[],
+  signIn: "Sign in",
+  signUp: "Get started",
+  openMenu: "Open menu",
+  closeMenu: "Close menu",
+};
 
+/**
+ * The hero (DuskHero): an eyebrow link to the Ask AI section, the headline beside the
+ * subline and button, then the dashboard screenshot (`heroImage`).
+ * Every claim is built: revenue attribution, insight emails and the MCP server.
+ */
 export const hero = {
-  pill: { label: "New", text: "MCP server: ask Claude or Cursor about your stats", href: "#s-ai" as Anchor },
-  heading: ["Know which visits", "turn into revenue."] as [string, string],
+  eyebrow: { label: "New", text: "Ask Claude or Cursor about your stats", href: "#s-ai" as Anchor },
+  heading: "Agentic Analytics",
   paragraph:
-    "Simple Stats counts your visitors, shows where they came from, and ties each payment to the visit that brought it. One script of about 2\u00a0KB, with a cookieless mode when you need one.",
-  primary: "Go to dashboard",
-  secondary: { label: "See features", href: "#s-traffic" as Anchor },
-  // Seeds for the persona generator (emoji on a colour), not real people
-  avatarSeeds: ["hero-2", "maker-c", "hero-3", "maker-d", "hero-1"],
-  socialLine: "Built for founders & small teams · 7-day free trial, no card",
-  integrationsLabel: "Integrates with",
-  // Only things that work today: the script tag runs on any site, Stripe and MCP are built
-  integrations: [
-    { name: "Stripe", icon: SiStripe },
-    { name: "Claude", icon: SiClaude },
-    { name: "Cursor", icon: SiCursor },
-    { name: "Vercel", icon: SiVercel },
-    { name: "Next.js", icon: SiNextdotjs },
-    { name: "React", icon: SiReact },
-    { name: "WordPress", icon: SiWordpress },
-    { name: "Shopify", icon: SiShopify },
-    { name: "Webflow", icon: SiWebflow },
-  ] satisfies Integration[],
-  figure: { n: 1, caption: "The Simple Stats dashboard: visitors, pageviews, revenue and signups over the last 24 hours." },
+    "Privacy-friendly website analytics that ties each payment to the visit behind it, emails you what changed, and answers your questions in Claude or Cursor.",
+  cta: "Get started",
+};
+
+// Swap this file to change the hero screenshot (public/dashboard-dark.png is a placeholder)
+export const heroImage = {
+  src: "/dashboard-dark.png",
+  width: 2880,
+  height: 1800,
+  alt: "Simple Stats dashboard preview",
 };
 
 export type SectionId =
@@ -97,29 +92,39 @@ export type SectionId =
   | "s-customers"
   | "s-faq";
 
-export type FigureMeta = { n: number; caption: string };
+/** Which mockup fills a figure frame (FeatureLayout's MOCKS). */
+export type FigureKey = "pages" | "revenue" | "funnel" | "goals" | "search" | "live";
+
+/** A figure as written: its mockup and caption. Its "Fig. N" is counted from the shown figures. */
+export type FigureEntry = { key: FigureKey; caption: string };
+export type FigureMeta = FigureEntry & { n: number };
 
 /** One fact of a stat strip: a short value over a muted line. Must be true of the live product. */
 export type StatFact = { value: string; label: string };
 
-export type HomeSection = {
+/** A section as written. Its number ("01") and its figures' numbers are counted from the shown sections. */
+export type HomeSectionEntry = {
   id: SectionId;
-  number: string; // "01"
   eyebrow: string; // after the number, above the heading
   label: string; // in the Contents sidebar
   icon: LucideIcon;
   heading: [string, string]; // two lines on wider screens
   paragraph: string;
   highlight?: string; // a phrase of `paragraph` set in the foreground colour
-  figures: FigureMeta[];
+  figures: FigureEntry[];
   strip?: StatFact[]; // three facts under the figures, with a top rule
   soon?: boolean; // not built yet: shows a "Soon" badge in the section and the sidebar
+  hidden?: boolean; // kept in the content but off the page (sidebar, sections and numbering)
 };
 
-export const sections: HomeSection[] = [
+export type HomeSection = Omit<HomeSectionEntry, "figures"> & {
+  number: string; // "01"
+  figures: FigureMeta[];
+};
+
+export const sectionEntries: HomeSectionEntry[] = [
   {
     id: "s-traffic",
-    number: "01",
     eyebrow: "Traffic",
     label: "Traffic",
     icon: ChartLine,
@@ -127,18 +132,17 @@ export const sections: HomeSection[] = [
     paragraph:
       "Sources, referrers, campaigns, pages, countries and devices, each one ranked. Visits from ChatGPT, Claude and Perplexity land in their own AI channel. Click any row and the whole dashboard filters to it.",
     highlight: "Click any row and the whole dashboard filters to it.",
-    figures: [{ n: 2, caption: "Pages ranked by views, with a trend line and the revenue each one led to." }],
+    figures: [{ key: "pages", caption: "Pages ranked by views, with a trend line and the revenue each one led to." }],
   },
   {
     id: "s-revenue",
-    number: "02",
     eyebrow: "Revenue",
     label: "Revenue",
     icon: CircleDollarSign,
     heading: ["Each payment, credited", "to the visit behind it."],
     paragraph:
       "Connect Stripe, or send payments from your own backend through the API. Each one is tied to the visitor who paid, so you can see which sources, countries and pages bring in money, not just clicks.",
-    figures: [{ n: 3, caption: "Revenue by day, with the sources and countries that brought it in." }],
+    figures: [{ key: "revenue", caption: "Revenue by day, with the sources and countries that brought it in." }],
     strip: [
       { value: "Stripe + API", label: "payments credited to a visit" },
       { value: "Journeys", label: "every session before a payment" },
@@ -147,7 +151,6 @@ export const sections: HomeSection[] = [
   },
   {
     id: "s-funnels",
-    number: "03",
     eyebrow: "Funnels and goals",
     label: "Funnels",
     icon: Funnel,
@@ -155,36 +158,35 @@ export const sections: HomeSection[] = [
     paragraph:
       "Line up two to eight steps, pages or goals, and see how many visitors reach each one and how many leave along the way. Goals count signups and other key actions as conversions.",
     figures: [
-      { n: 4, caption: "A signup funnel, step by step, over 24 hours." },
-      { n: 5, caption: "Goals with their conversion rate and top source." },
+      { key: "funnel", caption: "A signup funnel, step by step, over 24 hours." },
+      { key: "goals", caption: "Goals with their conversion rate and top source." },
     ],
   },
   {
     id: "s-search",
-    number: "04",
     eyebrow: "Search",
     label: "Search",
     icon: Search,
     heading: ["Your search rankings,", "on the same page."],
     paragraph:
       "Clicks, impressions, click-through rate and average position from Google Search Console and Bing Webmaster Tools, for every page and keyword, beside the visits they bring.",
-    figures: [{ n: 6, caption: "Search clicks, impressions and average position over four weeks." }],
+    figures: [{ key: "search", caption: "Search clicks, impressions and average position over four weeks." }],
     soon: true,
+    // Hidden until Search Console and Bing are built (the pricing list keeps its Soon row)
+    hidden: true,
   },
   {
     id: "s-live",
-    number: "05",
     eyebrow: "Realtime and visitors",
     label: "Realtime",
     icon: Radio,
     heading: ["See who is on your site", "right now."],
     paragraph:
       "A live map shows each visitor's page, location and source as it happens. Open any visitor to see every session they've had, from the first landing page to the payment.",
-    figures: [{ n: 7, caption: "The live view: who's online, where they are and what they're reading." }],
+    figures: [{ key: "live", caption: "The live view: who's online, where they are and what they're reading." }],
   },
   {
     id: "s-ai",
-    number: "06",
     eyebrow: "Ask AI",
     label: "Ask AI",
     icon: Sparkles,
@@ -195,7 +197,6 @@ export const sections: HomeSection[] = [
   },
   {
     id: "s-setup",
-    number: "07",
     eyebrow: "Setup and privacy",
     label: "Setup",
     icon: Code,
@@ -212,7 +213,6 @@ export const sections: HomeSection[] = [
   },
   {
     id: "s-pricing",
-    number: "08",
     eyebrow: "Pricing",
     label: "Pricing",
     icon: Tag,
@@ -223,7 +223,6 @@ export const sections: HomeSection[] = [
   },
   {
     id: "s-customers",
-    number: "09",
     eyebrow: "Customers",
     label: "Customers",
     icon: Users,
@@ -234,7 +233,6 @@ export const sections: HomeSection[] = [
   },
   {
     id: "s-faq",
-    number: "10",
     eyebrow: "FAQ",
     label: "FAQ",
     icon: CircleQuestionMark,
@@ -245,13 +243,28 @@ export const sections: HomeSection[] = [
 ];
 
 /**
+ * The sections on the page: the shown entries, numbered 01, 02, ... in order, and their
+ * figures numbered Fig. 1, 2, ... across the page, so hiding one leaves no gap.
+ */
+export const sections: HomeSection[] = (() => {
+  let fig = 0;
+  return sectionEntries
+    .filter((s) => !s.hidden)
+    .map((s, i) => ({
+      ...s,
+      number: String(i + 1).padStart(2, "0"),
+      figures: s.figures.map((f) => ({ ...f, n: ++fig })),
+    }));
+})();
+
+/**
  * One way to ask about your stats, beside the Ask AI card. `soon` shows a Soon badge in place
  * of `via`; `hidden` keeps a row in the content but off the page.
  */
 export type Connection = { name: string; description: string; via?: string; soon?: boolean; hidden?: boolean };
 
 /**
- * 06 Ask AI's list. The MCP rows name only the clients the setup guide in Settings covers
+ * The Ask AI section's list. The MCP rows name only the clients the setup guide in Settings covers
  * (src/components/McpSetup.tsx): Claude Code, Claude Desktop and Cursor. The card's
  * question and answer are mockup data, in `askAiMock` (mocks/fixtures.ts).
  */
@@ -267,7 +280,7 @@ export const askAi = {
 };
 
 /**
- * 07 Setup's code block: a muted comment, then the real embed tag for a placeholder
+ * The Setup section's code block: a muted comment, then the real embed tag for a placeholder
  * domain, built with the dashboard's own snippet helper (src/lib/snippet.ts).
  */
 export const setup = {

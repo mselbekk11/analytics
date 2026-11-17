@@ -4,7 +4,7 @@ import AskAi from "./AskAi";
 import CodeBlock from "./CodeBlock";
 import ContentsSidebar from "./ContentsSidebar";
 import { CONTAINER } from "./container";
-import { type HomeSection, type SectionId, sections, setup } from "./content";
+import { type FigureKey, type HomeSection, type SectionId, sections, setup } from "./content";
 import Faq from "./Faq";
 import Figure from "./Figure";
 import FunnelMock from "./mocks/FunnelMock";
@@ -28,21 +28,21 @@ const BODIES: Partial<Record<SectionId, ReactNode>> = {
   "s-faq": <Faq />,
 };
 
-// The mockup in each figure frame, by figure number; the others stay empty until built
-const MOCKS: Partial<Record<number, ReactNode>> = {
-  2: <PagesMock />,
-  3: <RevenueMock />,
-  4: <FunnelMock />,
-  5: <GoalsMock />,
-  6: <SearchMock />,
-  7: <LiveMock />,
+// The mockup in each figure frame, by its key (the figure numbers move when a section is hidden)
+const MOCKS: Record<FigureKey, ReactNode> = {
+  pages: <PagesMock />,
+  revenue: <RevenueMock />,
+  funnel: <FunnelMock />,
+  goals: <GoalsMock />,
+  search: <SearchMock />,
+  live: <LiveMock />,
 };
 
 /**
  * The two-column features grid: the sticky Contents sidebar on the left (lg and up) and
- * the ten numbered sections on the right. Below lg the sidebar is hidden and the sections
- * stack. A figure frame without a mockup in MOCKS is an empty panel. A section's stat
- * strip, if it has one, follows its figures.
+ * the numbered sections on the right (`sections`: hidden ones are left out and the rest
+ * numbered in order). Below lg the sidebar is hidden and the sections stack. A section's
+ * stat strip, if it has one, follows its figures.
  */
 export default function FeatureLayout() {
   return (
@@ -69,7 +69,7 @@ function body(s: HomeSection): ReactNode {
       <div className={s.figures.length > 1 ? "grid gap-8 md:grid-cols-2 md:gap-5" : undefined}>
         {s.figures.map((f) => (
           <Figure key={f.n} figure={f}>
-            {MOCKS[f.n]}
+            {MOCKS[f.key]}
           </Figure>
         ))}
       </div>

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { meta } from "@/components/home/content";
+import DuskHero from "@/components/home/DuskHero";
 import FeatureLayout from "@/components/home/FeatureLayout";
 import FinalCta from "@/components/home/FinalCta";
-import Hero from "@/components/home/Hero";
+import HeroHeader from "@/components/home/HeroHeader";
 import HomeFooter from "@/components/home/HomeFooter";
-import HomeNav from "@/components/home/HomeNav";
 
 export const metadata: Metadata = meta;
 
@@ -13,9 +13,9 @@ export const metadata: Metadata = meta;
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
-      <HomeNav />
+      <HeroHeader />
       <main className="flex-1">
-        <Hero />
+        <DuskHero />
         <FeatureLayout />
         <FinalCta />
       </main>
