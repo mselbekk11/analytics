@@ -4,7 +4,9 @@ import {
   CircleDollarSign,
   CircleQuestionMark,
   Code,
+  Cookie,
   Funnel,
+  Mail,
   Radio,
   Search,
   Sparkles,
@@ -59,25 +61,42 @@ export const header = {
   closeMenu: "Close menu",
 };
 
+/** One small fact tile above the hero headline; `tag` sits on its top edge. */
+export type HeroBadge = { icon: LucideIcon; label: string; value: string; tag?: string };
+
 /**
- * The hero (DuskHero): an eyebrow link to the Ask AI section, the headline beside the
- * subline and button, then the dashboard screenshot (`heroImage`).
- * Every claim is built: revenue attribution, insight emails and the MCP server.
+ * The hero (DuskHero), side by side: on the left the fact tiles, headline, subline, Get
+ * started with a secondary link, and a row of checks; on the right the illustrative
+ * "visits to revenue" chart. Then the "Works with" row and the analytics line that
+ * separates the hero from the sections below.
+ * Every claim is built: revenue attribution, insight emails, cookieless mode and the MCP server.
  */
 export const hero = {
-  eyebrow: { label: "New", text: "Ask Claude or Cursor about your stats", href: "#s-ai" as Anchor },
+  badges: [
+    { icon: Code, label: "Script", value: "~2 KB" },
+    { icon: Cookie, label: "Cookies", value: "Optional" },
+    { icon: CircleDollarSign, label: "Revenue", value: "Stripe + API" },
+    { icon: Sparkles, label: "MCP", value: "Claude, Cursor", tag: "New" },
+    { icon: Mail, label: "Insights", value: "By email" },
+  ] satisfies HeroBadge[],
   heading: "Agentic Analytics",
   paragraph:
     "Privacy-friendly website analytics that ties each payment to the visit behind it, emails you what changed, and answers your questions in Claude or Cursor.",
   cta: "Get started",
-};
-
-// Swap this file to change the hero screenshot (public/dashboard-dark.png is a placeholder)
-export const heroImage = {
-  src: "/dashboard-dark.png",
-  width: 2880,
-  height: 1800,
-  alt: "Simple Stats dashboard preview",
+  secondary: { label: "Ask AI about your stats", href: "#s-ai" as Anchor },
+  checks: ["No IP addresses stored", "Cookieless mode", "7 days free", "No card needed"],
+  chart: {
+    label: "Visits to revenue",
+    visitors: "Visitors",
+    revenue: "Revenue (Stripe)",
+    axis: "Visitors",
+    toggle: "Revenue",
+    note: "Illustrative data. Your dashboard shows your own sites.",
+  },
+  worksWith: {
+    label: "Works with",
+    names: ["Stripe", "Next.js", "WordPress", "Shopify", "Webflow", "Framer", "Claude", "Cursor"],
+  },
 };
 
 export type SectionId =
